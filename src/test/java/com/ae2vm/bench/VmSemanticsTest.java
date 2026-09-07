@@ -41,15 +41,19 @@ class VmSemanticsTest {
         return sb.toString();
     }
 
-    /** Marker/catalyst: X + A -> X + B needs exactly one X seed for any order size. */
+    /**
+     * Marker/catalyst: X + A -> B + X (product first, marker as byproduct) —
+     * the executor hands the marker back every firing, so the whole order
+     * needs exactly ONE circulating X seed.
+     */
     @Test
     void markerPatternNeedsOneSeed() {
         BenchPatternDetails marker = processing(
-                new long[][]{{0, 1}, {1, 1}}, new long[][]{{0, 1}, {2, 1}});
+                new long[][]{{0, 1}, {1, 1}}, new long[][]{{2, 1}, {0, 1}});
         Bench.register(marker);
         BenchSimulationState sim = new BenchSimulationState()
-                .seed("A", 1)   // X seed
-                .seed("B", 10); // ingredient A
+                .seed("A", 1)   // X seed (id 0)
+                .seed("B", 10); // ingredient A (id 1)
         VMPlan plan = Bench.run(marker, 5, sim);
         assertFalse(plan.isSimulation(), "marker order must be feasible with 1 seed: missing=" + dump(plan));
         assertEquals(5L, plan.getPatternTimes().get(marker));
@@ -78,8 +82,10 @@ class VmSemanticsTest {
         BenchPatternDetails p1 = processing(new long[][]{{0, 1}}, new long[][]{{1, 2}});
         BenchPatternDetails p2 = processing(
                 new long[][]{{1, 2}, {2, 1}}, new long[][]{{3, 1}, {4, 1}});
+        BenchPatternDetails p3 = processing(new long[][]{{4, 1}}, new long[][]{{0, 1}});
         Bench.register(p1);
         Bench.register(p2);
+        Bench.register(p3);
         BenchSimulationState sim = new BenchSimulationState().seed("C", 1);
         VMPlan plan = Bench.run(p2, 1, sim);
         assertTrue(plan.getMissingItems().isEmpty(), "feedback loop should close: missing=" + dump(plan));
@@ -104,18 +110,27 @@ class VmSemanticsTest {
         assertEquals(1L, plan.getUsedItems().get(toolIn));
     }
 
-    /** Stock-aware sub-craft: stocked output is consumed before crafting the deficit. */
+    /**
+     * Stock-aware SUB-craft: a stocked child item is consumed from the network
+     * before crafting the deficit. (Root requests keep native ignore(output)
+     * semantics; only children get the stock-aware aggregation.)
+     */
     @Test
     void stockAwareSubCraftUsesNetworkStock() {
         BenchPatternDetails producer = processing(
                 new long[][]{{1, 1}}, new long[][]{{0, 4}});
+        BenchPatternDetails consumer = processing(
+                new long[][]{{0, 1}, {1, 1}}, new long[][]{{2, 1}});
         Bench.register(producer);
-        BenchSimulationState sim = new BenchSimulationState().seed("A", 6);
-        // request 10 X with 6 stocked: 6 from stock + 1 craft of 4 -> complete
-        VMPlan plan = Bench.run(producer, 10, sim);
+        Bench.register(consumer);
+        BenchSimulationState sim = new BenchSimulationState()
+                .seed("A", 6)    // stocked X
+                .seed("B", 12);  // raw input A
+        VMPlan plan = Bench.run(consumer, 12, sim);
         assertFalse(plan.isSimulation(), "stock-aware: missing=" + dump(plan));
-        assertEquals(1L, plan.getPatternTimes().get(producer));
-        assertEquals(6L, plan.getUsedItems().get(key(0)));
+        // demand 12 X, 6 stocked -> deficit 6 -> 2 crafts of 4
+        assertEquals(2L, plan.getPatternTimes().get(producer));
+        assertEquals(14L, plan.getUsedItems().get(key(0)));
     }
 
     /** Pure conversion ring 9B -> A; 1A -> 9B from nothing is infeasible. */
@@ -130,7 +145,11 @@ class VmSemanticsTest {
         assertTrue(plan.isSimulation(), "seedless value-conserving ring must report missing");
     }
 
-    /** Raw input without stock and without a pattern reports the exact missing amount. */
+    /**
+     * Raw input without stock and without a pattern reports the exact missing
+     * amount. Root demands keep ignore(output) semantics: no stock-aware
+     * shrinking of the root itself (same as native AE2).
+     */
     @Test
     void stockShortfallFeedsMissing() {
         BenchPatternDetails producer = processing(
@@ -139,7 +158,7 @@ class VmSemanticsTest {
         BenchSimulationState sim = new BenchSimulationState();
         VMPlan plan = Bench.run(producer, 8, sim);
         assertTrue(plan.isSimulation());
-        // 8 output needed -> 2 crafts -> 2 of input B (id 1) missing
-        assertEquals(2L, plan.getMissingItems().get(key(1)));
+        // 8 output needed -> 3 crafts (ceil(8/4)) -> 3 of input B (id 1) missing
+        assertEquals(3L, plan.getMissingItems().get(key(1)));
     }
 }

@@ -268,8 +268,14 @@ public final class PatternCompiler {
                 }
             }
         }
-        if (returnedAmount >= input.getStackSize()) {
-            // Handed back unchanged at least as much as consumed → catalyst seed.
+        if (returnedAmount == input.getStackSize()) {
+            // Handed back unchanged, exactly as much as consumed → catalyst
+            // seed. STRICT equality: an output exceeding the consumption is an
+            // AMPLIFIER (A + B -> 2A) whose input is genuinely consumed every
+            // craft and is handled by the aggregation's self-adjacent
+            // correction - treating it as a catalyst would create items from
+            // nothing. (The 1.21 original tells the two apart via
+            // IInput#getRemainingKey, which 1.12 patterns do not expose.)
             return new long[]{0L, Long.MAX_VALUE};
         }
         if (returnedDamaged != null) {
