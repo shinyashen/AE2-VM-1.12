@@ -5,6 +5,7 @@ import com.ae2vm.vm.CraftingBytecode;
 import com.ae2vm.vm.CraftingVM;
 import com.ae2vm.vm.VMPlan;
 import com.ae2vm.compiler.PatternCompiler;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -27,6 +28,13 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * primary output.
  */
 class VmSemantics2Test {
+
+    @BeforeAll
+    static void bootstrap() {
+        // Forge guards Items/Blocks behind Bootstrap; vanilla registration is
+        // self-contained and safe to run inside a plain JVM.
+        net.minecraft.init.Bootstrap.register();
+    }
 
     @BeforeEach
     void reset() {
@@ -92,7 +100,7 @@ class VmSemantics2Test {
     void jitCrossRequestReuseScalesLinearly() {
         BenchPatternDetails producer = processing(new long[][]{{1, 1}}, new long[][]{{0, 4}});
         Bench.register(producer);
-        CraftingVM vm = new CraftingVM("bench", PATTERNS::get);
+        CraftingVM vm = new CraftingVM("bench", Bench.PATTERNS::get);
         BenchSimulationState s1 = new BenchSimulationState().seed("B", 100);
         VMPlan p1 = vm.execute(PatternCompiler.compileRequest(producer, 4), s1);
         assertFalse(p1.isSimulation());
