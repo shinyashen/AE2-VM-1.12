@@ -10,4 +10,6 @@ dependencies {
     implementation(rfg.deobf("curse.maven:ae2fluidcraft-rework-unofficial-1404390:7742544"))
     // AE2 Crafting Tree Legacy - crafting tree visualization compat
     implementation(rfg.deobf("curse.maven:ae2-crafting-tree-legacy-1121489:5814089"))
+    // Baubles - AE2UEL's patched Item class references it; tests need it on the classpath
+    testImplementation(rfg.deobf("curse.maven:baubles-227083:2518667"))
 }
