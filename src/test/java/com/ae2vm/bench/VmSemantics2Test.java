@@ -5,6 +5,7 @@ import com.ae2vm.vm.CraftingBytecode;
 import com.ae2vm.vm.CraftingVM;
 import com.ae2vm.vm.VMPlan;
 import com.ae2vm.compiler.PatternCompiler;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -27,6 +28,13 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * primary output.
  */
 class VmSemantics2Test {
+
+    @BeforeAll
+    static void bootstrap() {
+        // Forge guards Items/Blocks behind Bootstrap; vanilla registration is
+        // self-contained and safe to run inside a plain JVM.
+        net.minecraft.init.Bootstrap.register();
+    }
 
     @BeforeEach
     void reset() {
@@ -80,7 +88,8 @@ class VmSemantics2Test {
         }
         CraftingVM vm = new CraftingVM("bench", Bench.PATTERNS::get);
         CraftingBytecode req = PatternCompiler.compileRequest(pats.get("F11"), 1);
-        BenchSimulationState sim = new BenchSimulationState().seed("F0", 34).seed("F1", 55);
+        // leaves are ids "0" and "1": request 1xF11 needs 55x"0" + 89x"1"
+        BenchSimulationState sim = new BenchSimulationState().seed("0", 55).seed("1", 89);
         VMPlan plan = vm.execute(req, sim);
         assertFalse(plan.isSimulation(), "fibonacci chain must be feasible: missing=" + dump(plan));
         assertEquals(1L, plan.getPatternTimes().get(pats.get("F11")));
@@ -92,7 +101,7 @@ class VmSemantics2Test {
     void jitCrossRequestReuseScalesLinearly() {
         BenchPatternDetails producer = processing(new long[][]{{1, 1}}, new long[][]{{0, 4}});
         Bench.register(producer);
-        CraftingVM vm = new CraftingVM("bench", PATTERNS::get);
+        CraftingVM vm = new CraftingVM("bench", Bench.PATTERNS::get);
         BenchSimulationState s1 = new BenchSimulationState().seed("B", 100);
         VMPlan p1 = vm.execute(PatternCompiler.compileRequest(producer, 4), s1);
         assertFalse(p1.isSimulation());
@@ -108,11 +117,11 @@ class VmSemantics2Test {
     void selfGrowthCutServesFromStockOnly() {
         BenchPatternDetails selfLoop = line(new long[][]{{0, 1}}, new long[][]{{0, 2}});
         Bench.register(selfLoop);
-        BenchSimulationState sim = new BenchSimulationState().seed("A", 5);
+        BenchSimulationState sim = new BenchSimulationState().seed("0", 5);
         VMPlan plan = vmRun(selfLoop, 3, sim);
-        assertFalse(plan.isSimulation(), "stocked self-loop must serve from stock");
+        assertFalse(plan.isSimulation(), "stocked self-loop must serve from stock: missing=" + dump(plan));
         assertTrue(plan.getPatternTimes().isEmpty(), "self-growth pattern must never fire");
-        assertEquals(3L, plan.getUsedItems().get(k("A")));
+        assertEquals(3L, plan.getUsedItems().get(k("0")));
     }
 
     @Test
@@ -121,8 +130,8 @@ class VmSemantics2Test {
         Bench.register(selfLoop);
         BenchSimulationState sim = new BenchSimulationState();
         VMPlan plan = vmRun(selfLoop, 2, sim);
-        assertTrue(plan.isSimulation());
-        assertEquals(2L, plan.getMissingItems().get(k("A")));
+        assertTrue(plan.isSimulation(), "starved self-loop: missing=" + dump(plan));
+        assertEquals(2L, plan.getMissingItems().get(k("0")));
     }
 
     /** Quantity-one boundary: exactly one craft for a single-item request. */
@@ -186,7 +195,8 @@ class VmSemantics2Test {
         assertEquals(9L, plan.getPatternTimes().get(p1));
         assertEquals(9L, plan.getPatternTimes().get(p2));
         assertEquals(1L, plan.getUsedItems().get(tool("T1", 0)));
-        assertEquals(2L, plan.getUsedItems().get(tool("T2", 0)));
+        // T2 max damage 10 -> one tool survives all 9 firings
+        assertEquals(1L, plan.getUsedItems().get(tool("T2", 0)));
     }
 
     private static VMPlan vmRun(BenchPatternDetails root, long amount, BenchSimulationState sim) {
