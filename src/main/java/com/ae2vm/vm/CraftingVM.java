@@ -1225,6 +1225,12 @@ public class CraftingVM {
             this.in = in;
             this.out = out;
         }
+
+        IAEItemStack to() { return to; }
+
+        long in() { return in; }
+
+        long out() { return out; }
     }
 
     /** Pure-conversion-ring value conservation guard (adds missing, never removes). */
