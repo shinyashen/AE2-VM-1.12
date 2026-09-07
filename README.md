@@ -35,14 +35,16 @@
 
 产物在 `build/libs/`。开发运行:`./gradlew runClient`(依赖由 cursemaven 自动解析:AE2UEL v0.56.4、AE2FCR-Unofficial、AE2CT)。
 
-## 测试
+## 已知问题(移植验证中)
 
-`gradlew build` 内置 JUnit5 语义测试 7 例全绿:标志物种子、递归放大器净增修正、
-催化剂反馈环 working-capital、耐久工具闭式、子项库存感知、换算环守恒、原料短缺报量。
+- `VmSemanticsTest` 7 例中 5 例通过;`recursionAmplifierUsesNetGrowth` 与
+  `stockAwareSubCraftUsesNetworkStock` 的失败定位中(前者疑似聚合期
+  A 键库存满足后种子链的残留记账,后者为 harness 键命名冲突已部分修正)
+- 斐波那契 24 层、耐久链、JIT 跨请求复用等原版基准族尚未移植
 
 ## 待办
 
-- [ ] 扩充测试族(斐波那契长链、JIT 跨请求复用、耐久链等原版基准)
+- [ ] 移植基准测试子集(JUnit,参考原版 bench 语义:催化剂反馈环/斐波那契链/耐久闭式)
 - [ ] 公共 API 入口(等价 AE2VMCrafting.calculate)
 - [ ] 第三方 requester 注册表(AE2VMCraftingRegistry 白名单)
 
