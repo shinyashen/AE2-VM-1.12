@@ -1551,9 +1551,14 @@ public class CraftingVM {
     /** Real network stock of a key, O(1) cached. */
     private long realStockOf(IAEItemStack key) {
         ensureRealStockSnapshot();
-        if (realStockCache == null) return 0L;
-        IAEItemStack found = realStockCache.findPrecise(key);
-        return found == null ? 0L : Math.max(0L, found.getStackSize());
+        if (realStockCache != null) {
+            IAEItemStack found = realStockCache.findPrecise(key);
+            return found == null ? 0L : Math.max(0L, found.getStackSize());
+        }
+        // No grid handle (tests / detached use): the sandbox was snapshotted
+        // from the live network at execute() start, so its initial stock IS
+        // the live stock for this calculation.
+        return stockOf(executeStartStock, key);
     }
 
     /** Lazily snapshot the live network inventory (reset every execute()). */
