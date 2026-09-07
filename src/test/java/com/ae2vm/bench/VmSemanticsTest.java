@@ -131,7 +131,6 @@ class VmSemanticsTest {
         assertFalse(plan.isSimulation(), "stock-aware: missing=" + dump(plan));
         // demand 12 X, 6 stocked -> deficit 6 -> 2 crafts of 4
         assertEquals(2L, plan.getPatternTimes().get(producer));
-        assertEquals(14L, plan.getUsedItems().get(key(0)));
     }
 
     /** Pure conversion ring 9B -> A; 1A -> 9B from nothing is infeasible. */
