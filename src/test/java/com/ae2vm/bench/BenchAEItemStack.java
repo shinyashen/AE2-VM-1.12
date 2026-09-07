@@ -148,7 +148,7 @@ public final class BenchAEItemStack implements IAEItemStack {
     }
 
     @Override
-    public void writeToNBT(io.netty.buffer.ByteBuf buf) {
+    public void writeToPacket(io.netty.buffer.ByteBuf buf) throws java.io.IOException {
     }
 
     @Override
