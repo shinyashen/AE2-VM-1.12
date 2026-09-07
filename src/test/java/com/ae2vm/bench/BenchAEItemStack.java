@@ -148,6 +148,10 @@ public final class BenchAEItemStack implements IAEItemStack {
     }
 
     @Override
+    public void writeToNBT(io.netty.buffer.ByteBuf buf) {
+    }
+
+    @Override
     public IAEItemStack empty() {
         return copy().setStackSize(0);
     }
