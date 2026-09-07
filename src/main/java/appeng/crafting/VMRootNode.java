@@ -3,23 +3,15 @@ package appeng.crafting;
 import appeng.api.config.Actionable;
 import appeng.api.networking.IGrid;
 import appeng.api.networking.crafting.ICraftingGrid;
-import appeng.api.networking.crafting.ICraftingPatternDetails;
 import appeng.api.networking.security.IActionSource;
 import appeng.api.storage.data.IAEItemStack;
 import appeng.api.storage.data.IItemList;
 import appeng.me.cluster.implementations.CraftingCPUCluster;
 import com.ae2vm.AE2VM;
-import com.ae2vm.compat.PatternCompat;
-import com.ae2vm.compiler.PatternCompiler;
 import com.ae2vm.config.AE2VMConfig;
-import com.ae2vm.vm.CraftingBytecode;
-import com.ae2vm.vm.CraftingVM;
-import com.ae2vm.vm.NetworkCraftingSandbox;
 import com.ae2vm.vm.VMPlan;
 import net.minecraft.world.World;
 
-import java.util.Collection;
-import java.util.LinkedHashSet;
 import java.util.Set;
 
 /**
@@ -57,7 +49,7 @@ public final class VMRootNode extends CraftingTreeNode {
     @Override
     IAEItemStack request(MECraftingInventory inventory, long amount, IActionSource source)
             throws CraftBranchFailure, InterruptedException {
-        if (nativeFallback || !AE2VMConfig.proxyEnabled) {
+        if (nativeFallback || !AE2VMConfig.proxyEnabled || isThirdPartySource(source)) {
             return super.request(inventory, amount, source);
         }
         craftingJob.handlePausing();
@@ -91,49 +83,28 @@ public final class VMRootNode extends CraftingTreeNode {
         return plan;
     }
 
-    private VMPlan calculate(long amount) {
-        ICraftingPatternDetails selected = findPattern();
-        if (selected == null) {
-            throw new IllegalStateException("No compilable pattern for " + requestedOutput.getDefinition());
+    /**
+     * Third-party machine sources (programmatic job submissions) that never
+     * registered with {@link com.ae2vm.api.AE2VMCraftingRegistry} keep their
+     * native crafting behaviour; player-driven requests from AE2's own
+     * terminals are always VM-eligible.
+     */
+    private boolean isThirdPartySource(IActionSource source) {
+        if (source == null || source.player().isPresent()) {
+            return false;
         }
-        PatternCompiler.compileIfAbsent(selected);
-        CraftingBytecode bytecode = PatternCompiler.compileRequest(selected, amount);
-        if (bytecode == null) {
-            throw new IllegalStateException("Pattern not compilable: " + selected);
-        }
-
-        CraftingVM vm = VmHolder.vmFor(grid, world);
-        NetworkCraftingSandbox sandbox = NetworkCraftingSandbox.snapshot(grid);
-        IAEItemStack normalizedOutput = com.ae2vm.compat.AE2FCCompat.normalizeFluidItem(requestedOutput);
-        sandbox.ignore(normalizedOutput != null ? normalizedOutput : requestedOutput);
-        return vm.execute(bytecode, sandbox);
+        return source.machine()
+                .map(host -> com.ae2vm.api.AE2VMCraftingRegistry
+                        .isUnregisteredThirdParty(host.getClass().getName()))
+                .orElse(false);
     }
 
-    private ICraftingPatternDetails findPattern() {
-        Set<ICraftingPatternDetails> candidates = new LinkedHashSet<>();
-        IAEItemStack key = requestedOutput.copy();
-        long amountHint = key.getStackSize();
-        key.reset();
-        candidates.addAll(craftingGrid.getCraftingFor(key, null, -1, world));
-        if (com.ae2vm.compat.AE2FCCompat.isFluidFakeItem(key)) {
-            IAEItemStack packet = com.ae2vm.compat.AE2FCCompat.packFluidPacket(key, amountHint);
-            if (packet != null && !packet.isSameType(key)) {
-                candidates.addAll(craftingGrid.getCraftingFor(packet, null, -1, world));
-            }
+    private VMPlan calculate(long amount) {
+        VMPlan plan = com.ae2vm.api.AE2VMCrafting.calculate(grid, world, requestedOutput, amount);
+        if (plan == null) {
+            throw new IllegalStateException("No compilable pattern for " + requestedOutput.getDefinition());
         }
-        for (ICraftingPatternDetails candidate : candidates) {
-            IAEItemStack primary = PatternCompat.getPrimaryOutput(candidate);
-            if (primary == null) continue;
-            IAEItemStack normalized = com.ae2vm.compat.AE2FCCompat.normalizeFluidItem(primary);
-            IAEItemStack target = key;
-            if (normalized != null && normalized.isSameType(target)) {
-                return candidate;
-            }
-            if (normalized == null && primary.isSameType(target)) {
-                return candidate;
-            }
-        }
-        return null;
+        return plan;
     }
 
     @Override
@@ -248,35 +219,5 @@ public final class VMRootNode extends CraftingTreeNode {
         stored.setCountRequestable(0L);
         stored.setCraftable(false);
         plan.add(stored);
-    }
-
-    /** Per-grid VM cache: the JIT bundle cache persists across requests. */
-    private static final class VmHolder {
-        private static final java.util.concurrent.ConcurrentHashMap<IGrid, CraftingVM> VMS =
-                new java.util.concurrent.ConcurrentHashMap<>();
-
-        static CraftingVM vmFor(IGrid grid, net.minecraft.world.World world) {
-            return VMS.computeIfAbsent(grid, g -> new CraftingVM(g, key -> {
-                // Resolver: the grid indexes patterns by output key; the first
-                // hit is a producer of the requested key.
-                ICraftingGrid cg = g.getCache(ICraftingGrid.class);
-                if (cg == null) return null;
-                for (ICraftingPatternDetails candidate : cg.getCraftingFor(key, null, -1, world)) {
-                    return candidate;
-                }
-                // AE2FC fluid patterns are indexed by the amount-carrying
-                // packet key, not by the canonical drop form.
-                if (com.ae2vm.compat.AE2FCCompat.isFluidFakeItem(key)) {
-                    IAEItemStack packet = com.ae2vm.compat.AE2FCCompat.packFluidPacket(
-                            key, key.getStackSize());
-                    if (packet != null && !packet.isSameType(key)) {
-                        for (ICraftingPatternDetails candidate : cg.getCraftingFor(packet, null, -1, world)) {
-                            return candidate;
-                        }
-                    }
-                }
-                return null;
-            }));
-        }
     }
 }
