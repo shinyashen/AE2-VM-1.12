@@ -35,6 +35,13 @@
 
 产物在 `build/libs/`。开发运行:`./gradlew runClient`(依赖由 cursemaven 自动解析:AE2UEL v0.56.4、AE2FCR-Unofficial、AE2CT)。
 
+## 已知问题(移植验证中)
+
+- `VmSemanticsTest` 7 例中 5 例通过;`recursionAmplifierUsesNetGrowth` 与
+  `stockAwareSubCraftUsesNetworkStock` 的失败定位中(前者疑似聚合期
+  A 键库存满足后种子链的残留记账,后者为 harness 键命名冲突已部分修正)
+- 斐波那契 24 层、耐久链、JIT 跨请求复用等原版基准族尚未移植
+
 ## 待办
 
 - [ ] 移植基准测试子集(JUnit,参考原版 bench 语义:催化剂反馈环/斐波那契链/耐久闭式)
