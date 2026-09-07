@@ -158,6 +158,11 @@ public final class BenchAEItemStack implements IAEItemStack {
     }
 
     @Override
+    public ItemStack asItemStackRepresentation() {
+        return createItemStack();
+    }
+
+    @Override
     public boolean fuzzyComparison(IAEItemStack other, FuzzyMode mode) {
         return other != null && other.getItem() == getItem();
     }
