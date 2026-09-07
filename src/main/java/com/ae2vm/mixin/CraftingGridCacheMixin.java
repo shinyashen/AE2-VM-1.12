@@ -1,5 +1,6 @@
 package com.ae2vm.mixin;
 
+import appeng.api.networking.crafting.ICraftingMedium;
 import appeng.api.networking.crafting.ICraftingPatternDetails;
 import appeng.me.cache.CraftingGridCache;
 import com.ae2vm.compiler.PatternCompiler;
