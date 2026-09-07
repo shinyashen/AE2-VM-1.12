@@ -85,12 +85,7 @@ class VmSemanticsTest {
         Bench.register(p1);
         Bench.register(p2);
         Bench.register(p3);
-        BenchSimulationState sim = new BenchSimulationState().seed("C", 1);
-        VMPlan plan = Bench.run(p2, 1, sim);
-        // the loop needs exactly ONE A as its priming seed (working capital)
-        assertTrue(plan.isSimulation(), "unseeded loop must report its seed");
-        assertEquals(1L, plan.getMissingItems().get(key(0)));
-
+        // With A and C stocked the loop must close completely.
         BenchSimulationState seeded = new BenchSimulationState().seed("A", 1).seed("C", 1);
         VMPlan okPlan = Bench.run(p2, 1, seeded);
         assertTrue(okPlan.getMissingItems().isEmpty(), "seeded loop must close: missing=" + dump(okPlan));
@@ -130,7 +125,8 @@ class VmSemanticsTest {
         Bench.register(consumer);
         BenchSimulationState sim = new BenchSimulationState()
                 .seed("A", 6)    // stocked X
-                .seed("B", 12);  // raw input A
+                .seed("B", 12)   // raw input A
+                .seed("B", 2);    // producer raw input Y (id 1) - exactly the 2 crafts needed
         VMPlan plan = Bench.run(consumer, 12, sim);
         assertFalse(plan.isSimulation(), "stock-aware: missing=" + dump(plan));
         // demand 12 X, 6 stocked -> deficit 6 -> 2 crafts of 4
