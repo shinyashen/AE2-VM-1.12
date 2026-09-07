@@ -128,7 +128,10 @@ public class CraftingBytecode {
                     return i;
                 }
             }
-            constantPool.add(key.copy().setStackSize(1));
+            IAEItemStack copy = key.copy();
+            copy.reset();
+            copy.setStackSize(1);
+            constantPool.add(copy);
             return constantPool.size() - 1;
         }
 

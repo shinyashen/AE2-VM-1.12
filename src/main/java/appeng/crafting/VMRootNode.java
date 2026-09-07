@@ -1,17 +1,13 @@
 package appeng.crafting;
 
-import appeng.api.AEApi;
 import appeng.api.config.Actionable;
 import appeng.api.networking.IGrid;
 import appeng.api.networking.crafting.ICraftingGrid;
 import appeng.api.networking.crafting.ICraftingPatternDetails;
 import appeng.api.networking.security.IActionSource;
-import appeng.api.storage.IMEMonitor;
-import appeng.api.storage.channels.IItemStorageChannel;
 import appeng.api.storage.data.IAEItemStack;
 import appeng.api.storage.data.IItemList;
 import appeng.me.cluster.implementations.CraftingCPUCluster;
-import appeng.util.inv.ItemListIgnoreCrafting;
 import com.ae2vm.AE2VM;
 import com.ae2vm.compat.PatternCompat;
 import com.ae2vm.compiler.PatternCompiler;
@@ -76,7 +72,8 @@ public final class VMRootNode extends CraftingTreeNode {
                 throw new CraftBranchFailure(requestedOutput, amount);
             }
             return requestedOutput.copy().setStackSize(amount);
-        } catch (CraftBranchFailure failure) {
+        } catch (CraftBranchFailure | InterruptedException failure) {
+            // The native job must keep its cancellation/pause semantics intact.
             throw failure;
         } catch (Throwable failure) {
             nativeFallback = true;
@@ -171,7 +168,6 @@ public final class VMRootNode extends CraftingTreeNode {
         if (plan == null || plan.isSimulation()) {
             throw new CraftBranchFailure(requestedOutput, requestedOutput.getStackSize());
         }
-        IItemStorageChannel channel = AEApi.instance().storage().getStorageChannel(IItemStorageChannel.class);
         // Phase 1: validate the full extraction set.
         for (var e : plan.getUsedItems().entrySet()) {
             IAEItemStack request = e.getKey().copy();
@@ -216,7 +212,6 @@ public final class VMRootNode extends CraftingTreeNode {
         if (plan == null) {
             return;
         }
-        IItemStorageChannel channel = AEApi.instance().storage().getStorageChannel(IItemStorageChannel.class);
         for (var e : plan.getMissingItems().entrySet()) {
             addPlanStorage(planList, e.getKey(), e.getValue());
         }

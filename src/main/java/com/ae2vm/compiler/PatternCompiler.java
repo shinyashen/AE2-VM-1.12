@@ -203,12 +203,16 @@ public final class PatternCompiler {
     }
 
     /**
-     * Catalyst / durability detection for one condensed input.
-     * Returns non-null when the pattern hands the input back: {@code [returnedKey, uses]}
-     * with uses == Long.MAX_VALUE for an unchanged catalyst or the number of firings a
-     * full unit survives for a degrading tool.
+     * Catalyst / durability detection for one condensed input. Public: the VM's
+     * cycle analyses must exclude returned inputs exactly like the original
+     * excludes getRemainingKey(ik) == ik inputs (a catalyst is a seed, not a
+     * per-craft consumption).
+     *
+     * Returns non-null when the pattern hands the input back: {@code [kind, uses]}
+     * with uses == Long.MAX_VALUE for an unchanged catalyst or the number of
+     * firings a full unit survives for a degrading tool.
      */
-    private static long[] detectReturnedInput(ICraftingPatternDetails pattern, IAEItemStack input) {
+    public static long[] detectReturnedInput(ICraftingPatternDetails pattern, IAEItemStack input) {
         IAEItemStack[] outputs = pattern.getOutputs();
         if (outputs == null) {
             return null;
@@ -271,8 +275,15 @@ public final class PatternCompiler {
                 if (input == null || input.getStackSize() <= 0) {
                     continue;
                 }
-                long perCraft = input.getStackSize();
-                IAEItemStack inputKey = normalize(input);
+                // AE2FC fluid patterns may encode inputs in the packet form
+                // while the network monitor exposes the canonical drop form —
+                // normalize so EXTRACT_INGREDIENT can actually find the stock.
+                IAEItemStack normalizedInput = AE2FCCompat.normalizeFluidItem(input);
+                if (normalizedInput == null) {
+                    normalizedInput = input;
+                }
+                long perCraft = normalizedInput.getStackSize();
+                IAEItemStack inputKey = normalize(normalizedInput);
 
                 // Replacement (substitute) slot variants → FUZZY_SLOT + per-variant EXTRACTs.
                 List<IAEItemStack> variants = new ArrayList<>();
@@ -301,7 +312,7 @@ public final class PatternCompiler {
                 }
 
                 // Catalyst / durability (returned input) — one-time seed or tool rate.
-                long[] returned = detectReturnedInput(pattern, input);
+                long[] returned = detectReturnedInput(pattern, normalizedInput);
                 if (returned != null) {
                     int seedIdx = builder.addConstant(inputKey);
                     builder.emitPushLong(perCraft);

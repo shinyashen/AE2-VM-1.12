@@ -894,6 +894,11 @@ public class CraftingVM {
             if (condensed != null) {
                 for (IAEItemStack in : condensed) {
                     if (in == null || in.getStackSize() <= 0) continue;
+                    // A returned/catalyst input is a seed, not a per-craft
+                    // consumption — excluding it keeps marker patterns
+                    // (X + A -> X + B) out of the self-adjacent set, exactly
+                    // like the original's getRemainingKey(ik) == ik check.
+                    if (PatternCompiler.detectReturnedInput(details, in) != null) continue;
                     IAEItemStack ik = in.copy();
                     long amt = ik.getStackSize();
                     ik.reset();
@@ -1071,6 +1076,8 @@ public class CraftingVM {
             if (condensed != null) {
                 for (IAEItemStack in : condensed) {
                     if (in == null || in.getStackSize() <= 0) continue;
+                    // A returned/catalyst input is a seed, not a consumption.
+                    if (PatternCompiler.detectReturnedInput(details, in) != null) continue;
                     IAEItemStack ik = in.copy().setStackSize(1);
                     ik.reset();
                     inputs.merge(ik, in.getStackSize(), Long::sum);
@@ -1232,6 +1239,8 @@ public class CraftingVM {
                 if (condensed != null) {
                     for (IAEItemStack entry : condensed) {
                         if (entry == null || entry.getStackSize() <= 0) continue;
+                        // A returned/catalyst input is a seed, not a consumption.
+                        if (PatternCompiler.detectReturnedInput(details, entry) != null) continue;
                         IAEItemStack ik = entry.copy().setStackSize(1);
                         ik.reset();
                         in.merge(ik, entry.getStackSize(), Long::sum);

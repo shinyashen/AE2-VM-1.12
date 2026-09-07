@@ -39,43 +39,43 @@ public final class NetworkCraftingSandbox implements SimulationState {
     public static NetworkCraftingSandbox snapshot(IGrid grid) {
         IItemStorageChannel itemChannel =
                 AEApi.instance().storage().getStorageChannel(IItemStorageChannel.class);
-        IItemList<IAEItemStack> snapshot = itemChannel.createList();
+        IItemList<IAEItemStack> bridge = itemChannel.createList();
+        IItemList<IAEItemStack> stock = itemChannel.createList();
         if (grid != null) {
             IStorageGrid storageGrid = grid.getCache(IStorageGrid.class);
             if (storageGrid != null) {
                 IMEMonitor<IAEItemStack> itemInventory = storageGrid.getInventory(itemChannel);
                 if (itemInventory != null) {
-                    itemInventory.getAvailableItems(new ItemListIgnoreCrafting<>(snapshot));
+                    itemInventory.getAvailableItems(new ItemListIgnoreCrafting<>(bridge));
                 }
+                boolean fluidAuthoritative = false;
                 if (AE2FCCompat.isAvailable()) {
-                    // Merge the native fluid channel in as canonical fake drops, and
-                    // drop AE2FC's own item-channel fake entries to avoid double counting.
+                    // The native fluid channel is authoritative: merge it in as
+                    // canonical fake drops and keep AE2FC's own item-channel fake
+                    // entries OUT of the stock to avoid double counting.
                     IFluidStorageChannel fluidChannel =
                             AEApi.instance().storage().getStorageChannel(IFluidStorageChannel.class);
                     IMEMonitor<IAEFluidStack> fluidInventory = storageGrid.getInventory(fluidChannel);
-                    IItemList<IAEFluidStack> fluids = fluidChannel.createList();
                     if (fluidInventory != null) {
+                        IItemList<IAEFluidStack> fluids = fluidChannel.createList();
                         fluidInventory.getAvailableItems(new ItemListIgnoreCrafting<>(fluids));
                         for (IAEFluidStack fluid : fluids) {
                             if (fluid == null || fluid.getStackSize() <= 0L) continue;
                             IAEItemStack drop = AE2FCCompat.packFluid(fluid);
-                            if (drop != null) addStock(snapshot, drop, true);
+                            if (drop != null) addStock(stock, drop, false);
                         }
-                        // Rebuild the item view without AE2FC fake entries.
-                        IItemList<IAEItemStack> cleaned = itemChannel.createList();
-                        for (IAEItemStack item : snapshot) {
-                            if (!AE2FCCompat.isFluidFakeItem(item)) {
-                                addStock(cleaned, item, false);
-                            }
-                        }
-                        for (IAEItemStack item : cleaned) {
-                            addStock(snapshot, item, true);
-                        }
+                        fluidAuthoritative = true;
                     }
+                }
+                for (IAEItemStack item : bridge) {
+                    if (fluidAuthoritative && AE2FCCompat.isFluidFakeItem(item)) {
+                        continue;
+                    }
+                    addStock(stock, item, false);
                 }
             }
         }
-        return new NetworkCraftingSandbox(snapshot);
+        return new NetworkCraftingSandbox(stock);
     }
 
     private static void addStock(IItemList<IAEItemStack> list, IAEItemStack item, boolean replace) {
