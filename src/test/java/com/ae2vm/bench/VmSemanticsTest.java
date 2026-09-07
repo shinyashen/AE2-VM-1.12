@@ -1,0 +1,137 @@
+package com.ae2vm.bench;
+
+import appeng.api.storage.data.IAEItemStack;
+import com.ae2vm.vm.VMPlan;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+
+import static com.ae2vm.bench.BenchPatternDetails.custom;
+import static com.ae2vm.bench.BenchPatternDetails.key;
+import static com.ae2vm.bench.BenchPatternDetails.processing;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+/**
+ * Ported semantics tests (original AE2-VM benchmark families).
+ *
+ * Key id convention: key(n) -> "A"+n chars, so id 0="A", 1="B", 2="C", 3="D",
+ * 4="E". The first output of a pattern is its primary output.
+ */
+class VmSemanticsTest {
+
+    @BeforeEach
+    void reset() {
+        Bench.reset();
+    }
+
+    private static String dump(VMPlan plan) {
+        StringBuilder sb = new StringBuilder();
+        for (var e : plan.getMissingItems().entrySet()) {
+            sb.append(((BenchAEItemStack) e.getKey()).id).append('x').append(e.getValue()).append(' ');
+        }
+        return sb.toString();
+    }
+
+    /** Marker/catalyst: X + A -> X + B needs exactly one X seed for any order size. */
+    @Test
+    void markerPatternNeedsOneSeed() {
+        BenchPatternDetails marker = processing(
+                new long[][]{{0, 1}, {1, 1}}, new long[][]{{0, 1}, {2, 1}});
+        Bench.register(marker);
+        BenchSimulationState sim = new BenchSimulationState()
+                .seed("A", 1)   // X seed
+                .seed("B", 10); // ingredient A
+        VMPlan plan = Bench.run(marker, 5, sim);
+        assertFalse(plan.isSimulation(), "marker order must be feasible with 1 seed: missing=" + dump(plan));
+        assertEquals(5L, plan.getPatternTimes().get(marker));
+        assertEquals(1L, plan.getUsedItems().get(key(0)));
+        assertEquals(5L, plan.getUsedItems().get(key(1)));
+    }
+
+    /** Amplifier A + B -> 2A: craft count driven by NET growth, seeded from stock. */
+    @Test
+    void recursionAmplifierUsesNetGrowth() {
+        BenchPatternDetails amp = processing(
+                new long[][]{{0, 1}, {1, 1}}, new long[][]{{0, 2}});
+        Bench.register(amp);
+        BenchSimulationState sim = new BenchSimulationState()
+                .seed("A", 1)
+                .seed("B", 3);
+        VMPlan plan = Bench.run(amp, 4, sim);
+        assertFalse(plan.isSimulation(), "amplifier must be feasible: missing=" + dump(plan));
+        // request 4, stocked seed 1, net gain 1 per craft -> 3 crafts
+        assertEquals(3L, plan.getPatternTimes().get(amp));
+    }
+
+    /** Catalyst feedback loop A -> 2B; 2B + C -> E + D: closes with C as working capital. */
+    @Test
+    void catalystFeedbackLoopIsFeasibleWithWorkingCapital() {
+        BenchPatternDetails p1 = processing(new long[][]{{0, 1}}, new long[][]{{1, 2}});
+        BenchPatternDetails p2 = processing(
+                new long[][]{{1, 2}, {2, 1}}, new long[][]{{3, 1}, {4, 1}});
+        Bench.register(p1);
+        Bench.register(p2);
+        BenchSimulationState sim = new BenchSimulationState().seed("C", 1);
+        VMPlan plan = Bench.run(p2, 1, sim);
+        assertTrue(plan.getMissingItems().isEmpty(), "feedback loop should close: missing=" + dump(plan));
+        assertTrue(plan.getPatternTimes().get(p2) >= 1L);
+        assertTrue(plan.getPatternTimes().get(p1) >= 2L);
+    }
+
+    /** Durability tool T(0) + B -> C + T(1): one 10-use tool covers 3 firings. */
+    @Test
+    void durabilityToolClosedForm() {
+        BenchAEItemStack toolIn = new BenchAEItemStack("T", 0, 10, 1);
+        BenchAEItemStack toolOut = new BenchAEItemStack("T", 1, 10, 1);
+        BenchPatternDetails p = custom(
+                new IAEItemStack[]{toolIn, new BenchAEItemStack("B", 1)},
+                new IAEItemStack[]{new BenchAEItemStack("C", 1), toolOut});
+        Bench.register(p);
+        BenchSimulationState sim = new BenchSimulationState().seed("B", 3);
+        VMPlan plan = Bench.run(p, 3, sim);
+        assertFalse(plan.isSimulation(), "tool reuse must cover 3 firings: missing=" + dump(plan));
+        assertEquals(3L, plan.getPatternTimes().get(p));
+        // exactly ONE tool demanded for 3 firings of a 10-use tool
+        assertEquals(1L, plan.getUsedItems().get(toolIn));
+    }
+
+    /** Stock-aware sub-craft: stocked output is consumed before crafting the deficit. */
+    @Test
+    void stockAwareSubCraftUsesNetworkStock() {
+        BenchPatternDetails producer = processing(
+                new long[][]{{1, 1}}, new long[][]{{0, 4}});
+        Bench.register(producer);
+        BenchSimulationState sim = new BenchSimulationState().seed("A", 6);
+        // request 10 X with 6 stocked: 6 from stock + 1 craft of 4 -> complete
+        VMPlan plan = Bench.run(producer, 10, sim);
+        assertFalse(plan.isSimulation(), "stock-aware: missing=" + dump(plan));
+        assertEquals(1L, plan.getPatternTimes().get(producer));
+        assertEquals(6L, plan.getUsedItems().get(key(0)));
+    }
+
+    /** Pure conversion ring 9B -> A; 1A -> 9B from nothing is infeasible. */
+    @Test
+    void conversionRingFromNothingIsInfeasible() {
+        BenchPatternDetails toA = processing(new long[][]{{1, 9}}, new long[][]{{0, 1}});
+        BenchPatternDetails toB = processing(new long[][]{{0, 1}}, new long[][]{{1, 9}});
+        Bench.register(toA);
+        Bench.register(toB);
+        BenchSimulationState sim = new BenchSimulationState();
+        VMPlan plan = Bench.run(toB, 9, sim);
+        assertTrue(plan.isSimulation(), "seedless value-conserving ring must report missing");
+    }
+
+    /** Raw input without stock and without a pattern reports the exact missing amount. */
+    @Test
+    void stockShortfallFeedsMissing() {
+        BenchPatternDetails producer = processing(
+                new long[][]{{1, 1}}, new long[][]{{0, 4}});
+        Bench.register(producer);
+        BenchSimulationState sim = new BenchSimulationState();
+        VMPlan plan = Bench.run(producer, 8, sim);
+        assertTrue(plan.isSimulation());
+        // 8 output needed -> 2 crafts -> 2 of input B (id 1) missing
+        assertEquals(2L, plan.getMissingItems().get(key(1)));
+    }
+}
