@@ -11,14 +11,29 @@ import java.util.Map;
 
 /** SimulationState fake: pre-seeded stock + sandbox inserts + crafting log. */
 public final class BenchSimulationState implements SimulationState {
-    private final Map<String, Long> stock = new LinkedHashMap<>();
+    private final Map<BenchAEItemStack, Long> stock = new LinkedHashMap<>();
     private final Map<String, Long> inserted = new LinkedHashMap<>();
     private final Map<ICraftingPatternDetails, Long> crafting = new LinkedHashMap<>();
     private final List<IAEItemStack> fuzzyFamily = new ArrayList<>();
+
+    /** Manually appended fuzzy-family members for tests that pre-seed them. */
+    public BenchSimulationState addFuzzyVariant(IAEItemStack key) {
+        fuzzyFamily.add(key);
+        return this;
+    }
     private double bytes = 0.0D;
 
     public BenchSimulationState seed(String id, long amount) {
-        stock.merge(id, amount, Long::sum);
+        return seedKey(new BenchAEItemStack(id, 0, 0, 1), amount);
+    }
+
+    /** Seeds a damage-variant stock entry (same id, different damage). */
+    public BenchSimulationState seedVariant(String id, int damage, int maxDamage, long amount) {
+        return seedKey(new BenchAEItemStack(id, damage, maxDamage, 1), amount);
+    }
+
+    private BenchSimulationState seedKey(BenchAEItemStack key, long amount) {
+        stock.merge(key, amount, Long::sum);
         return this;
     }
 
@@ -37,12 +52,17 @@ public final class BenchSimulationState implements SimulationState {
         }
         taken += fromIns;
         long remaining = amount - fromIns;
-        long have = stock.getOrDefault(k.id, 0L);
-        long fromStock = Math.min(have, remaining);
-        if (fromStock > 0 && !simulate) {
-            stock.put(k.id, have - fromStock);
+        if (remaining > 0) {
+            BenchAEItemStack probe = new BenchAEItemStack(k.id, k.damage, k.maxDamage, 1);
+            Long have = stock.get(probe);
+            long haveL = have == null ? 0L : have;
+            long fromStock = Math.min(haveL, remaining);
+            if (fromStock > 0 && !simulate) {
+                stock.put(probe, haveL - fromStock);
+            }
+            taken += fromStock;
         }
-        return taken + fromStock;
+        return taken;
     }
 
     @Override
@@ -55,7 +75,15 @@ public final class BenchSimulationState implements SimulationState {
     /** Same-id any-damage variants present in stock (processing default fuzzy). */
     @Override
     public List<IAEItemStack> findFuzzyFamily(IAEItemStack key) {
-        return fuzzyFamily;
+        List<IAEItemStack> family = new ArrayList<>();
+        String id = ((BenchAEItemStack) key).id;
+        for (BenchAEItemStack k : stock.keySet()) {
+            if (k.id.equals(id)) {
+                family.add(k);
+            }
+        }
+        family.addAll(fuzzyFamily);
+        return family;
     }
 
     @Override
