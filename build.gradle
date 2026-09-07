@@ -51,7 +51,6 @@ tasks.decompressDecompiledSources.enabled !propertyBool('change_minecraft_source
 java {
     toolchain {
         languageVersion.set(JavaLanguageVersion.of(17))
-        vendor.set(JvmVendorSpec.AZUL)
     }
     if (propertyBool('generate_sources_jar')) {
         withSourcesJar()
