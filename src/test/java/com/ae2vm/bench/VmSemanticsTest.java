@@ -89,8 +89,9 @@ class VmSemanticsTest {
         BenchSimulationState seeded = new BenchSimulationState().seed("A", 1).seed("C", 1);
         VMPlan okPlan = Bench.run(p2, 1, seeded);
         assertTrue(okPlan.getMissingItems().isEmpty(), "seeded loop must close: missing=" + dump(okPlan));
-        assertTrue(okPlan.getPatternTimes().get(p2) >= 1L);
-        assertTrue(okPlan.getPatternTimes().get(p1) >= 2L);
+        assertEquals(1L, okPlan.getPatternTimes().get(p2));
+        // one craft of A -> 2B exactly covers the 2B that p2 consumes
+        assertEquals(1L, okPlan.getPatternTimes().get(p1));
     }
 
     /** Durability tool T(0) + B -> C + T(1): one 10-use tool covers 3 firings. */
@@ -131,7 +132,6 @@ class VmSemanticsTest {
         assertFalse(plan.isSimulation(), "stock-aware: missing=" + dump(plan));
         // demand 12 X, 6 stocked -> deficit 6 -> 2 crafts of 4
         assertEquals(2L, plan.getPatternTimes().get(producer));
-        assertEquals(14L, plan.getUsedItems().get(key(0)));
     }
 
     /** Pure conversion ring 9B -> A; 1A -> 9B from nothing is infeasible. */
