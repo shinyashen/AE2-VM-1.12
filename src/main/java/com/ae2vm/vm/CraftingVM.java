@@ -1215,7 +1215,16 @@ public class CraftingVM {
     }
 
     /** Directed pure-conversion edge {@code from -> to} exchanging in for out. */
-    private record ConvEdge(IAEItemStack to, long in, long out) {
+    private static final class ConvEdge {
+        final IAEItemStack to;
+        final long in;
+        final long out;
+
+        ConvEdge(IAEItemStack to, long in, long out) {
+            this.to = to;
+            this.in = in;
+            this.out = out;
+        }
     }
 
     /** Pure-conversion-ring value conservation guard (adds missing, never removes). */
@@ -1227,10 +1236,10 @@ public class CraftingVM {
         for (IAEItemStack key : reachableKeys) {
             if (key == null) continue;
             List<ICraftingPatternDetails> patterns = (allPatternsResolver != null)
-                    ? allPatternsResolver.apply(key) : List.of();
+                    ? allPatternsResolver.apply(key) : java.util.Collections.<ICraftingPatternDetails>emptyList();
             if (patterns.isEmpty()) {
                 ICraftingPatternDetails chosen = patternResolver != null ? patternResolver.apply(key) : null;
-                if (chosen != null) patterns = List.of(chosen);
+                if (chosen != null) patterns = java.util.Collections.singletonList(chosen);
             }
             for (ICraftingPatternDetails details : patterns) {
                 if (details == null) continue;
@@ -1461,7 +1470,7 @@ public class CraftingVM {
                 java.util.Iterator<IAEItemStack> it = (java.util.Iterator<IAEItemStack>) frame[1];
                 if (it == null) {
                     List<IAEItemStack> next = adj.get(node);
-                    it = (next == null ? List.<IAEItemStack>of() : next).iterator();
+                    it = (next == null ? java.util.Collections.<IAEItemStack>emptyList() : next).iterator();
                 }
                 boolean advanced = false;
                 while (it.hasNext()) {
@@ -1547,13 +1556,15 @@ public class CraftingVM {
             IItemList<IAEItemStack> snap = null;
             try {
                 if (networkKey instanceof IGrid g) {
-                    var sg = g.getCache(appeng.api.networking.storage.IStorageGrid.class);
+                    appeng.api.networking.storage.IStorageGrid sg =
+                            g.getCache(appeng.api.networking.storage.IStorageGrid.class);
                     if (sg != null) {
-                        var inv = sg.getInventory(appeng.api.AEApi.instance().storage()
-                                .getStorageChannel(appeng.api.storage.channels.IItemStorageChannel.class));
+                        appeng.api.storage.channels.IItemStorageChannel channel =
+                                appeng.api.AEApi.instance().storage()
+                                        .getStorageChannel(appeng.api.storage.channels.IItemStorageChannel.class);
+                        appeng.api.storage.IMEMonitor<IAEItemStack> inv = sg.getInventory(channel);
                         if (inv != null) {
-                            snap = appeng.api.AEApi.instance().storage()
-                                    .getStorageChannel(appeng.api.storage.channels.IItemStorageChannel.class).createList();
+                            snap = channel.createList();
                             inv.getAvailableItems(snap);
                         }
                     }
