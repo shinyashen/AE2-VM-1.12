@@ -148,6 +148,10 @@ public final class BenchAEItemStack implements IAEItemStack {
     }
 
     @Override
+    public void writeToPacket(io.netty.buffer.ByteBuf buf) throws java.io.IOException {
+    }
+
+    @Override
     public IAEItemStack empty() {
         return copy().setStackSize(0);
     }
@@ -158,8 +162,19 @@ public final class BenchAEItemStack implements IAEItemStack {
     }
 
     @Override
+    public boolean isFluid() {
+        return false;
+    }
+
+    @Override
     public ItemStack asItemStackRepresentation() {
         return createItemStack();
+    }
+
+    @Override
+    public appeng.api.storage.IStorageChannel getChannel() {
+        // not exercised by the VM path; avoid touching the AE2 registry
+        return null;
     }
 
     @Override
