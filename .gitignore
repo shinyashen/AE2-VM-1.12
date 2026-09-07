@@ -116,7 +116,7 @@ gradle-app.setting
 # Avoid ignoring Gradle wrapper jar file (.jar files are usually ignored)
 !gradle-wrapper.jar
 
-gradle.properties
+# gradle.properties (tracked: project build config)
 __pycache__/
 CF-DESCRIPTION.md
 REWRITE-PLAN.md
