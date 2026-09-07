@@ -19,10 +19,27 @@ import java.util.List;
 public final class BenchPatternDetails implements ICraftingPatternDetails {
     private final IAEItemStack[] condensedInputs;
     private final IAEItemStack[] outputs;
+    private final boolean canSubstitute;
+    private final List<IAEItemStack> substitutes;
 
     private BenchPatternDetails(IAEItemStack[] condensedInputs, IAEItemStack[] outputs) {
+        this(condensedInputs, outputs, false, null);
+    }
+
+    private BenchPatternDetails(IAEItemStack[] condensedInputs, IAEItemStack[] outputs,
+                                boolean canSubstitute, List<IAEItemStack> substitutes) {
         this.condensedInputs = condensedInputs;
         this.outputs = outputs;
+        this.canSubstitute = canSubstitute;
+        this.substitutes = substitutes;
+    }
+
+    /** Pattern whose inputs accept one substitute variant (replacement enabled). */
+    public static BenchPatternDetails withSubstitute(long[][] inputs, long[][] outputs, String subId) {
+        BenchPatternDetails p = processing(inputs, outputs);
+        List<IAEItemStack> subs = new ArrayList<>();
+        subs.add(new BenchAEItemStack(subId, 1));
+        return new BenchPatternDetails(p.condensedInputs, p.outputs, true, subs);
     }
 
     /** inputs: {id, amount} pairs; outputs: first is primary, rest are byproducts. */
@@ -77,12 +94,12 @@ public final class BenchPatternDetails implements ICraftingPatternDetails {
 
     @Override
     public boolean canSubstitute() {
-        return false;
+        return canSubstitute;
     }
 
     @Override
     public List<IAEItemStack> getSubstituteInputs(int slot) {
-        return java.util.Collections.emptyList();
+        return substitutes == null ? java.util.Collections.<IAEItemStack>emptyList() : substitutes;
     }
 
     @Override

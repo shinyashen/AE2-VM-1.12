@@ -441,12 +441,10 @@ public class CraftingVM {
                                 availSim += simulation.extract(variant, req, true);
                             }
                         } else if (PatternCompiler.isProcessingInput(tk)) {
-                            ensureRealStockSnapshot();
-                            if (realStockCache != null) {
-                                for (IAEItemStack v : realStockCache.findFuzzy(tk, FuzzyMode.IGNORE_ALL)) {
-                                    if (v.isSameType(tk)) continue;
-                                    availSim += simulation.extract(v, req, true);
-                                }
+                            // Processing exact slot: same-item NBT variants count.
+                            for (IAEItemStack v : fuzzyFamilyOf(tk)) {
+                                if (v.isSameType(tk)) continue;
+                                availSim += simulation.extract(v, req, true);
                             }
                         }
                         long shortfall = req - availSim;
@@ -1587,19 +1585,14 @@ public class CraftingVM {
     }
 
     /**
-     * Effective fuzzy family for {@code key}: substitution group +, for
-     * processing inputs, the same-item NBT variants present in the network.
+     * Effective fuzzy family for {@code key}: the compile-time substitution
+     * group plus, for processing inputs, the same-item NBT variants present
+     * in the network stock (delegated to the simulation state so tests and
+     * grid-detached runs behave identically to the live network).
      */
     private List<IAEItemStack> fuzzyFamilyOf(IAEItemStack key) {
-        Set<IAEItemStack> group = PatternCompiler.getFuzzyGroup(key);
-        if (!PatternCompiler.isProcessingInput(key)) {
-            return new ArrayList<>(group);
-        }
-        ensureRealStockSnapshot();
-        Set<IAEItemStack> family = new HashSet<>(group);
-        if (realStockCache != null) {
-            family.addAll(realStockCache.findFuzzy(key, FuzzyMode.IGNORE_ALL));
-        }
+        Set<IAEItemStack> family = new HashSet<>(PatternCompiler.getFuzzyGroup(key));
+        family.addAll(simulation.findFuzzyFamily(key));
         return new ArrayList<>(family);
     }
 
