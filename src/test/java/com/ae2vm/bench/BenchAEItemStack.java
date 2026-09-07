@@ -163,6 +163,12 @@ public final class BenchAEItemStack implements IAEItemStack {
     }
 
     @Override
+    public appeng.api.storage.IStorageChannel getChannel() {
+        // not exercised by the VM path; avoid touching the AE2 registry
+        return null;
+    }
+
+    @Override
     public boolean fuzzyComparison(IAEItemStack other, FuzzyMode mode) {
         return other != null && other.getItem() == getItem();
     }
