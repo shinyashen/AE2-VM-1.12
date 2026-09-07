@@ -1,0 +1,13 @@
+{
+  "package": "com.ae2vm.mixin",
+  "required": false,
+  "refmap": "mixins.ae2_vm_112.refmap.json",
+  "target": "@env(DEFAULT)",
+  "minVersion": "0.8.5",
+  "compatibilityLevel": "JAVA_8",
+  "mixins": [
+    "PktCraftingTreeDataMixin"
+  ],
+  "client": [],
+  "server": []
+}
