@@ -72,8 +72,7 @@ public final class VMRootNode extends CraftingTreeNode {
                 throw new CraftBranchFailure(requestedOutput, amount);
             }
             return requestedOutput.copy().setStackSize(amount);
-        } catch (CraftBranchFailure | InterruptedException failure) {
-            // The native job must keep its cancellation/pause semantics intact.
+        } catch (CraftBranchFailure failure) {
             throw failure;
         } catch (Throwable failure) {
             nativeFallback = true;
