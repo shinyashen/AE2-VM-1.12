@@ -73,6 +73,13 @@ class VmSemanticsTest {
         assertFalse(plan.isSimulation(), "amplifier must be feasible: missing=" + dump(plan));
         // request 4, stocked seed 1, net gain 1 per craft -> 3 crafts
         assertEquals(3L, plan.getPatternTimes().get(amp));
+
+        // no A stocked -> the loop cannot be primed -> exactly A=1 missing
+        // (the original RecursionReferenceTest "恰报缺 1 种子" semantics)
+        BenchSimulationState starved = new BenchSimulationState().seed("B", 3);
+        VMPlan starvedPlan = Bench.run(amp, 4, starved);
+        assertTrue(starvedPlan.isSimulation(), "starved amplifier must report its seed");
+        assertEquals(1L, starvedPlan.getMissingItems().get(key(0)));
     }
 
     /** Catalyst feedback loop A -> 2B; 2B + C -> E + D: closes with C as working capital. */
@@ -85,6 +92,13 @@ class VmSemanticsTest {
         Bench.register(p1);
         Bench.register(p2);
         Bench.register(p3);
+        // Without the A seed the loop cannot prime: exactly A=1 is missing
+        // (original CatalystFeedbackLoopTest "starved" semantics).
+        BenchSimulationState starved = new BenchSimulationState().seed("C", 1);
+        VMPlan starvedPlan = Bench.run(p2, 1, starved);
+        assertTrue(starvedPlan.isSimulation(), "starved loop must report its seed");
+        assertEquals(1L, starvedPlan.getMissingItems().get(key(0)));
+
         // With A and C stocked the loop must close completely.
         BenchSimulationState seeded = new BenchSimulationState().seed("A", 1).seed("C", 1);
         VMPlan okPlan = Bench.run(p2, 1, seeded);
