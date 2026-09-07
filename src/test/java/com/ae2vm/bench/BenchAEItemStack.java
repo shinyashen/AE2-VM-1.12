@@ -158,6 +158,11 @@ public final class BenchAEItemStack implements IAEItemStack {
     }
 
     @Override
+    public boolean isFluid() {
+        return false;
+    }
+
+    @Override
     public ItemStack asItemStackRepresentation() {
         return createItemStack();
     }
