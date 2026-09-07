@@ -21,7 +21,7 @@ public final class AE2VMCraftingRegistry {
 
     /** Registers a marker (substring matched against requester class names). */
     public static void register(String marker) {
-        if (marker != null && !marker.isBlank()) {
+        if (marker != null && !marker.trim().isEmpty()) {
             REGISTERED.add(marker);
         }
     }

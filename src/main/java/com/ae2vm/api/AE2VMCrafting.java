@@ -9,6 +9,7 @@ import com.ae2vm.AE2VM;
 import com.ae2vm.compat.AE2FCCompat;
 import com.ae2vm.compat.PatternCompat;
 import com.ae2vm.compiler.PatternCompiler;
+import com.ae2vm.vm.CraftingBytecode;
 import com.ae2vm.vm.CraftingVM;
 import com.ae2vm.vm.NetworkCraftingSandbox;
 import com.ae2vm.vm.VMPlan;
@@ -47,7 +48,7 @@ public final class AE2VMCrafting {
     /** Cached per-grid VM instance: the JIT bundle cache persists across requests. */
     public static CraftingVM vmFor(IGrid grid) {
         return VM_CACHE.computeIfAbsent(grid,
-                g -> new CraftingVM(g, key -> resolve(g, new ConcurrentHashMap<>(), key)));
+                g -> new CraftingVM(g, key -> null));
     }
 
     /**
