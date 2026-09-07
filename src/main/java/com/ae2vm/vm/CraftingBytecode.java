@@ -130,7 +130,11 @@ public class CraftingBytecode {
             }
             IAEItemStack copy = key.copy();
             copy.reset();
-            copy.setStackSize(1);
+            // Preserve the encoded size: for AE2FC fluid drops the AE stack
+            // size IS the fluid amount and the CALL_BY_KEY resolver needs it
+            // to build the packet key. Type equality ignores size, so plain
+            // items are unaffected.
+            copy.setStackSize(key.getStackSize());
             constantPool.add(copy);
             return constantPool.size() - 1;
         }
