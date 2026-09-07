@@ -2,6 +2,7 @@ package com.ae2vm.bench;
 
 import appeng.api.storage.data.IAEItemStack;
 import com.ae2vm.vm.VMPlan;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -19,6 +20,13 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * 4="E". The first output of a pattern is its primary output.
  */
 class VmSemanticsTest {
+
+    @BeforeAll
+    static void bootstrap() {
+        // Forge guards Items/Blocks behind Bootstrap; vanilla registration is
+        // self-contained and safe to run inside a plain JVM.
+        net.minecraft.init.Bootstrap.register();
+    }
 
     @BeforeEach
     void reset() {
