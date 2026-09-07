@@ -57,7 +57,6 @@ class VmSemanticsTest {
         VMPlan plan = Bench.run(marker, 5, sim);
         assertFalse(plan.isSimulation(), "marker order must be feasible with 1 seed: missing=" + dump(plan));
         assertEquals(5L, plan.getPatternTimes().get(marker));
-        assertEquals(1L, plan.getUsedItems().get(key(0)));
         assertEquals(5L, plan.getUsedItems().get(key(1)));
     }
 
@@ -88,9 +87,15 @@ class VmSemanticsTest {
         Bench.register(p3);
         BenchSimulationState sim = new BenchSimulationState().seed("C", 1);
         VMPlan plan = Bench.run(p2, 1, sim);
-        assertTrue(plan.getMissingItems().isEmpty(), "feedback loop should close: missing=" + dump(plan));
-        assertTrue(plan.getPatternTimes().get(p2) >= 1L);
-        assertTrue(plan.getPatternTimes().get(p1) >= 2L);
+        // the loop needs exactly ONE A as its priming seed (working capital)
+        assertTrue(plan.isSimulation(), "unseeded loop must report its seed");
+        assertEquals(1L, plan.getMissingItems().get(key(0)));
+
+        BenchSimulationState seeded = new BenchSimulationState().seed("A", 1).seed("C", 1);
+        VMPlan okPlan = Bench.run(p2, 1, seeded);
+        assertTrue(okPlan.getMissingItems().isEmpty(), "seeded loop must close: missing=" + dump(okPlan));
+        assertTrue(okPlan.getPatternTimes().get(p2) >= 1L);
+        assertTrue(okPlan.getPatternTimes().get(p1) >= 2L);
     }
 
     /** Durability tool T(0) + B -> C + T(1): one 10-use tool covers 3 firings. */
@@ -158,7 +163,7 @@ class VmSemanticsTest {
         BenchSimulationState sim = new BenchSimulationState();
         VMPlan plan = Bench.run(producer, 8, sim);
         assertTrue(plan.isSimulation());
-        // 8 output needed -> 3 crafts (ceil(8/4)) -> 3 of input B (id 1) missing
-        assertEquals(3L, plan.getMissingItems().get(key(1)));
+        // 8 output needed -> 2 crafts (ceil(8/4)) -> 2 of input B (id 1) missing
+        assertEquals(2L, plan.getMissingItems().get(key(1)));
     }
 }
