@@ -264,6 +264,17 @@ public final class VMRootNode extends CraftingTreeNode {
                 for (ICraftingPatternDetails candidate : cg.getCraftingFor(key, null, -1, world)) {
                     return candidate;
                 }
+                // AE2FC fluid patterns are indexed by the amount-carrying
+                // packet key, not by the canonical drop form.
+                if (com.ae2vm.compat.AE2FCCompat.isFluidFakeItem(key)) {
+                    IAEItemStack packet = com.ae2vm.compat.AE2FCCompat.packFluidPacket(
+                            key, key.getStackSize());
+                    if (packet != null && !packet.isSameType(key)) {
+                        for (ICraftingPatternDetails candidate : cg.getCraftingFor(packet, null, -1, world)) {
+                            return candidate;
+                        }
+                    }
+                }
                 return null;
             }));
         }

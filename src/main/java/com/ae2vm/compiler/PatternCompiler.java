@@ -213,6 +213,41 @@ public final class PatternCompiler {
      * firings a full unit survives for a degrading tool.
      */
     public static long[] detectReturnedInput(ICraftingPatternDetails pattern, IAEItemStack input) {
+        // 1) Crafting-pattern container-item semantics: the crafting executor
+        //    hands the container back after every firing (native
+        //    CraftingTreeProcess isPartContainer / Item#getContainerItem),
+        //    so a same-key container is a catalyst and a degrading same-item
+        //    container is a finite-use tool. Recipe remainders never appear in
+        //    the pattern outputs, hence the dedicated probe. A different-item
+        //    container stays a plain consumed input (same as the original VM).
+        if (!isProcessingPattern(pattern)) {
+            try {
+                net.minecraft.item.ItemStack src = input.copy().setStackSize(1L).createItemStack();
+                if (src != null && !src.isEmpty() && src.getItem().hasContainerItem(src)) {
+                    net.minecraft.item.ItemStack cont = src.getItem().getContainerItem(src);
+                    IAEItemStack contAE = cont == null || cont.isEmpty()
+                            ? null : appeng.util.item.AEItemStack.fromItemStack(cont);
+                    if (contAE != null) {
+                        if (contAE.isSameType(input)) {
+                            return new long[]{0L, Long.MAX_VALUE};
+                        }
+                        if (contAE.getItem() == input.getItem() && input.getItem().isDamageable()) {
+                            int step = contAE.getItemDamage() - input.getItemDamage();
+                            if (step > 0) {
+                                long uses = (input.getItem().getMaxDamage()
+                                        - input.getItemDamage()) / step;
+                                if (uses > 0) {
+                                    return new long[]{1L, uses};
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (Throwable ignored) {
+                // Fall through to the pattern-output probe.
+            }
+        }
+        // 2) Explicit pattern-output return (processing catalysts / tools).
         IAEItemStack[] outputs = pattern.getOutputs();
         if (outputs == null) {
             return null;
@@ -283,7 +318,18 @@ public final class PatternCompiler {
                     normalizedInput = input;
                 }
                 long perCraft = normalizedInput.getStackSize();
-                IAEItemStack inputKey = normalize(normalizedInput);
+                // Keep the encoded fluid amount on the key (drop AE size = mB):
+                // CALL_BY_KEY resolution queries the grid with a packet built
+                // from this amount, and the pattern-provider index is keyed by
+                // the amount-carrying packet. Ordinary items stay size-normalized.
+                IAEItemStack inputKey;
+                if (AE2FCCompat.isFluidFakeItem(normalizedInput)) {
+                    inputKey = normalizedInput.copy();
+                    inputKey.reset();
+                    inputKey.setStackSize(normalizedInput.getStackSize());
+                } else {
+                    inputKey = normalize(normalizedInput);
+                }
 
                 // Replacement (substitute) slot variants → FUZZY_SLOT + per-variant EXTRACTs.
                 List<IAEItemStack> variants = new ArrayList<>();
