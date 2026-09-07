@@ -37,12 +37,13 @@
 
 ## 测试
 
-`gradlew build` 内置 JUnit5 语义测试 7 例全绿:标志物种子、递归放大器净增修正、
-催化剂反馈环 working-capital、耐久工具闭式、子项库存感知、换算环守恒、原料短缺报量。
+`gradlew build` 内置 JUnit5 语义测试 **15 例全绿**:标志物种子、递归放大器净增修正
+(含无种子恰报缺 1)、催化剂反馈环 working-capital、耐久工具闭式、耐久链、子项库存
+感知、换算环守恒、原料短缺报量、斐波那契链(11 级 O(patterns))、JIT 跨请求复用、
+自增长剪枝(有库存/无库存)、数量 1 边界、替代槽(FUZZY_SLOT)、处理配方默认模糊。
 
 ## 待办
 
-- [ ] 扩充测试族(斐波那契长链、JIT 跨请求复用、耐久链等原版基准)
 - [ ] 公共 API 入口(等价 AE2VMCrafting.calculate)
 - [ ] 第三方 requester 注册表(AE2VMCraftingRegistry 白名单)
 
