@@ -82,7 +82,9 @@
 
 ### 确认跳过(与原版的刻意差异)
 
-- Thunderbolt-Core 运行时路由层:1.12 无此 mod;其 planner 仅作测试基线引入
+- Thunderbolt-Core **运行时路由层**(mod 本体):仅存在于 NeoForge 1.21.1,1.12 无构建也无法运行;
+  原版以"注册引擎"方式借它路由计算请求,本移植的根节点替换已原生完成同等接入,故无需路由层。
+  注意区分:Thunderbolt 的 **planner 纯 Java 规划库不受此限**,已 vendor 进测试源集作参考对拍基线(见"测试"一节)
 - Cloth Config UI:已用 Forge Config 替代
 - blocked-mods 崩溃逻辑(原版作者针对特定 mod 的对抗功能,1.12 无对应物)
 - `ae2lt-recipes/` 基准配方 JSON(1.21 语义资产,不可直接复用)
