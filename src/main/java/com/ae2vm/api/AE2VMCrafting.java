@@ -1,18 +1,24 @@
 package com.ae2vm.api;
 
+import appeng.api.AEApi;
 import appeng.api.networking.IGrid;
 import appeng.api.networking.crafting.ICraftingGrid;
 import appeng.api.networking.crafting.ICraftingPatternDetails;
 import appeng.api.networking.storage.IStorageGrid;
+import appeng.api.storage.channels.IItemStorageChannel;
+import appeng.api.storage.IMEMonitor;
 import appeng.api.storage.data.IAEItemStack;
-import com.ae2vm.AE2VM;
 import com.ae2vm.compat.AE2FCCompat;
 import com.ae2vm.compat.PatternCompat;
 import com.ae2vm.compiler.PatternCompiler;
 import com.ae2vm.vm.CraftingBytecode;
 import com.ae2vm.vm.CraftingVM;
 import com.ae2vm.vm.NetworkCraftingSandbox;
+import com.ae2vm.vm.VMCounter;
 import com.ae2vm.vm.VMPlan;
+import net.minecraft.item.Item;
+import net.minecraft.item.ItemStack;
+import net.minecraft.world.World;
 
 import java.util.Collection;
 import java.util.LinkedHashSet;
@@ -39,10 +45,20 @@ import java.util.concurrent.ConcurrentHashMap;
  *   form already IS the normalized key.)
  */
 public final class AE2VMCrafting {
-    private static final java.util.concurrent.ConcurrentHashMap<IGrid, CraftingVM> VM_CACHE =
+    private static final ConcurrentHashMap<IGrid, CraftingVM> VM_CACHE =
             new ConcurrentHashMap<>();
 
     private AE2VMCrafting() {
+    }
+
+    /**
+     * 1.12 parity of the original's {@code AE2VMCrafting.isLoaded()}: the class
+     * is shipped inside the AE2 VM jar, so successfully referencing it means the
+     * mod is installed. Third-party mods should still guard the class access
+     * itself (e.g. {@code Loader.isModLoaded}) — see the original README.
+     */
+    public static boolean isLoaded() {
+        return true;
     }
 
     /** Cached per-grid VM instance: the JIT bundle cache persists across requests. */
@@ -57,7 +73,7 @@ public final class AE2VMCrafting {
      * After execution the plan's remaining request overflow is available via
      * {@code vmFor(grid).getBatchRemainder()} (requests beyond Long.MAX_VALUE).
      */
-    public static VMPlan calculate(IGrid grid, net.minecraft.world.World world,
+    public static VMPlan calculate(IGrid grid, World world,
                                    IAEItemStack what, long amount) {
         ICraftingGrid craftingGrid = grid.getCache(ICraftingGrid.class);
         if (craftingGrid == null) {
@@ -92,6 +108,16 @@ public final class AE2VMCrafting {
     }
 
     /**
+     * API parity with the original's blocking entry point. The 1.12 job model is
+     * synchronous end to end, so this is exactly {@link #calculate}; kept as a
+     * named overload so third-party call sites port unchanged.
+     */
+    public static VMPlan calculateSync(IGrid grid, World world,
+                                       IAEItemStack what, long amount) {
+        return calculate(grid, world, what, amount);
+    }
+
+    /**
      * ignore-fix (v1.10.x parity): correct a simulated plan's requested-key
      * missing against the LIVE network stock.
      */
@@ -106,10 +132,9 @@ public final class AE2VMCrafting {
         long avail;
         try {
             IStorageGrid sg = grid.getCache(IStorageGrid.class);
-            appeng.api.storage.channels.IItemStorageChannel channel =
-                    appeng.api.AEApi.instance().storage()
-                            .getStorageChannel(appeng.api.storage.channels.IItemStorageChannel.class);
-            appeng.api.storage.IMEMonitor<IAEItemStack> inv = sg.getInventory(channel);
+            IItemStorageChannel channel =
+                    AEApi.instance().storage().getStorageChannel(IItemStorageChannel.class);
+            IMEMonitor<IAEItemStack> inv = sg.getInventory(channel);
             IAEItemStack stored = inv == null ? null : inv.getStorageList().findPrecise(what);
             avail = stored == null ? 0L : Math.max(0L, stored.getStackSize());
         } catch (Throwable t) {
@@ -119,9 +144,9 @@ public final class AE2VMCrafting {
             return rawPlan;
         }
         long usable = Math.min(avail, missingCount);
-        com.ae2vm.vm.VMCounter fixedUsed = rawPlan.getUsedItems();
+        VMCounter fixedUsed = rawPlan.getUsedItems();
         fixedUsed.add(what, usable);
-        com.ae2vm.vm.VMCounter fixedMissing = new com.ae2vm.vm.VMCounter();
+        VMCounter fixedMissing = new VMCounter();
         for (var e : rawPlan.getMissingItems().entrySet()) {
             if (!e.getKey().isSameType(what)) {
                 fixedMissing.add(e.getKey(), e.getValue());
@@ -137,7 +162,7 @@ public final class AE2VMCrafting {
     private static ICraftingPatternDetails findRootPattern(ICraftingGrid grid,
                                                            IAEItemStack what,
                                                            long amount,
-                                                           net.minecraft.world.World world) {
+                                                           World world) {
         IAEItemStack key = what.copy();
         long amountHint = key.getStackSize();
         key.reset();
@@ -166,7 +191,7 @@ public final class AE2VMCrafting {
      * Every result is verified to actually output the requested key.
      */
     private static ICraftingPatternDetails resolve(IGrid grid,
-                                                   net.minecraft.world.World world,
+                                                   World world,
                                                    Map<IAEItemStack, ICraftingPatternDetails> cache,
                                                    IAEItemStack key) {
         if (key == null) {
@@ -207,10 +232,10 @@ public final class AE2VMCrafting {
 
         // T3: registry-pure key (same item, no NBT, damage 0) — verified.
         try {
-            net.minecraft.item.Item item = key.getItem();
+            Item item = key.getItem();
             if (item != null) {
                 IAEItemStack pureKey = appeng.util.item.AEItemStack.fromItemStack(
-                        new net.minecraft.item.ItemStack(item, 1, 0));
+                        new ItemStack(item, 1, 0));
                 if (pureKey != null && !pureKey.isSameType(key)) {
                     subs = craftingGrid.getCraftingFor(pureKey, null, -1, world);
                     if (subs != null && !subs.isEmpty()) {

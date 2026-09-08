@@ -2,9 +2,9 @@ package com.ae2vm.common;
 
 import com.ae2vm.AE2VM;
 import com.ae2vm.compiler.PatternCompiler;
-import net.minecraftforge.fml.common.event.FMLPreInitializationEvent;
+import com.ae2vm.config.AE2VMConfig;
 import net.minecraftforge.fml.common.Loader;
-import net.minecraftforge.fml.common.event.FMLPostInitializationEvent;
+import net.minecraftforge.fml.common.event.FMLPreInitializationEvent;
 
 public class CommonProxy {
     public void preInit(FMLPreInitializationEvent event) {
@@ -17,7 +17,7 @@ public class CommonProxy {
     public void postInit() {
         // Pre-compile patterns of all loaded AE2 providers (parity with the
         // original's PatternProviderLogicMixin encode-time compilation).
-        if (com.ae2vm.config.AE2VMConfig.proxyEnabled && Loader.isModLoaded("appliedenergistics2")) {
+        if (AE2VMConfig.proxyEnabled && Loader.isModLoaded("appliedenergistics2")) {
             int compiled = PatternCompiler.getCompiledCount();
             AE2VM.LOGGER.info("[AE2-VM] lazily compiles patterns on first request (pre-compiled at startup: {})", compiled);
         }

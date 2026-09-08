@@ -3,6 +3,7 @@ package com.ae2vm.vm;
 import appeng.api.config.FuzzyMode;
 import appeng.api.networking.IGrid;
 import appeng.api.networking.crafting.ICraftingPatternDetails;
+import appeng.api.storage.channels.IItemStorageChannel;
 import appeng.api.storage.data.IAEItemStack;
 import appeng.api.storage.data.IItemList;
 import com.ae2vm.AE2VM;
@@ -10,8 +11,11 @@ import com.ae2vm.compiler.PatternCompiler;
 
 import java.math.BigInteger;
 import java.util.ArrayDeque;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Deque;
+import java.util.Iterator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -141,20 +145,20 @@ public class CraftingVM {
 
     private static final class Bundle {
         BigInteger bytes = BigInteger.ZERO;
-        final Map<IAEItemStack, BigInteger> used = new java.util.concurrent.ConcurrentHashMap<>();
-        final Map<IAEItemStack, BigInteger> emitted = new java.util.concurrent.ConcurrentHashMap<>();
-        final Map<IAEItemStack, BigInteger> missing = new java.util.concurrent.ConcurrentHashMap<>();
-        final Map<IAEItemStack, BigInteger> internal = new java.util.concurrent.ConcurrentHashMap<>();
-        final Map<ICraftingPatternDetails, BigInteger> patterns = new java.util.concurrent.ConcurrentHashMap<>();
+        final Map<IAEItemStack, BigInteger> used = new ConcurrentHashMap<>();
+        final Map<IAEItemStack, BigInteger> emitted = new ConcurrentHashMap<>();
+        final Map<IAEItemStack, BigInteger> missing = new ConcurrentHashMap<>();
+        final Map<IAEItemStack, BigInteger> internal = new ConcurrentHashMap<>();
+        final Map<ICraftingPatternDetails, BigInteger> patterns = new ConcurrentHashMap<>();
         // DIRECT sub-pattern needs (crafts / item amounts) — subtree effects are NOT
         // folded in; they are applied via these needs so scaling never double-counts.
-        final Map<IAEItemStack, BigInteger> needs = new java.util.concurrent.ConcurrentHashMap<>();
-        final Map<IAEItemStack, BigInteger> itemNeeds = new java.util.concurrent.ConcurrentHashMap<>();
-        final Map<IAEItemStack, BigInteger> fuzzyItemNeeds = new java.util.concurrent.ConcurrentHashMap<>();
+        final Map<IAEItemStack, BigInteger> needs = new ConcurrentHashMap<>();
+        final Map<IAEItemStack, BigInteger> itemNeeds = new ConcurrentHashMap<>();
+        final Map<IAEItemStack, BigInteger> fuzzyItemNeeds = new ConcurrentHashMap<>();
         // One-time catalyst seeds (NOT scaled by craft count).
-        final Map<IAEItemStack, BigInteger> seeds = new java.util.concurrent.ConcurrentHashMap<>();
+        final Map<IAEItemStack, BigInteger> seeds = new ConcurrentHashMap<>();
         // Finite-use tool rates (key → [amount, uses]) — NOT scaled.
-        final Map<IAEItemStack, long[]> durability = new java.util.concurrent.ConcurrentHashMap<>();
+        final Map<IAEItemStack, long[]> durability = new ConcurrentHashMap<>();
 
         Bundle scale(long factor) { return scale(BigInteger.valueOf(factor)); }
 
@@ -1260,10 +1264,10 @@ public class CraftingVM {
         for (IAEItemStack key : reachableKeys) {
             if (key == null) continue;
             List<ICraftingPatternDetails> patterns = (allPatternsResolver != null)
-                    ? allPatternsResolver.apply(key) : java.util.Collections.<ICraftingPatternDetails>emptyList();
+                    ? allPatternsResolver.apply(key) : Collections.<ICraftingPatternDetails>emptyList();
             if (patterns.isEmpty()) {
                 ICraftingPatternDetails chosen = patternResolver != null ? patternResolver.apply(key) : null;
-                if (chosen != null) patterns = java.util.Collections.singletonList(chosen);
+                if (chosen != null) patterns = Collections.singletonList(chosen);
             }
             for (ICraftingPatternDetails details : patterns) {
                 if (details == null) continue;
@@ -1491,10 +1495,10 @@ public class CraftingVM {
                     onStack.add(nw);
                 }
                 @SuppressWarnings("unchecked")
-                java.util.Iterator<IAEItemStack> it = (java.util.Iterator<IAEItemStack>) frame[1];
+                Iterator<IAEItemStack> it = (Iterator<IAEItemStack>) frame[1];
                 if (it == null) {
                     List<IAEItemStack> next = adj.get(node);
-                    it = (next == null ? java.util.Collections.<IAEItemStack>emptyList() : next).iterator();
+                    it = (next == null ? Collections.<IAEItemStack>emptyList() : next).iterator();
                 }
                 boolean advanced = false;
                 while (it.hasNext()) {
@@ -1588,9 +1592,8 @@ public class CraftingVM {
                     appeng.api.networking.storage.IStorageGrid sg =
                             g.getCache(appeng.api.networking.storage.IStorageGrid.class);
                     if (sg != null) {
-                        appeng.api.storage.channels.IItemStorageChannel channel =
-                                appeng.api.AEApi.instance().storage()
-                                        .getStorageChannel(appeng.api.storage.channels.IItemStorageChannel.class);
+                        IItemStorageChannel channel = appeng.api.AEApi.instance().storage()
+                                .getStorageChannel(IItemStorageChannel.class);
                         appeng.api.storage.IMEMonitor<IAEItemStack> inv = sg.getInventory(channel);
                         if (inv != null) {
                             snap = channel.createList();
