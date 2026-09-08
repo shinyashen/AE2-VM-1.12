@@ -246,13 +246,15 @@ jar {
 }
 
 compileTestJava {
-    sourceCompatibility = targetCompatibility = 8
+    // Tests run on the modern toolchain (not part of the shipped jar),
+    // so the vendored Java-17 planner sources compile without Jabel.
+    sourceCompatibility = targetCompatibility = 17
 }
 
 test {
     useJUnitPlatform()
     javaLauncher.set(javaToolchains.launcherFor {
-        languageVersion = JavaLanguageVersion.of(8)
+        languageVersion = JavaLanguageVersion.of(17)
     })
     if (propertyBool('show_testing_output')) {
         testLogging {
