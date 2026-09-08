@@ -40,7 +40,8 @@ public final class BenchSimulationState implements SimulationState {
         return seedKey(new BenchAEItemStack(id, damage, maxDamage, 1), amount);
     }
 
-    private BenchSimulationState seedKey(BenchAEItemStack key, long amount) {
+    /** Package-visible so the reference-suite translation can seed profiled keys. */
+    BenchSimulationState seedKey(BenchAEItemStack key, long amount) {
         stock.merge(key, amount, Long::sum);
         return this;
     }
