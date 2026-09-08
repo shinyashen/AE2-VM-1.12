@@ -4,8 +4,11 @@ dependencies {
     // Include OSXNarratorBlocker by default for the dev env, for M1+ Macs
     runtimeOnly 'com.cleanroommc:osxnarratorblocker:1.0'
 
-    // AE2 Extended Life v0.56.4 (target API) - provides appeng classes at compile time
-    implementation(rfg.deobf("curse.maven:ae2-extended-life-570458:5147702"))
+    // AE2 Extended Life v0.56.7 (latest 1.12.2 release, compile baseline).
+    // Runtime range: every published AE2UEL build works, from the first
+    // CurseForge upload (rv6-stable-7-extended_life-v49t, 2022-01) through
+    // v0.56.7 — verified member-by-member against the AE2UEL git history.
+    implementation(rfg.deobf("curse.maven:ae2-extended-life-570458:6302098"))
     // AE2 Fluid Craft Rework (AE2-UEL org build, 2.6.6-r) - the primary
     // compat target for fluid (fake item) pattern support. The API surface the
     // compat layer uses (FakeFluids / FakeItemRegister / FCItems.FLUID_DROP,
