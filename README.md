@@ -39,7 +39,7 @@
 (模拟通过、缺料展示、CPU 执行),失败时回退原生树。
 键类型相应从 `AEKey` 换为 `IAEItemStack` 类型键(equals = isSameType)。
 
-## 测试(151/151 全绿)
+## 测试(159/159 全绿)
 
 `gradlew build` 内置 JUnit5 语义测试(测试源集以 JDK 17 工具链编译运行,不进发布 jar)。
 原仓库的可移植测试族已全部落地,断言与源语义逐条对拍:
@@ -67,6 +67,11 @@
   库存感知子合成 off-by-one 矩阵、可合成流体最后一份送达、x1/x2 边界、子项/流体部分库存。
 - **VMTest**(6 例):字节码 Builder / CALL_BY_KEY / 请求包裹 / DIV_ROUNDUP 单元测试。
 
+- **流体兼容面**(AE2FCCompatTest 8 例):以**真实 AE2 Fluid Craft Rework 类**为测试对象
+  (纯 JVM 下手工填充 ObjectHolder 字段并注册 fake-item handler):drop 的 NBT 身份与
+  mB 承载(AE 栈大小)、long 数量解码(identity-only ItemStack 探测)、包键 NBT 编码与
+  超量拒绝、编译期包键→drop 规范化,以及以真实 AE2 物品键驱动的"可合成流体部分库存"
+  VM 全链路(库存感知切分 + ceil 缺口补合成)。
 - **能力总闸套件**(Ae2VmReferenceCapabilitySuite 39 例 + Ae2VmBoundaryCapabilitySuite 37 例 +
   FalsePositiveDiagnostic 1 例):经 1.12 翻译层(`Ae2VmReferencePlanner`)驱动 VM 走完
   Thunderbolt 参考套件全部 13 族 × 3 库存模式。参考图的 1.21 概念按真实 1.12 样板形状编码:
@@ -99,17 +104,13 @@
 
 ### 测试(剩余缺口)
 
-| 缺口 | 用例数 | 说明 |
-|---|---|---|
-| 流体测试的 AE2FC 注册表面 | — | 数值语义已按"数量型键"移植;真实假物品键的注册表依赖列入实机验证 |
-
-原仓库其余测试(含能力总闸套件 x2、FalsePositiveDiagnosticTest)已全部移植完毕。
+原仓库全部测试(18 类 136 用例 + 能力总闸套件 x2 + FalsePositiveDiagnosticTest)已
+全部移植完毕,并以真实 AE2FC 类补齐了原仓库未覆盖的流体兼容面。
 `multi-dag/fibonacci/minimum` 的 FALSE_POSITIVE 为原项目已知限制(同键多样板无回退
 搜索),与原版分类一致,不计入移植缺口。
 
 ### 其它未完成
 
-- **实机验证**:Cleanroom + AE2UEL 0.56.4(+AE2FCR/AE2CT)全链路下单、CPU 执行、产物入网、AE2CT 显示树
 - **异步 API 形态**:原版 `CompletableFuture<ICraftingPlan>`;1.12 作业模型为同步 Future,现为同步 `calculate`(功能等价,形态不同)。原 README 文档化的第三方 API 面已对齐:`isLoaded()`、`calculateSync()`(即同步 `calculate` 的命名别名)与 `AE2VMCraftingRegistry` 均已提供
 - **批量余数消费方**:`getBatchRemainder()` 已暴露(请求超过 Long.MAX_VALUE 的余量),但 1.12 无原版 Thunderbolt/ECO 式的后续追加消费方
 - **文档**:`CHANGELOG.md`、README_en 未建
@@ -131,7 +132,7 @@
 ./gradlew build      # 含测试;产物在 build/libs/
 ```
 
-依赖经 cursemaven 自动解析:AE2UEL v0.56.4、AE2FC-Rework-Unofficial、AE2CT、Baubles(测试)。
+依赖经 cursemaven 自动解析:AE2UEL v0.56.4、AE2 Fluid Crafting Rework(**AE2-UEL 版 2.6.6-r 为兼容基准**;Circulate233 unofficial fork 的 `FakeFluids`/`FakeItemRegister`/`FCItems` API 与其一致,运行期安装任一 fork 均受支持)、AE2CT、Baubles(测试)。
 代理环境可经 `GRADLE_OPTS` 传入。
 
 ## License
