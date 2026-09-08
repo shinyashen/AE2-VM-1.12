@@ -71,9 +71,11 @@ tasks.compileJava.configure {
 }
 
 tasks.compileTestJava.configure {
+    // Tests (incl. the vendored Thunderbolt planner) compile and run on the
+    // modern toolchain with full Java 17 language/API support; test classes
+    // are not shipped in the mod jar.
     sourceCompatibility = "17"
-    options.release = 8
-    options.encoding = "UTF-8" // Use the UTF-8 charset for Java compilation
+    options.encoding = "UTF-8"
 
     javaCompiler = javaToolchains.compilerFor {
         languageVersion = JavaLanguageVersion.of(17)
@@ -136,11 +138,6 @@ dependencies {
         }
         // Allow jdk.unsupported classes like sun.misc.Unsafe, workaround for JDK-8206937 and fixes crashes in tests
         patchedMinecraft 'me.eigenraven.java8unsupported:java-8-unsupported-shim:1.0.0'
-        // Include for tests
-        testAnnotationProcessor 'com.github.bsideup.jabel:jabel-javac-plugin:1.0.0'
-        testCompileOnly('com.github.bsideup.jabel:jabel-javac-plugin:1.0.0') {
-            transitive = false // We only care about the 1 annotation class
-        }
     }
     if (propertyBool('use_asset_mover')) {
         implementation "com.cleanroommc:assetmover:${propertyString('asset_mover_version')}"
