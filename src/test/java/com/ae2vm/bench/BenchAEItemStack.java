@@ -223,12 +223,13 @@ public final class BenchAEItemStack implements IAEItemStack {
         return false;
     }
 
-    @Override
+    // IAEItemStack grew the cached-stack API in later AE2UEL releases; kept as
+    // plain (implicitly overriding) methods so tests also compile against the
+    // 2022-era AE2UEL builds that predate the interface additions.
     public ItemStack getCachedItemStack(long stackSize) {
         return null;
     }
 
-    @Override
     public void setCachedItemStack(ItemStack is) {
     }
 }
