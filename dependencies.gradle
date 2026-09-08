@@ -6,8 +6,12 @@ dependencies {
 
     // AE2 Extended Life v0.56.4 (target API) - provides appeng classes at compile time
     implementation(rfg.deobf("curse.maven:ae2-extended-life-570458:5147702"))
-    // AE2 Fluid Craft Rework Unofficial - fluid (fake item) pattern support
-    implementation(rfg.deobf("curse.maven:ae2fluidcraft-rework-unofficial-1404390:7742544"))
+    // AE2 Fluid Craft Rework (AE2-UEL org build, 2.6.6-r) - the primary
+    // compat target for fluid (fake item) pattern support. The API surface the
+    // compat layer uses (FakeFluids / FakeItemRegister / FCItems.FLUID_DROP,
+    // com.glodblock packages) is identical in the Circulate233 unofficial fork,
+    // so a runtime install of either fork is supported.
+    implementation(rfg.deobf("curse.maven:ae2-fluid-crafting-rework-623955:5751930"))
     // AE2 Crafting Tree Legacy - crafting tree visualization compat
     implementation(rfg.deobf("curse.maven:ae2-crafting-tree-legacy-1121489:5814089"))
     // Baubles - AE2UEL's patched Item class references it; tests need it on the classpath
