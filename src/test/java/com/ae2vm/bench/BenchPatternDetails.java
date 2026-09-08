@@ -9,6 +9,7 @@ import net.minecraft.world.World;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 
 /**
  * ICraftingPatternDetails fake backed by plain recipe lines: condensed inputs
@@ -19,27 +20,33 @@ import java.util.List;
 public final class BenchPatternDetails implements ICraftingPatternDetails {
     private final IAEItemStack[] condensedInputs;
     private final IAEItemStack[] outputs;
-    private final boolean canSubstitute;
-    private final List<IAEItemStack> substitutes;
+    /** Condensed slot index -> accepted substitute variants (replacement-enabled slots). */
+    private final Map<Integer, List<IAEItemStack>> slotSubs;
 
     private BenchPatternDetails(IAEItemStack[] condensedInputs, IAEItemStack[] outputs) {
-        this(condensedInputs, outputs, false, null);
+        this(condensedInputs, outputs, java.util.Collections.emptyMap());
     }
 
     private BenchPatternDetails(IAEItemStack[] condensedInputs, IAEItemStack[] outputs,
-                                boolean canSubstitute, List<IAEItemStack> substitutes) {
+                                Map<Integer, List<IAEItemStack>> slotSubs) {
         this.condensedInputs = condensedInputs;
         this.outputs = outputs;
-        this.canSubstitute = canSubstitute;
-        this.substitutes = substitutes;
+        this.slotSubs = slotSubs;
     }
 
     /** Pattern whose inputs accept one substitute variant (replacement enabled). */
     public static BenchPatternDetails withSubstitute(long[][] inputs, long[][] outputs, String subId) {
-        BenchPatternDetails p = processing(inputs, outputs);
-        List<IAEItemStack> subs = new ArrayList<>();
-        subs.add(new BenchAEItemStack(subId, 1));
-        return new BenchPatternDetails(p.condensedInputs, p.outputs, true, subs);
+        return withSlotSubstitute(processing(inputs, outputs), new int[]{0}, subId);
+    }
+
+    /** Enables the substitute id on exactly the given condensed input slots. */
+    public static BenchPatternDetails withSlotSubstitute(BenchPatternDetails base, int[] slots, String subId) {
+        Map<Integer, List<IAEItemStack>> slotSubs = new java.util.HashMap<>();
+        for (int slot : slots) {
+            slotSubs.put(slot, java.util.Collections.singletonList(
+                    (IAEItemStack) new BenchAEItemStack(subId, 1)));
+        }
+        return new BenchPatternDetails(base.condensedInputs, base.outputs, slotSubs);
     }
 
     /** inputs: {id, amount} pairs; outputs: first is primary, rest are byproducts. */
@@ -94,12 +101,13 @@ public final class BenchPatternDetails implements ICraftingPatternDetails {
 
     @Override
     public boolean canSubstitute() {
-        return canSubstitute;
+        return !slotSubs.isEmpty();
     }
 
     @Override
     public List<IAEItemStack> getSubstituteInputs(int slot) {
-        return substitutes == null ? java.util.Collections.<IAEItemStack>emptyList() : substitutes;
+        List<IAEItemStack> subs = slotSubs.get(slot);
+        return subs == null ? java.util.Collections.<IAEItemStack>emptyList() : subs;
     }
 
     @Override

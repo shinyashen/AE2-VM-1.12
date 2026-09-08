@@ -117,12 +117,23 @@ class VmSemanticsTest {
                 new IAEItemStack[]{toolIn, new BenchAEItemStack("B", 1)},
                 new IAEItemStack[]{new BenchAEItemStack("C", 1), toolOut});
         Bench.register(p);
-        BenchSimulationState sim = new BenchSimulationState().seed("B", 3);
+        // Reference semantics: the ceil(times/uses) tool demand is served from the
+        // NETWORK — one stocked tool covers 3 firings, zero tools is infeasible.
+        BenchSimulationState sim = new BenchSimulationState()
+                .seedVariant("T", 0, 10, 1)
+                .seed("B", 3);
         VMPlan plan = Bench.run(p, 3, sim);
         assertFalse(plan.isSimulation(), "tool reuse must cover 3 firings: missing=" + dump(plan));
         assertEquals(3L, plan.getPatternTimes().get(p));
-        // exactly ONE tool demanded for 3 firings of a 10-use tool
+        // exactly ONE tool demanded from the network for 3 firings of a 10-use tool
         assertEquals(1L, plan.getUsedItems().get(toolIn));
+
+        // starved: no tool stocked -> the closed form reports the 1 missing tool
+        BenchSimulationState starved = new BenchSimulationState().seed("B", 3);
+        VMPlan starvedPlan = Bench.run(p, 3, starved);
+        assertTrue(starvedPlan.isSimulation(), "tool-less batch must be infeasible");
+        assertEquals(1L, starvedPlan.getMissingItems().get(toolIn),
+                "missing exactly the one ceil(3/10) tool");
     }
 
     /**

@@ -5,14 +5,22 @@ import appeng.api.storage.data.IAEItemStack;
 import com.ae2vm.vm.SimulationState;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /** SimulationState fake: pre-seeded stock + sandbox inserts + crafting log. */
 public final class BenchSimulationState implements SimulationState {
     private final Map<BenchAEItemStack, Long> stock = new LinkedHashMap<>();
-    private final Map<String, Long> inserted = new LinkedHashMap<>();
+    /** Type-exact insert cache, matching NetworkCraftingSandbox: a crafted
+     *  T(damage 1) byproduct must NOT satisfy a T(damage 0) demand. */
+    private final Map<BenchAEItemStack, Long> inserted = new LinkedHashMap<>();
+    /** Consumption recorded privately, like AE2's sandbox inventory: the seeded
+     *  stock stands for the live network and is never mutated by planning. */
+    private final Map<BenchAEItemStack, Long> extracted = new LinkedHashMap<>();
+    private final Set<BenchAEItemStack> ignored = new HashSet<>();
     private final Map<ICraftingPatternDetails, Long> crafting = new LinkedHashMap<>();
     private final List<IAEItemStack> fuzzyFamily = new ArrayList<>();
 
@@ -45,20 +53,21 @@ public final class BenchSimulationState implements SimulationState {
     public long extract(IAEItemStack key, long amount, boolean simulate) {
         BenchAEItemStack k = (BenchAEItemStack) key;
         long taken = 0L;
-        long ins = inserted.getOrDefault(k.id, 0L);
+        long ins = inserted.getOrDefault(k, 0L);
         long fromIns = Math.min(ins, amount);
         if (fromIns > 0 && !simulate) {
-            inserted.put(k.id, ins - fromIns);
+            inserted.put(k, ins - fromIns);
         }
         taken += fromIns;
         long remaining = amount - fromIns;
-        if (remaining > 0) {
+        if (remaining > 0 && !ignored.contains(k)) {
             BenchAEItemStack probe = new BenchAEItemStack(k.id, k.damage, k.maxDamage, 1);
             Long have = stock.get(probe);
             long haveL = have == null ? 0L : have;
-            long fromStock = Math.min(haveL, remaining);
+            long already = extracted.getOrDefault(probe, 0L);
+            long fromStock = Math.min(haveL - already, remaining);
             if (fromStock > 0 && !simulate) {
-                stock.put(probe, haveL - fromStock);
+                extracted.put(probe, already + fromStock);
             }
             taken += fromStock;
         }
@@ -68,7 +77,7 @@ public final class BenchSimulationState implements SimulationState {
     @Override
     public void insert(IAEItemStack key, long amount) {
         if (amount > 0) {
-            inserted.merge(((BenchAEItemStack) key).id, amount, Long::sum);
+            inserted.merge((BenchAEItemStack) key, amount, Long::sum);
         }
     }
 
@@ -103,6 +112,7 @@ public final class BenchSimulationState implements SimulationState {
 
     @Override
     public void ignore(IAEItemStack key) {
-        stock.remove(((BenchAEItemStack) key).id);
+        // BenchAEItemStack equality is type-based, so the set matches any stack size.
+        ignored.add((BenchAEItemStack) key);
     }
 }
