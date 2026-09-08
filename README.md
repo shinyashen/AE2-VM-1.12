@@ -1,7 +1,7 @@
 # AE2 VM 1.12
 
 **AE2 VM 1.12** 是 [AE2-VM](https://github.com/TaoLe-si/AE2-VM)(Tao 著,NeoForge 1.21.1)向
-**Minecraft 1.12.2 / Cleanroom / AE2 Unofficial Extended Life v0.56.4** 的功能移植:
+**Minecraft 1.12.2 / Cleanroom / AE2 Unofficial Extended Life**(支持 CurseForge 全部公开版本:v49t 2022-01 → v0.56.7 latest)的功能移植:
 把 AE2 原本的**递归合成树遍历**替换为**"样板预编译字节码 + 栈式虚拟机 + JIT Bundle 缓存"**,
 为深度嵌套/指数递归的大型合成请求提供亚秒级计算(原版基准:90 秒 → 38 毫秒)。
 
@@ -132,7 +132,13 @@
 ./gradlew build      # 含测试;产物在 build/libs/
 ```
 
-依赖经 cursemaven 自动解析:AE2UEL v0.56.4、AE2 Fluid Crafting Rework(**AE2-UEL 版 2.6.6-r 为兼容基准**;Circulate233 unofficial fork 的 `FakeFluids`/`FakeItemRegister`/`FCItems` API 与其一致,运行期安装任一 fork 均受支持)、AE2CT、Baubles(测试)。
+依赖经 cursemaven 自动解析:AE2UEL、AE2 Fluid Crafting Rework(**AE2-UEL 版 2.6.6-r 为兼容基准**;Circulate233 unofficial fork 的 `FakeFluids`/`FakeItemRegister`/`FCItems` API 与其一致,运行期安装任一 fork 均受支持)、AE2CT、Baubles(测试)。
+
+### AE2UEL 版本支持范围
+
+- **构建基准**:v0.56.7(1.12.2 线最新版;master 相对其在本模组引用的全部 appeng 包上零变更)。
+- **运行期下界**:CurseForge 最早的公开构建 `rv6-stable-7-extended_life-v49t`(2022-01)。该日至今的全部发布版本中,本模组触碰的 `CraftingJob`/`CraftingTreeNode`/`CraftingGridCache`/`ItemListIgnoreCrafting`/`CraftingCPUCluster` 成员与 `appeng.api` 接口逐项核对一致;唯一命名变更是 2022-02-22 的 `updatePatterns → recalculateCraftingPatterns`,mixin 对两个名字都声明了软绑定钩子,新旧构建各命中其一。
+- 合成计算的核心钩子(`CraftingJob` 构造器替换)在全范围内签名一致,为硬绑定:若未来 AE2UEL 改动该构造器,游戏会以明确的 mixin 错误而非静默失效退出。
 代理环境可经 `GRADLE_OPTS` 传入。
 
 ## License
