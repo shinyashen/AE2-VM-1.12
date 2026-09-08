@@ -296,7 +296,7 @@ public class CraftingVM {
                     // Processing-recipe default fuzzy: same-item NBT variants satisfy the slot.
                     if (got < needed && PatternCompiler.isProcessingInput(key)) {
                         long remaining = needed - got;
-                        for (IAEItemStack variant : fuzzyFamilyOf(key)) {
+                        for (IAEItemStack variant : nbtFamilyOf(key)) {
                             if (variant.isSameType(key)) continue;
                             long vgot = simulation.extract(variant, remaining, false);
                             if (vgot <= 0) continue;
@@ -441,8 +441,9 @@ public class CraftingVM {
                                 availSim += simulation.extract(variant, req, true);
                             }
                         } else if (PatternCompiler.isProcessingInput(tk)) {
-                            // Processing exact slot: same-item NBT variants count.
-                            for (IAEItemStack v : fuzzyFamilyOf(tk)) {
+                            // Processing exact slot: same-item NBT variants count —
+                            // NEVER the cross-item replacement group (v1.10.5).
+                            for (IAEItemStack v : nbtFamilyOf(tk)) {
                                 if (v.isSameType(tk)) continue;
                                 availSim += simulation.extract(v, req, true);
                             }
@@ -625,37 +626,10 @@ public class CraftingVM {
 
     private void applyBundleDirect(Bundle b) {
         simulation.addBytes(toBytesDouble(b.bytes));
-        for (var e : b.emitted.entrySet()) {
-            long val = toLongSafe(e.getValue(), "emit");
-            simulation.insert(e.getKey(), val);
-            simInternal.add(e.getKey(), val);
-        }
-        for (var e : b.used.entrySet()) {
-            long val = toLongSafe(e.getValue(), "used");
-            long got = simulation.extract(e.getKey(), val, false);
-            long internal = simInternal.get(e.getKey());
-            long fromInternal = Math.min(got, internal);
-            if (fromInternal > 0) simInternal.add(e.getKey(), -fromInternal);
-            long fromNetwork = got - fromInternal;
-            if (fromNetwork > 0) usedItems.add(e.getKey(), fromNetwork);
-            long shortfall = val - got;
-            if (shortfall > 0) missingItems.add(e.getKey(), shortfall);
-        }
-        for (var e : b.missing.entrySet()) {
-            long val = toLongSafe(e.getValue(), "miss");
-            if (val <= 0) continue;
-            // Realtime-verify capture-time missing against current stock (v1.9.11).
-            long got = simulation.extract(e.getKey(), val, false);
-            if (got > 0) {
-                long internal = simInternal.get(e.getKey());
-                long fromInternal = Math.min(got, internal);
-                if (fromInternal > 0) simInternal.add(e.getKey(), -fromInternal);
-                long fromNetwork = got - fromInternal;
-                if (fromNetwork > 0) usedItems.add(e.getKey(), fromNetwork);
-            }
-            long shortfall = val - got;
-            if (shortfall > 0) missingItems.add(e.getKey(), shortfall);
-        }
+        // Catalyst seeds are STARTUP capital: extract them BEFORE this bundle's own
+        // outputs flood the sandbox, so a self-returned catalyst (A + B -> A + C)
+        // can never satisfy its seed with its own circulating byproduct. Outputs of
+        // OTHER patterns applied earlier (post-order) may legitimately seed it.
         for (var e : b.seeds.entrySet()) {
             long val = toLongSafe(e.getValue(), "seed");
             if (val <= 0) continue;
@@ -683,6 +657,37 @@ public class CraftingVM {
                     remaining -= vgot;
                     if (remaining <= 0) break;
                 }
+            }
+            long shortfall = val - got;
+            if (shortfall > 0) missingItems.add(e.getKey(), shortfall);
+        }
+        for (var e : b.emitted.entrySet()) {
+            long val = toLongSafe(e.getValue(), "emit");
+            simulation.insert(e.getKey(), val);
+            simInternal.add(e.getKey(), val);
+        }
+        for (var e : b.used.entrySet()) {
+            long val = toLongSafe(e.getValue(), "used");
+            long got = simulation.extract(e.getKey(), val, false);
+            long internal = simInternal.get(e.getKey());
+            long fromInternal = Math.min(got, internal);
+            if (fromInternal > 0) simInternal.add(e.getKey(), -fromInternal);
+            long fromNetwork = got - fromInternal;
+            if (fromNetwork > 0) usedItems.add(e.getKey(), fromNetwork);
+            long shortfall = val - got;
+            if (shortfall > 0) missingItems.add(e.getKey(), shortfall);
+        }
+        for (var e : b.missing.entrySet()) {
+            long val = toLongSafe(e.getValue(), "miss");
+            if (val <= 0) continue;
+            // Realtime-verify capture-time missing against current stock (v1.9.11).
+            long got = simulation.extract(e.getKey(), val, false);
+            if (got > 0) {
+                long internal = simInternal.get(e.getKey());
+                long fromInternal = Math.min(got, internal);
+                if (fromInternal > 0) simInternal.add(e.getKey(), -fromInternal);
+                long fromNetwork = got - fromInternal;
+                if (fromNetwork > 0) usedItems.add(e.getKey(), fromNetwork);
             }
             long shortfall = val - got;
             if (shortfall > 0) missingItems.add(e.getKey(), shortfall);
@@ -1005,6 +1010,21 @@ public class CraftingVM {
         Set<IAEItemStack> keys = new HashSet<>();
         Set<IAEItemStack> visited = new HashSet<>();
         collectPlanKeys(outputKey, keys, visited);
+        // Replacement-group members and same-item stock variants must be probed
+        // too: the stock-aware aggregation reads realStockOf() for them, and
+        // without a live grid handle that reads this snapshot.
+        List<IAEItemStack> expand = new ArrayList<>(keys);
+        while (!expand.isEmpty()) {
+            IAEItemStack k = expand.remove(expand.size() - 1);
+            for (IAEItemStack v : PatternCompiler.getFuzzyGroup(k)) {
+                if (v != null && keys.add(v)) expand.add(v);
+            }
+            if (simulation != null) {
+                for (IAEItemStack v : simulation.findFuzzyFamily(k)) {
+                    if (v != null && keys.add(v)) expand.add(v);
+                }
+            }
+        }
         for (IAEItemStack k : keys) {
             if (k == null) continue;
             long amt = simulation.extract(k, Long.MAX_VALUE, true);
@@ -1585,10 +1605,22 @@ public class CraftingVM {
     }
 
     /**
+     * Same-item NBT/damage variants present in the network stock — the
+     * PROCESSING default fuzzy family (v1.10.x: usable by ANY processing slot,
+     * unlike the compile-time replacement group which only applies to
+     * replacement-enabled slots).
+     */
+    private List<IAEItemStack> nbtFamilyOf(IAEItemStack key) {
+        return simulation.findFuzzyFamily(key);
+    }
+
+    /**
      * Effective fuzzy family for {@code key}: the compile-time substitution
      * group plus, for processing inputs, the same-item NBT variants present
      * in the network stock (delegated to the simulation state so tests and
      * grid-detached runs behave identically to the live network).
+     * ONLY for replacement-enabled (FUZZY_SLOT) demand — exact slots use
+     * {@link #nbtFamilyOf}.
      */
     private List<IAEItemStack> fuzzyFamilyOf(IAEItemStack key) {
         Set<IAEItemStack> family = new HashSet<>(PatternCompiler.getFuzzyGroup(key));

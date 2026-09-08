@@ -187,9 +187,12 @@ class VmSemantics2Test {
                 new IAEItemStack[]{item("D", 1), tool("T2", 1)});
         Bench.register(p1);
         Bench.register(p2);
+        // Reference semantics: each link's ceil(times/uses) tool demand is served
+        // from the network, so one undamaged tool of each kind must be stocked.
         BenchSimulationState sim = new BenchSimulationState()
                 .seed("B", 9)
-                .seed("T2", 2);
+                .seedVariant("T1", 0, 10, 1)
+                .seedVariant("T2", 0, 10, 1);
         VMPlan plan = vmRun(p2, 9, sim);
         assertFalse(plan.isSimulation(), "durability chain: missing=" + dump(plan));
         assertEquals(9L, plan.getPatternTimes().get(p1));

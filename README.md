@@ -39,39 +39,58 @@
 (模拟通过、缺料展示、CPU 执行),失败时回退原生树。
 键类型相应从 `AEKey` 换为 `IAEItemStack` 类型键(equals = isSameType)。
 
-## 测试(15/15 全绿)
+## 测试(72/72 全绿)
 
-`gradlew build` 内置 JUnit5 语义测试(测试源集以 JDK 17 工具链编译运行,不进发布 jar):
+`gradlew build` 内置 JUnit5 语义测试(测试源集以 JDK 17 工具链编译运行,不进发布 jar)。
+原仓库的可移植测试族已全部落地,断言与源语义逐条对拍:
 
-标志物种子、递归放大器净增修正(含无种子恰报缺 1)、催化剂反馈环 working-capital、
-耐久工具闭式、耐久链、子项库存感知、换算环守恒、原料短缺报量、斐波那契 11 级链
-(O(patterns))、JIT 跨请求复用、自增长剪枝(有库存/无库存)、数量 1 边界、
-替代槽(FUZZY_SLOT)、处理配方默认模糊。
+- **语义基础**(VmSemanticsTest / VmSemantics2Test,15 例):标志物种子、递归放大器净增修正
+  (含无种子恰报缺 1)、催化剂反馈环 working-capital、耐久工具闭式(含无工具不可行)、
+  耐久链、子项库存感知、换算环守恒、原料短缺报量、斐波那契 11 级链(O(patterns))、
+  JIT 跨请求复用、自增长剪枝(有库存/无库存)、数量 1 边界、替代槽(FUZZY_SLOT)、
+  处理配方默认模糊。
+- **CrossRequestCacheTest**(11 例):同 VM 跨请求确定性矩阵(相同请求/缺额分支/多步库存
+  消耗/数量变化/深链/菱形/双 VM 隔离/冷热 VM 等价/空库存重捕/空库存斐波那契/24 级 10^9 深链
+  可合成项绝不报缺)。
+- **RecursionReferenceTest**(6 例):放大器与 A-A 精华催化剂 × 最小可行/无界库存/无种子恰报缺 1。
+- **CatalystFeedbackLoopTest**(6 例):raw 平衡环(A→2B→E+D→A)与 lossy 递减环
+  (3A→2B→D+2A)× 三种库存模式,lossy 恰报缺 2 启动态。
+- **DurabilityToolTest**(3 例):100 用工具 ×10000 点火闭式边界(100 把而非 10000/1,少 1 把恰报缺 1)。
+- **JitReuseTest**(4 例):复用 VM 的正确性(常规复用/后续短缺/realStockCache 跨请求刷新/
+  可合成子项库存重读)。
+- **模糊族**(VideoFuzzyReplacementRepro 5 + FuzzyGroupRegistration 3 + FuzzyDiag 3 +
+  ProcessingDefaultFuzzy 2):v1.10.5 精确槽位 vs 替代槽需求分离(替代品库存只满足
+  FUZZY_SLOT 需求,精确槽绝不吞替代品)、替代组注册/未注册语义、可合成子项部分库存
+  仍排程子合成、处理配方同物品 NBT 变体(实际变体记入 usedItems)。
+- **边界族**(StockAwareSubCraftRepro 2 例 42 参数化 + CraftableFluidStockRepro 1 例 35
+  参数化 + FluidBucketBoundary 2 + QuantityOneBoundary 2 + VmBridgeSpike 1):
+  库存感知子合成 off-by-one 矩阵、可合成流体最后一份送达、x1/x2 边界、子项/流体部分库存。
+- **VMTest**(6 例):字节码 Builder / CALL_BY_KEY / 请求包裹 / DIV_ROUNDUP 单元测试。
 
 测试 harness(`com.ae2vm.bench`):无 bootstrap 的 `IAEItemStack` fake、
-配方 fake、沙盒 fake,可在纯 JVM 下验证全部规划语义。
+配方 fake(槽位级替代)、沙盒 fake(非破坏性网络视图 + 类型精确插入缓存,
+与 `NetworkCraftingSandbox` 同语义),可在纯 JVM 下验证全部规划语义。
 [TB-ThirdParty](https://github.com/TaoLe-si/TB-ThirdParty) 的纯 Java 规划器
 (`com.moakiee.thunderbolt.core.planner`,23 文件)已 vendor 进测试源集,
 作为参考对拍的基线设施。
 
+移植期间由对拍测试暴露并修复的引擎语义缺口(主代码):
+
+- 自返回催化剂种子可被模式自身副产物"自满足" → 种子提取移至本 bundle 副产物插入之前
+  (启动资金必须来自网络或更早应用的其它模式);
+- 精确槽位的处理默认模糊误吞跨物品替代组 → 拆分 `nbtFamilyOf`(同物品变体,任意处理槽)
+  与 `fuzzyFamilyOf`(替代组,仅 FUZZY_SLOT);
+- 无 IGrid 句柄时启动库存快照缺替代组/NBT 变体 → `snapshotExecuteStartStock` 扩展枚举。
+
 ## 尚未完成 / 未移植
 
-### 测试(原版 136 用例,已移植 15;下表为剩余缺口)
+### 测试(剩余缺口)
 
 | 缺口 | 用例数 | 说明 |
 |---|---|---|
-| `CrossRequestCacheTest` | 11 | 跨请求缓存一致性矩阵;harness 已就绪,优先移植 |
-| `RecursionReferenceTest` 余量 | ~4 | 无界库存、A-A 精华变体等场景 |
-| `CatalystFeedbackLoopTest` 余量 | ~4 | raw/lossy/balanced x 无界库存矩阵 |
-| `JitReuseTest` 余量 | ~3 | cts=1 记忆化 / 缩放回放的内部断言 |
-| `DurabilityToolTest` 余量 | ~2 | 100 用 x10000 点火边界 |
-| `FuzzyDiagTest` / `FalsePositiveDiagnosticTest` | 4 | 模糊诊断与假阳性回归 |
-| `QuantityOneBoundaryTest` 余量 / `FuzzyGroupRegistrationTest` | 1+3 | |
-| `VideoFuzzyReplacementReproTest` | 5 | 需先补 grid 桩(`FakeBenchGrid` 等价物) |
-| `ProcessingDefaultFuzzyTest` | 2 | 同上 |
-| `StockAwareSubCraftReproTest` 余量 | 2 | 同上(含流体计数) |
 | 能力总闸套件 x2 | ~76 | 参考规划器翻译层(`Ae2VmReferencePlanner` 的 1.12 版)——planner 已 vendor,缺 `AEKey/GenericStack → IAEItemStack` 翻转层 |
-| `FluidBucketBoundaryTest` / `CraftableFluidStockReproTest` | 3 | **不可移植**:AE2FC 假物品需 MC 注册表运行时;此类语义列入实机验证 |
+| `FalsePositiveDiagnosticTest` | 1 | 依赖完整参考场景套件(随上项一并落地) |
+| 流体测试的 AE2FC 注册表面 | — | 数值语义已按"数量型键"移植;真实假物品键的注册表依赖列入实机验证 |
 
 ### 其它未完成
 
