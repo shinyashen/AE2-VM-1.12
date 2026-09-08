@@ -8,11 +8,12 @@ import appeng.api.storage.data.IAEItemStack;
 import appeng.api.storage.data.IItemList;
 import appeng.me.cluster.implementations.CraftingCPUCluster;
 import com.ae2vm.AE2VM;
+import com.ae2vm.api.AE2VMCrafting;
+import com.ae2vm.api.AE2VMCraftingRegistry;
 import com.ae2vm.config.AE2VMConfig;
 import com.ae2vm.vm.VMPlan;
 import net.minecraft.world.World;
 
-import java.util.Set;
 
 /**
  * Root CraftingTreeNode replacement that runs the AE2-VM stack machine and
@@ -85,7 +86,7 @@ public final class VMRootNode extends CraftingTreeNode {
 
     /**
      * Third-party machine sources (programmatic job submissions) that never
-     * registered with {@link com.ae2vm.api.AE2VMCraftingRegistry} keep their
+     * registered with {@link AE2VMCraftingRegistry} keep their
      * native crafting behaviour; player-driven requests from AE2's own
      * terminals are always VM-eligible.
      */
@@ -94,13 +95,13 @@ public final class VMRootNode extends CraftingTreeNode {
             return false;
         }
         return source.machine()
-                .map(host -> com.ae2vm.api.AE2VMCraftingRegistry
+                .map(host -> AE2VMCraftingRegistry
                         .isUnregisteredThirdParty(host.getClass().getName()))
                 .orElse(false);
     }
 
     private VMPlan calculate(long amount) {
-        VMPlan plan = com.ae2vm.api.AE2VMCrafting.calculate(grid, world, requestedOutput, amount);
+        VMPlan plan = AE2VMCrafting.calculate(grid, world, requestedOutput, amount);
         if (plan == null) {
             throw new IllegalStateException("No compilable pattern for " + requestedOutput.getDefinition());
         }

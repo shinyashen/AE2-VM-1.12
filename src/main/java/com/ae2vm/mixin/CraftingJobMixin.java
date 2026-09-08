@@ -6,9 +6,9 @@ import appeng.api.networking.crafting.ICraftingGrid;
 import appeng.api.networking.security.IActionSource;
 import appeng.api.storage.data.IAEItemStack;
 import appeng.crafting.CraftingJob;
+import appeng.crafting.CraftingTreeNode;
 import appeng.crafting.VMRootNode;
 import net.minecraft.world.World;
-import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
@@ -24,7 +24,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public abstract class CraftingJobMixin {
 
     @Shadow
-    private appeng.crafting.CraftingTreeNode tree;
+    private CraftingTreeNode tree;
 
     @Inject(method = "<init>", at = @At("RETURN"))
     private void ae2vm$replaceRoot(World world,

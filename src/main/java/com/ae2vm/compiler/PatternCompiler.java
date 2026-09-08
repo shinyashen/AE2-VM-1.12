@@ -2,7 +2,6 @@ package com.ae2vm.compiler;
 
 import appeng.api.networking.crafting.ICraftingPatternDetails;
 import appeng.api.storage.data.IAEItemStack;
-import com.ae2vm.AE2VM;
 import com.ae2vm.compat.AE2FCCompat;
 import com.ae2vm.compat.PatternCompat;
 import com.ae2vm.vm.CraftingBytecode;
@@ -424,10 +423,15 @@ public final class PatternCompiler {
         COMPILED_PATTERNS.remove(pattern);
     }
 
-    public static void clearCache() {
-        COMPILED_PATTERNS.clear();
+    /** Clears the replacement-group registry (the compile caches stay warm). */
+    public static void clearFuzzyGroups() {
         FUZZY_GROUPS.clear();
         PROCESSING_INPUT_KEYS.clear();
+    }
+
+    public static void clearCache() {
+        COMPILED_PATTERNS.clear();
+        clearFuzzyGroups();
     }
 
     public static int getCompiledCount() {

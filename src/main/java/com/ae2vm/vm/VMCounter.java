@@ -2,6 +2,7 @@ package com.ae2vm.vm;
 
 import appeng.api.storage.data.IAEItemStack;
 
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -92,9 +93,9 @@ public final class VMCounter {
     public Iterable<IAEItemStack> keys() {
         return new Iterable<IAEItemStack>() {
             @Override
-            public java.util.Iterator<IAEItemStack> iterator() {
-                return new java.util.Iterator<IAEItemStack>() {
-                    private final java.util.Iterator<Entry> it = entries.values().iterator();
+            public Iterator<IAEItemStack> iterator() {
+                return new Iterator<IAEItemStack>() {
+                    private final Iterator<Entry> it = entries.values().iterator();
 
                     @Override
                     public boolean hasNext() {
@@ -122,9 +123,9 @@ public final class VMCounter {
     public Iterable<Map.Entry<IAEItemStack, Long>> entrySet() {
         return new Iterable<Map.Entry<IAEItemStack, Long>>() {
             @Override
-            public java.util.Iterator<Map.Entry<IAEItemStack, Long>> iterator() {
-                return new java.util.Iterator<Map.Entry<IAEItemStack, Long>>() {
-                    private final java.util.Iterator<Entry> it = entries.values().iterator();
+            public Iterator<Map.Entry<IAEItemStack, Long>> iterator() {
+                return new Iterator<Map.Entry<IAEItemStack, Long>>() {
+                    private final Iterator<Entry> it = entries.values().iterator();
 
                     @Override
                     public boolean hasNext() {

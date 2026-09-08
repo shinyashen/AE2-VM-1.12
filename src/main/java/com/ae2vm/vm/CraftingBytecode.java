@@ -4,6 +4,8 @@ import appeng.api.networking.crafting.ICraftingPatternDetails;
 import appeng.api.storage.data.IAEItemStack;
 
 import java.util.Arrays;
+import java.io.ByteArrayOutputStream;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -116,9 +118,9 @@ public class CraftingBytecode {
      * Builder for constructing bytecode during compilation
      */
     public static class Builder {
-        private final List<IAEItemStack> constantPool = new java.util.ArrayList<>();
-        private final List<ICraftingPatternDetails> patternPool = new java.util.ArrayList<>();
-        private final java.io.ByteArrayOutputStream codeStream = new java.io.ByteArrayOutputStream();
+        private final List<IAEItemStack> constantPool = new ArrayList<>();
+        private final List<ICraftingPatternDetails> patternPool = new ArrayList<>();
+        private final ByteArrayOutputStream codeStream = new ByteArrayOutputStream();
         private int outputIndex = -1;
         private long outputAmountPerCraft = 0;
 
