@@ -39,7 +39,7 @@
 (模拟通过、缺料展示、CPU 执行),失败时回退原生树。
 键类型相应从 `AEKey` 换为 `IAEItemStack` 类型键(equals = isSameType)。
 
-## 测试(72/72 全绿)
+## 测试(151/151 全绿)
 
 `gradlew build` 内置 JUnit5 语义测试(测试源集以 JDK 17 工具链编译运行,不进发布 jar)。
 原仓库的可移植测试族已全部落地,断言与源语义逐条对拍:
@@ -67,6 +67,19 @@
   库存感知子合成 off-by-one 矩阵、可合成流体最后一份送达、x1/x2 边界、子项/流体部分库存。
 - **VMTest**(6 例):字节码 Builder / CALL_BY_KEY / 请求包裹 / DIV_ROUNDUP 单元测试。
 
+- **能力总闸套件**(Ae2VmReferenceCapabilitySuite 39 例 + Ae2VmBoundaryCapabilitySuite 37 例 +
+  FalsePositiveDiagnostic 1 例):经 1.12 翻译层(`Ae2VmReferencePlanner`)驱动 VM 走完
+  Thunderbolt 参考套件全部 13 族 × 3 库存模式。参考图的 1.21 概念按真实 1.12 样板形状编码:
+  催化剂(`returned`)→ 等量同键副产物(严格输出相等 → CATALYST_SEED,标志物/精华形状);
+  耐久(`finiteUse`)→ maxDamage=uses 的可损伤工具 + 损伤 +1 副产物(损伤差探测);
+  宿主复用库存(`returnedFrom`)→ 槽位替代变体 + 宿主池并入网络库存。
+  **能力面结论:39 例中 38 例 SUPPORTED**;唯一 FALSE_POSITIVE 为
+  `multi-dag/fibonacci/minimum`(同键双样板无回退搜索,参考最小前沿假设最优选样)——
+  **与原版 AE2-VM 的分类一致**,属原项目已知能力面限制,非移植引入。
+  Boundary 套件断言全部 37 例的 expectedFeasible:数量边界(x1/x2/x100)、
+  模糊主产物 + 白库存/灰部分库存/无变体库存、10/20 级深链中段库存、
+  可合成流体部分库存(x1/2/100)。
+
 测试 harness(`com.ae2vm.bench`):无 bootstrap 的 `IAEItemStack` fake、
 配方 fake(槽位级替代)、沙盒 fake(非破坏性网络视图 + 类型精确插入缓存,
 与 `NetworkCraftingSandbox` 同语义),可在纯 JVM 下验证全部规划语义。
@@ -88,9 +101,11 @@
 
 | 缺口 | 用例数 | 说明 |
 |---|---|---|
-| 能力总闸套件 x2 | ~76 | 参考规划器翻译层(`Ae2VmReferencePlanner` 的 1.12 版)——planner 已 vendor,缺 `AEKey/GenericStack → IAEItemStack` 翻转层 |
-| `FalsePositiveDiagnosticTest` | 1 | 依赖完整参考场景套件(随上项一并落地) |
 | 流体测试的 AE2FC 注册表面 | — | 数值语义已按"数量型键"移植;真实假物品键的注册表依赖列入实机验证 |
+
+原仓库其余测试(含能力总闸套件 x2、FalsePositiveDiagnosticTest)已全部移植完毕。
+`multi-dag/fibonacci/minimum` 的 FALSE_POSITIVE 为原项目已知限制(同键多样板无回退
+搜索),与原版分类一致,不计入移植缺口。
 
 ### 其它未完成
 

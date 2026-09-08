@@ -49,6 +49,13 @@ public final class BenchPatternDetails implements ICraftingPatternDetails {
         return new BenchPatternDetails(base.condensedInputs, base.outputs, slotSubs);
     }
 
+    /** Enables arbitrary pre-built variant keys on exactly the given condensed slots. */
+    public static BenchPatternDetails withSlotVariants(BenchPatternDetails base,
+                                                       Map<Integer, List<IAEItemStack>> slotSubs) {
+        return new BenchPatternDetails(base.condensedInputs, base.outputs,
+                new java.util.HashMap<>(slotSubs));
+    }
+
     /** inputs: {id, amount} pairs; outputs: first is primary, rest are byproducts. */
     /** Custom recipe line with arbitrary fake keys (first output = primary). */
     public static BenchPatternDetails custom(IAEItemStack[] inputs, IAEItemStack[] outputs) {
