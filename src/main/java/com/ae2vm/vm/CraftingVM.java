@@ -94,7 +94,66 @@ public class CraftingVM {
 
     // JIT: per-pattern power-of-2 bundles. Bundle[0]=1 run; linear effects only.
     private static final int MAX_BUNDLE_BITS = 64;
-    private final Map<IAEItemStack, Bundle[]> bundleCache = new HashMap<>();
+    /**
+     * Captured 1-craft bundles, keyed by (resolved key, pattern bytecode).
+     * The bytecode component (identity of the compiled code array) matters:
+     * the multi-pattern repair loop re-resolves keys to different patterns
+     * across replay passes, and a key-keyed cache would silently replay a
+     * stale subtree effect captured from another pattern — replays would be
+     * exact copies of the greedy pass. Entries for several patterns of the
+     * same key coexist; only the currently-resolved one is ever read (see
+     * {@link #activeBundles}).
+     */
+    private final Map<BundleKey, Bundle[]> bundleCache = new HashMap<>();
+
+    /** Bundle-cache identity: item key + identity of the compiled code array. */
+    private static final class BundleKey {
+        final IAEItemStack key;
+        final byte[] code;
+
+        BundleKey(IAEItemStack key, byte[] code) {
+            this.key = key;
+            this.code = code;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (!(o instanceof BundleKey)) return false;
+            BundleKey other = (BundleKey) o;
+            return key.equals(other.key) && code == other.code;
+        }
+
+        @Override
+        public int hashCode() {
+            return key.hashCode() * 31 + System.identityHashCode(code);
+        }
+    }
+
+    /**
+     * The bundle array for {@code key} under the CURRENTLY resolved pattern,
+     * falling back to any captured bundle of the same key type (the pre-repair
+     * lookup semantics — e.g. the request root's output key need not resolve
+     * through the pattern resolver). Repair replays always hit the active
+     * entry first, so a flipped key never reads a previous pattern's bundle.
+     */
+    private Bundle[] activeBundles(IAEItemStack key) {
+        ICraftingPatternDetails details =
+                patternResolver != null ? patternResolver.apply(key) : null;
+        CraftingBytecode sbc = details != null ? PatternCompiler.getCompiled(details) : null;
+        if (sbc != null) {
+            Bundle[] arr = bundleCache.get(new BundleKey(key, sbc.getCode()));
+            if (arr != null) {
+                return arr;
+            }
+        }
+        for (Map.Entry<BundleKey, Bundle[]> e : bundleCache.entrySet()) {
+            if (e.getKey().key.isSameType(key)) {
+                return e.getValue();
+            }
+        }
+        return null;
+    }
 
     private static final class CallFrame {
         final int returnPc;
@@ -159,6 +218,11 @@ public class CraftingVM {
         final Map<IAEItemStack, BigInteger> seeds = new ConcurrentHashMap<>();
         // Finite-use tool rates (key → [amount, uses]) — NOT scaled.
         final Map<IAEItemStack, long[]> durability = new ConcurrentHashMap<>();
+        // The pattern each direct sub-call was resolved to at capture time.
+        // A replay may only reuse the bundle while the CURRENT resolver picks
+        // the same pattern for every sub-call (the multi-pattern repair loop
+        // re-resolves keys across passes); otherwise the subtree is stale.
+        final Map<IAEItemStack, ICraftingPatternDetails> subChoices = new ConcurrentHashMap<>();
 
         Bundle scale(long factor) { return scale(BigInteger.valueOf(factor)); }
 
@@ -213,11 +277,39 @@ public class CraftingVM {
 
     public BigInteger getBatchRemainder() { return batchRemainder; }
 
+    /**
+     * Re-arms the batch remainder to match a previously executed plan. Used by
+     * the multi-pattern repair loop ({@code PatternChoiceRepair}), whose
+     * returned best plan is not necessarily the last replayed pass — without
+     * this, the exposed remainder would belong to a discarded trial.
+     */
+    public void restoreBatchRemainder(BigInteger remainder) {
+        this.batchRemainder = remainder;
+    }
+
     public VMPlan execute(CraftingBytecode requestBytecode, SimulationState simulation) {
         synchronized (this) {
             return execute(requestBytecode, simulation,
                 BigInteger.valueOf(requestBytecode.getOutputAmountPerCraft()));
         }
+    }
+
+    /**
+     * True when every direct sub-call of the captured bundle still resolves to
+     * the pattern it was captured with. A stale bundle — the repair loop (or a
+     * different request) re-resolved a sub-call to another pattern — must not
+     * be replayed: its subtree effect belongs to a different pattern mix.
+     */
+    private boolean bundleChoicesCurrent(Bundle bundle) {
+        for (Map.Entry<IAEItemStack, ICraftingPatternDetails> e
+                : bundle.subChoices.entrySet()) {
+            ICraftingPatternDetails current = patternResolver != null
+                    ? patternResolver.apply(e.getKey()) : null;
+            if (current != e.getValue()) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private VMPlan execute(CraftingBytecode requestBytecode, SimulationState simulation,
@@ -368,6 +460,10 @@ public class CraftingVM {
                 }
                 case 15 -> { // RETURN
                     if (callStack.isEmpty()) { pc = code.length; break; }
+                    // The callee's code array qualifies the bundle store below —
+                    // save it before the frame restore overwrites this.code with
+                    // the caller's saved code (CallFrame.code is the caller's).
+                    byte[] calleeCode = code;
                     CallFrame f = callStack.pop(); code = f.code; constantPool = f.constantPool;
                     patternPool = f.patternPool; pc = f.returnPc;
                     extractIsClaim = true;
@@ -384,6 +480,20 @@ public class CraftingVM {
                                     var subPat = patternResolver != null ? patternResolver.apply(sk) : null;
                                     var ssbc = subPat != null ? PatternCompiler.getCompiled(subPat) : null;
                                     if (ssbc != null) sopc = ssbc.getOutputAmountPerCraft();
+                                    if (subPat != null) {
+                                        delta.subChoices.put(sk, subPat);
+                                        // Transitive choice record: the sub-call's
+                                        // own bundle carries its whole subtree's
+                                        // choices, so a deep change (X3 under X5
+                                        // under X7) invalidates the outer bundle.
+                                        if (ssbc != null) {
+                                            Bundle[] subArr = bundleCache.get(
+                                                    new BundleKey(sk, ssbc.getCode()));
+                                            if (subArr != null && subArr[0] != null) {
+                                                delta.subChoices.putAll(subArr[0].subChoices);
+                                            }
+                                        }
+                                    }
                                     if (sreq > 0) {
                                         delta.itemNeeds.merge(sk, BigInteger.valueOf(sreq), BigInteger::add);
                                         if (sopc > 0) {
@@ -403,7 +513,9 @@ public class CraftingVM {
                                     }
                                 }
                             }
-                            Bundle[] bundles = bundleCache.computeIfAbsent(f.resolvingKey, k -> new Bundle[MAX_BUNDLE_BITS]);
+                            Bundle[] bundles = bundleCache.computeIfAbsent(
+                                    new BundleKey(f.resolvingKey, calleeCode),
+                                    k -> new Bundle[MAX_BUNDLE_BITS]);
                             bundles[0] = delta;
                             resolvingKeys.remove(f.resolvingKey);
                             boolean enclosingCapture = !callStack.isEmpty() && callStack.peek().bundleKey != null;
@@ -505,10 +617,11 @@ public class CraftingVM {
                         callStack.peek().recordFuzzySubCall(tk, req);
                     }
 
-                    Bundle[] bundles = bundleCache.computeIfAbsent(tk, k -> new Bundle[MAX_BUNDLE_BITS]);
+                    Bundle[] bundles = bundleCache.computeIfAbsent(
+                            new BundleKey(tk, sbc.getCode()), k -> new Bundle[MAX_BUNDLE_BITS]);
 
                     if (capturing) {
-                        if (bundles[0] == null) {
+                        if (bundles[0] == null || !bundleChoicesCurrent(bundles[0])) {
                             Bundle snap = captureDelta();
                             callStack.push(new CallFrame(pc, code, constantPool, patternPool, tk)
                                 .withBundle(tk, snap, cts));
@@ -526,7 +639,7 @@ public class CraftingVM {
                     }
 
                     if (cts == 1) {
-                        if (bundles[0] == null) {
+                        if (bundles[0] == null || !bundleChoicesCurrent(bundles[0])) {
                             Bundle snap = captureDelta();
                             callStack.push(new CallFrame(pc, code, constantPool, patternPool, tk)
                                 .withBundle(tk, snap, 1));
@@ -564,7 +677,7 @@ public class CraftingVM {
                         break;
                     }
 
-                    if (bundles[0] != null) {
+                    if (bundles[0] != null && bundleChoicesCurrent(bundles[0])) {
                         Bundle b0 = bundles[0];
                         boolean selfSufficient = true;
                         for (var e : b0.used.entrySet()) {
@@ -727,7 +840,7 @@ public class CraftingVM {
             seen.add(outputKey);
             while (!stack.isEmpty()) {
                 IAEItemStack k = stack.pop();
-                Bundle[] arr = bundleCache.get(k);
+                Bundle[] arr = activeBundles(k);
                 if (arr == null || arr[0] == null) continue;
                 Set<IAEItemStack> subs = children.computeIfAbsent(k, x -> new HashSet<>());
                 for (var e : arr[0].itemNeeds.entrySet()) {
@@ -748,7 +861,7 @@ public class CraftingVM {
         while (!queue.isEmpty()) {
             IAEItemStack p = queue.poll();
             BigInteger pCrafts = total.getOrDefault(p, BigInteger.ZERO);
-            Bundle[] pArr = bundleCache.get(p);
+            Bundle[] pArr = activeBundles(p);
             if (pArr == null || pArr[0] == null) continue;
             for (var e : pArr[0].itemNeeds.entrySet()) {
                 IAEItemStack c = e.getKey();
@@ -765,7 +878,7 @@ public class CraftingVM {
                 parentCount.put(c, rem);
                 if (rem == 0) {
                     BigInteger demand = itemDemand.getOrDefault(c, BigInteger.ZERO);
-                    Bundle[] cArr = bundleCache.get(c);
+                    Bundle[] cArr = activeBundles(c);
                     if (cArr == null || cArr[0] == null) {
                         missingItems.add(c, toLongSafe(demand, "agg-miss"));
                     } else {
@@ -892,7 +1005,7 @@ public class CraftingVM {
         for (var en : total.entrySet()) {
             IAEItemStack key = en.getKey();
             if (key == null || en.getValue().signum() <= 0) continue;
-            Bundle[] arr = bundleCache.get(key);
+            Bundle[] arr = activeBundles(key);
             if (arr == null || arr[0] == null) continue;
             ICraftingPatternDetails details = patternResolver.apply(key);
             if (details == null || isUnseededSelfLoop(details)) continue;
@@ -1089,7 +1202,7 @@ public class CraftingVM {
         for (var en : total.entrySet()) {
             IAEItemStack key = en.getKey();
             if (key == null || en.getValue().signum() <= 0) continue;
-            Bundle[] arr = bundleCache.get(key);
+            Bundle[] arr = activeBundles(key);
             if (arr == null || arr[0] == null) continue;
             ICraftingPatternDetails details = patternResolver != null ? patternResolver.apply(key) : null;
             if (details == null) continue;
@@ -1654,10 +1767,7 @@ public class CraftingVM {
     /** Read-only DFS that applies each bundle exactly once, children before parents. */
     private void applyOrdered(IAEItemStack k, Set<IAEItemStack> applied, Map<IAEItemStack, BigInteger> total) {
         if (!applied.add(k)) return;
-        Bundle[] arr = null;
-        for (var be : bundleCache.entrySet()) {
-            if (be.getKey().isSameType(k)) { arr = be.getValue(); break; }
-        }
+        Bundle[] arr = activeBundles(k);
         if (arr != null && arr[0] != null) {
             for (var e : arr[0].itemNeeds.entrySet()) applyOrdered(e.getKey(), applied, total);
         }
@@ -1757,10 +1867,7 @@ public class CraftingVM {
     }
 
     private Bundle[] getBundles(IAEItemStack key) {
-        for (var e : bundleCache.entrySet()) {
-            if (e.getKey().isSameType(key)) return e.getValue();
-        }
-        return null;
+        return activeBundles(key);
     }
 
     /** Undo a bundle's effects — reverse order of apply. */
