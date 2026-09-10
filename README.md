@@ -33,10 +33,12 @@ All 39 reference-suite scenarios × 3 stock modes are **SUPPORTED** with zero fl
 | Requirement | Version |
 |---|---|
 | Minecraft | 1.12.2 |
-| Mod loader | [Cleanroom](https://github.com/CleanroomMC/Cleanroom) |
-| Applied Energistics | [AE2 Unofficial Extended Life](https://www.curseforge.com/minecraft/mc-mods/ae2-extended-life) v0.56.7+ |
+| Mod loader | [Cleanroom](https://github.com/CleanroomMC/Cleanroom) (recommended); or Forge + [MixinBooter](https://www.curseforge.com/minecraft/mc-mods/mixin-booter) |
+| Applied Energistics | [AE2 Unofficial Extended Life](https://www.curseforge.com/minecraft/mc-mods/ae2-extended-life) v0.56.7+ (every build on the CurseForge 1.12.2 line is compatible) |
 
 Download `ae2_vm_112-x.y.z.jar` from [Releases](https://github.com/shinyashen/AE2-VM-1.12/releases), drop it into `mods/` — done. The VM takes over crafting calculations automatically; `proxyEnabled` in the config turns it off.
+
+> On the Forge route: the mod uses no Cleanroom-specific APIs and ships Java 8 bytecode, with mixins provided by MixinBooter, so it is expected to work out of the box. This route is not covered by our automated tests — feedback is welcome.
 
 ## Documentation
 
@@ -58,7 +60,7 @@ The [wiki](https://github.com/shinyashen/AE2-VM-1.12/wiki) carries the full docu
 ./gradlew build      # compiles and runs the full test suite (193 tests); artifacts in build/libs/
 ```
 
-Requires a JDK 25 build JVM (RetroFuturaGradle 2.x requirement; the JDK 17 compile toolchain is provisioned automatically). Runtime is Cleanroom on JDK 21+. Dependencies resolve through CurseMaven (AE2UEL, AE2FC-Rework, AE2CT, Baubles).
+Requires a JDK 25 build JVM (RetroFuturaGradle 2.x requirement; the JDK 17 compile toolchain is provisioned automatically). Runtime is Cleanroom (JDK 21+) or Forge (Java 8 + MixinBooter). Dependencies resolve through CurseMaven (AE2UEL, AE2FC-Rework, AE2CT, Baubles).
 
 ## Credits & License
 
