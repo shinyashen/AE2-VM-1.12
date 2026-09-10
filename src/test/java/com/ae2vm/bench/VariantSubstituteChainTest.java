@@ -45,19 +45,11 @@ class VariantSubstituteChainTest {
 
     // ------------------------------------------------------------------
     // 1. A fuzzy-slot substitute with no stock but its own pattern must be
-    //    crafted to satisfy the slot.
-    //
-    // KNOWN GAP (kept as a pinned guard): the capture-time slot probe tries
-    // the exact substitute variant against STOCK only — a substitute variant
-    // that is CRAFTABLE (own pattern, no stock) is not scheduled for the slot,
-    // so the plan reports the exact input missing instead. Fix direction: at
-    // capture, when the exact variant has no stock, try the slot's substitute
-    // variants as craftable sub-calls (upstream fixed the same gap in its
-    // resolve(); VariantCraftableSubstituteTest). Enable this test when fixed.
+    //    crafted to satisfy the slot (GAP-2, fixed via the resolver's T2.5
+    //    substitution-group fallback — same layer the upstream fix targets).
     // ------------------------------------------------------------------
 
     @Test
-    @org.junit.jupiter.api.Disabled("known gap: craftable fuzzy-slot substitute not scheduled")
     void craftableSubstituteSatisfiesFuzzySlot() {
         PatternCompiler.clearCache();
         Map<IAEItemStack, ICraftingPatternDetails> view = new HashMap<>();
@@ -70,7 +62,23 @@ class VariantSubstituteChainTest {
         view.put(k("white"), white);
         PatternCompiler.compileIfAbsent(comp);
         PatternCompiler.compileIfAbsent(white);
-        CraftingVM vm = new CraftingVM("variant-substitute", view::get);
+        // Resolver with the T2.5 substitution-group fallback (mirrors the
+        // production resolve()): the exact key resolves to nothing, but a
+        // CRAFTABLE substitute variant's pattern is returned so the VM
+        // schedules its sub-chain.
+        CraftingVM vm = new CraftingVM("variant-substitute", key -> {
+            ICraftingPatternDetails direct = view.get(key);
+            if (direct != null) {
+                return direct;
+            }
+            for (IAEItemStack variant : PatternCompiler.getFuzzyGroup(key)) {
+                ICraftingPatternDetails vp = view.get(variant);
+                if (vp != null) {
+                    return vp;
+                }
+            }
+            return null;
+        });
         BenchSimulationState stocked = new BenchSimulationState();
         stocked.seed("raw", 5);
 
