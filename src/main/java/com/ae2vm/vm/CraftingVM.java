@@ -85,6 +85,8 @@ public class CraftingVM {
     private final Set<IAEItemStack> jitFailCache = new HashSet<>();
     /** Pattern-set version this VM's caches were built against (see invalidateCaches). */
     private volatile long patternVersion = com.ae2vm.compiler.PatternCompiler.patternSetVersion();
+    /** Merged fuzzy families (substitution group ∪ NBT family), per key. */
+    private final Map<IAEItemStack, List<IAEItemStack>> fuzzyFamilyCache = new HashMap<>();
     /** Lazily snapshotted live network stock (an IItemList supports findFuzzy). */
     private IItemList<IAEItemStack> realStockCache;
     private VMCounter executeStartStock;
@@ -316,6 +318,7 @@ public class CraftingVM {
         jitFailCache.clear();
         circularCache.clear();
         cyclicCraftKeys.clear();
+        fuzzyFamilyCache.clear();
         realStockCache = null;
         patternVersion = com.ae2vm.compiler.PatternCompiler.patternSetVersion();
     }
@@ -1814,10 +1817,23 @@ public class CraftingVM {
      * ONLY for replacement-enabled (FUZZY_SLOT) demand — exact slots use
      * {@link #nbtFamilyOf}.
      */
+    /**
+     * Memoized composition of the substitution group and the stock's NBT
+     * family. Both inputs are stable for the VM's lifetime (the substitution
+     * registry is version-gated and cleared in {@link #invalidateCaches()};
+     * the stock key set is stable per sandbox), so the merged family is cached
+     * per key instead of being rebuilt (two lists + a HashSet) on every call.
+     */
     private List<IAEItemStack> fuzzyFamilyOf(IAEItemStack key) {
+        List<IAEItemStack> cached = fuzzyFamilyCache.get(key);
+        if (cached != null) {
+            return cached;
+        }
         Set<IAEItemStack> family = new HashSet<>(PatternCompiler.getFuzzyGroup(key));
         family.addAll(simulation.findFuzzyFamily(key));
-        return new ArrayList<>(family);
+        List<IAEItemStack> list = new ArrayList<>(family);
+        fuzzyFamilyCache.put(key, list);
+        return list;
     }
 
     /**
