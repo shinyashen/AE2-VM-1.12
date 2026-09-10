@@ -223,6 +223,14 @@ public final class PatternChoiceRepair {
         if (refined == null) {
             return best;
         }
+        if (refined.demand == null) {
+            // fast-path result: re-derive the demand table once (final result
+            // only) for the virtual-pattern synthesis below
+            refined = predictFullSlow(model, null, refinedWeights);
+            if (refined == null) {
+                return best;
+            }
+        }
 
         // 3) Synthesize preferences and confirm with one real pass.
         Map<IAEItemStack, ICraftingPatternDetails> prefs = new LinkedHashMap<>();
@@ -275,6 +283,10 @@ public final class PatternChoiceRepair {
     private static final class PatternShape {
         final List<IAEItemStack> inputs = new ArrayList<>();
         final List<Long> inputAmounts = new ArrayList<>();
+        // Fast-path indices resolved once per model build (global key indices).
+        int[] inputIdx = null;
+        long[] inputAmt = null;
+        int outputIdx = -1;
         long outputPerCraft = 1L;
     }
 
@@ -290,6 +302,14 @@ public final class PatternChoiceRepair {
         final Map<ICraftingPatternDetails, PatternShape> shapes;
         final List<ICraftingPatternDetails>[] contendedList;
         final SimulationState simulation;
+        // Fast-path model: isSameType-merged key registry (universe ∪ every
+        // shape input/output), universe→global mapping and a one-time stock
+        // read per key — the linear cascade then runs on long[] with zero
+        // per-completion allocations.
+        final List<IAEItemStack> globalKeys;
+        final Map<IAEItemStack, Integer> globalIndex;
+        final int[] uniToGlobal;
+        final long[] stockCache;
 
         @SuppressWarnings("unchecked")
         Model(int n, List<IAEItemStack> universe, int[] order, int rootIdx,
@@ -297,7 +317,9 @@ public final class PatternChoiceRepair {
               Map<IAEItemStack, ICraftingPatternDetails> chosen,
               Map<ICraftingPatternDetails, PatternShape> shapes,
               List<ICraftingPatternDetails>[] contendedList,
-              SimulationState simulation) {
+              SimulationState simulation, List<IAEItemStack> globalKeys,
+              Map<IAEItemStack, Integer> globalIndex, int[] uniToGlobal,
+              long[] stockCache) {
             this.n = n;
             this.universe = universe;
             this.order = order;
@@ -308,6 +330,10 @@ public final class PatternChoiceRepair {
             this.shapes = shapes;
             this.contendedList = contendedList;
             this.simulation = simulation;
+            this.globalKeys = globalKeys;
+            this.globalIndex = globalIndex;
+            this.uniToGlobal = uniToGlobal;
+            this.stockCache = stockCache;
         }
     }
 
@@ -411,8 +437,82 @@ public final class PatternChoiceRepair {
             contendedList[i] = contended.get(universe.get(i));
         }
         long deliver = Math.max(1L, state.plan.getDeliverAmount());
+
+        // Fast-path registry: every key the cascade can touch (universe ∪ all
+        // shape inputs/outputs), isSameType-merged; stock read once per key.
+        List<IAEItemStack> globalKeys = new ArrayList<>();
+        Map<IAEItemStack, Integer> globalIndex = new HashMap<>();
+        java.util.function.Function<IAEItemStack, Integer> intern = k -> {
+            if (k == null) {
+                return -1;
+            }
+            Integer hit = globalIndex.get(k);
+            if (hit != null) {
+                return hit;
+            }
+            for (int i = 0; i < globalKeys.size(); i++) {
+                if (globalKeys.get(i).isSameType(k)) {
+                    globalIndex.put(k, i);
+                    return i;
+                }
+            }
+            globalKeys.add(k);
+            globalIndex.put(k, globalKeys.size() - 1);
+            return globalKeys.size() - 1;
+        };
+        for (ICraftingPatternDetails p : shapes.keySet()) {
+            PatternShape sh = shapes.get(p);
+            if (sh == null) {
+                continue;
+            }
+            intern.apply(PatternCompat.getPrimaryOutput(p));
+            for (int i = 0; i < sh.inputs.size(); i++) {
+                intern.apply(sh.inputs.get(i));
+            }
+        }
+        for (IAEItemStack k : universe) {
+            intern.apply(k);
+        }
+        int[] uniToGlobal = new int[n];
+        for (int i = 0; i < n; i++) {
+            uniToGlobal[i] = intern.apply(universe.get(i));
+        }
+        long[] stockCache = new long[globalKeys.size()];
+        for (int i = 0; i < globalKeys.size(); i++) {
+            try {
+                stockCache[i] = Math.max(0L, state.simulation.extract(
+                        globalKeys.get(i), Long.MAX_VALUE, true));
+            } catch (Throwable t) {
+                stockCache[i] = 0L;
+            }
+        }
+        for (PatternShape sh : shapes.values()) {
+            if (sh == null) {
+                continue;
+            }
+            sh.inputIdx = new int[sh.inputs.size()];
+            sh.inputAmt = new long[sh.inputs.size()];
+            for (int i = 0; i < sh.inputs.size(); i++) {
+                sh.inputIdx[i] = intern.apply(sh.inputs.get(i));
+                sh.inputAmt[i] = sh.inputAmounts.get(i);
+            }
+            sh.outputIdx = intern.apply(PatternCompat.getPrimaryOutput(
+                    contendedKeyOf(shapes, sh)));
+        }
         return new Model(n, universe, order, rootIdx, deliver, contended, chosen,
-                shapes, contendedList, state.simulation);
+                shapes, contendedList, state.simulation, globalKeys, globalIndex,
+                uniToGlobal, stockCache);
+    }
+
+    /** The pattern owning a shape (shapes map is 1:1, reverse lookup). */
+    private static ICraftingPatternDetails contendedKeyOf(
+            Map<ICraftingPatternDetails, PatternShape> shapes, PatternShape shape) {
+        for (var e : shapes.entrySet()) {
+            if (e.getValue() == shape) {
+                return e.getKey();
+            }
+        }
+        return null;
     }
 
     private static boolean containsNull(List<ICraftingPatternDetails> list) {
@@ -697,7 +797,113 @@ public final class PatternChoiceRepair {
         }
     }
 
+    /**
+     * Dispatches to the long[] fast cascade, falling back to the BigInteger
+     * path on overflow or any structural surprise (both must agree exactly).
+     */
     private static Eval predictFull(Model model, int[] assignment, int[][] weights) {
+        try {
+            return predictFullFast(model, assignment, weights);
+        } catch (ArithmeticException | IllegalStateException degraded) {
+            return predictFullSlow(model, assignment, weights);
+        }
+    }
+
+    /**
+     * Fast linear cascade over the model's global key registry: long[] demand,
+     * pre-read stock, zero per-call allocations (the enumeration evaluates
+     * 2^n of these per solve — allocation pressure dominated the old path).
+     * Overflow / structural surprises throw and are degraded by the caller.
+     * Returns {@code demand == null}; callers needing the demand table
+     * (final-result prefs synthesis only) re-derive via the slow path.
+     */
+    private static Eval predictFullFast(Model model, int[] assignment, int[][] weights) {
+        int g = model.globalKeys.size();
+        long[] demand = new long[g];
+        boolean[] producedGlobal = new boolean[g];
+        for (int oi = 0; oi < model.order.length; oi++) {
+            int i = model.order[oi];
+            int[] w = weights != null ? weights[i] : null;
+            List<ICraftingPatternDetails> candidates = model.contendedList[i];
+            int gSelf = model.uniToGlobal[i];
+            if (w != null && countNonzero(w) > 1) {
+                long d = i == model.rootIdx ? model.deliver : demand[gSelf];
+                if (d <= 0) {
+                    producedGlobal[gSelf] = true; // nothing demanded upstream: idle
+                    continue;
+                }
+                long opc = model.shapes.get(candidates.get(0)).outputPerCraft;
+                long total = (d + opc - 1) / opc;
+                if (total > (1L << 40)) {
+                    throw new ArithmeticException("craft count overflow");
+                }
+                long[] shares = largestRemainder(total, w);
+                for (int j = 0; j < shares.length; j++) {
+                    if (shares[j] <= 0) {
+                        continue;
+                    }
+                    PatternShape shape = model.shapes.get(candidates.get(j));
+                    if (shape == null || shape.inputIdx == null) {
+                        throw new IllegalStateException("shape");
+                    }
+                    for (int sIdx = 0; sIdx < shape.inputIdx.length; sIdx++) {
+                        demand[shape.inputIdx[sIdx]] = Math.addExact(
+                                demand[shape.inputIdx[sIdx]],
+                                Math.multiplyExact(shares[j], shape.inputAmt[sIdx]));
+                    }
+                }
+                producedGlobal[gSelf] = true;
+                continue;
+            }
+            ICraftingPatternDetails pattern;
+            if (candidates != null) {
+                if (w != null && countNonzero(w) == 1) {
+                    int hot = 0;
+                    while (w[hot] <= 0) {
+                        hot++;
+                    }
+                    pattern = candidates.get(hot);
+                } else {
+                    int idx = assignment != null ? assignment[i] : 0;
+                    pattern = candidates.get(idx);
+                }
+            } else {
+                pattern = model.chosen.get(model.universe.get(i));
+            }
+            if (pattern == null) {
+                continue; // leaf: demand stays as accumulated
+            }
+            PatternShape shape = model.shapes.get(pattern);
+            if (shape == null || shape.inputIdx == null) {
+                throw new IllegalStateException("shape");
+            }
+            long needed = i == model.rootIdx ? model.deliver : demand[gSelf];
+            long times = (needed + shape.outputPerCraft - 1) / shape.outputPerCraft;
+            producedGlobal[gSelf] = true;
+            if (times <= 0) {
+                continue;
+            }
+            for (int sIdx = 0; sIdx < shape.inputIdx.length; sIdx++) {
+                demand[shape.inputIdx[sIdx]] = Math.addExact(
+                        demand[shape.inputIdx[sIdx]],
+                        Math.multiplyExact(times, shape.inputAmt[sIdx]));
+            }
+        }
+        // Sum shortfalls over non-produced demands (stock pre-read at build).
+        long missing = 0;
+        for (int gi = 0; gi < g; gi++) {
+            if (demand[gi] <= 0 || producedGlobal[gi]) {
+                continue;
+            }
+            long shortfall = demand[gi] - model.stockCache[gi];
+            if (shortfall > 0) {
+                missing = Math.addExact(missing, shortfall);
+            }
+        }
+        return new Eval(BigInteger.valueOf(missing), null);
+    }
+
+    private static Eval predictFullSlow(Model model, int[] assignment, int[][] weights) {
         List<IAEItemStack> universe = model.universe;
         int n = model.n;
         boolean[] produced = new boolean[n];
