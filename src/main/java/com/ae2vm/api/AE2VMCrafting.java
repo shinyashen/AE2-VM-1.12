@@ -429,6 +429,33 @@ public final class AE2VMCrafting {
             return sub;
         }
 
+        // T2.5 (GAP-2): substitution-group variants. The slot may accept a
+        // variant that is CRAFTABLE while the exact key itself is neither
+        // stocked nor craftable — schedule the variant's craft and let the
+        // fuzzy slot consume its output. (Upstream fixed the same gap in its
+        // resolve(); gated on the slot's substitute group so the variant
+        // space stays finite and explicit.)
+        try {
+            for (IAEItemStack variant : PatternCompiler.getFuzzyGroup(key)) {
+                if (variant == null || variant.isSameType(key)) {
+                    continue;
+                }
+                Collection<ICraftingPatternDetails> vsubs =
+                        craftingGrid.getCraftingFor(variant, null, -1, world);
+                if (vsubs == null || vsubs.isEmpty()) {
+                    continue;
+                }
+                ICraftingPatternDetails sub = pickBestPattern(vsubs, variant);
+                if (sub != null && patternOutputs(sub, variant)) {
+                    record.record(key, sub, verifiedCandidates(vsubs, variant));
+                    PatternCompiler.compileIfAbsent(sub);
+                    cache.put(key, sub);
+                    return sub;
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+
         // Fluid fallback: packet-keyed index.
         if (AE2FCCompat.isFluidFakeItem(key)) {
             IAEItemStack packet = AE2FCCompat.packFluidPacket(key, key.getStackSize());

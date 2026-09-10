@@ -981,9 +981,6 @@ public final class PatternChoiceRepair {
                 return null;
             }
             BigInteger times = craftCount(model, i, shape, demand);
-            if (times == null) {
-                return null;
-            }
             produced[i] = true;
             if (times.signum() == 0) {
                 continue;
