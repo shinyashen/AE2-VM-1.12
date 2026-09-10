@@ -171,6 +171,13 @@ public final class DeadCycleGuard {
         List<ICraftingPatternDetails> list = candidates instanceof List
                 ? (List<ICraftingPatternDetails>) candidates
                 : new ArrayList<>(candidates);
+        if (list.size() <= 1) {
+            // A single candidate has no alternative to prefer: pruning it could
+            // only remove the last choice, and the runtime guard handles the
+            // cycle. Skip the whole graph analysis (the common no-contention
+            // case — one pattern per key — pays nothing).
+            return list;
+        }
         List<ICraftingPatternDetails> filtered = null;
         for (int i = 0; i < list.size(); i++) {
             ICraftingPatternDetails p = list.get(i);
