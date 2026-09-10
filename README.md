@@ -32,7 +32,7 @@
 
 原版在 `CraftingService.beginCraftingCalculation` 层拦截并返回自建 `ICraftingPlan`; 1.12 的 `CraftingCPUCluster.submitJob` 只接受内部 `CraftingJob` 类型(instanceof 检查),因此本移植采用**根节点替换**:`CraftingJobMixin` 把作业根节点换成 `VMRootNode`,其 `request()` 运行 VM、`setJob()/getPlan()/dive()` 把 VM 计划喂回 AE2 原生作业生命周期(模拟通过、缺料展示、CPU 执行),失败时回退原生树。键类型相应从 `AEKey` 换为 `IAEItemStack` 类型键(equals = isSameType)。
 
-## 测试(174/174 全绿)
+## 测试(178/178 全绿)
 
 `gradlew build` 内置 JUnit5 语义测试(测试源集以 JDK 17 工具链编译运行,不进发布 jar)。原仓库的可移植测试族已全部落地,断言与源语义逐条对拍:
 
@@ -51,6 +51,7 @@
 
 - **多样板求解回归**(MultiPatternSolverTest 5 例):fibonacci 族与 greedy-trap 族三模式全部 SUPPORTED(即 39/39 的引擎级钉死),以及求解器机制三断言(采纳严格更优混合、可行贪心快路径零改动、等缺口不换配比)。
 - **死环预剪**(DeadCycleGuardTest 10 例):互环判定、自环恒剪、种子环保留、候选外部输入供环、兄弟候选不构成供环、环外键副产物产入供环、深链非环、剪除保留健康候选、全剪回退原候选、端到端 VM 走健康路径(对标上游 CycleAwarePatternSelectionBenchmark 场景)。
+- **性能基准**(PerfReportTest 4 例,informational 永绿):fib32×10^9、fib24×10^9 空库存(冷捕获/热回放)、多样板求解场景全管线(greedy+枚举+确认)、死环预剪微开销(10 键环 vs 24 键链)——只断言正确性不变量,耗时打印为 `[perf]` 行供离线报告对比,不断言墙钟(CI 机器速度不定)。
 
 测试 harness(`com.ae2vm.bench`):无 bootstrap 的 `IAEItemStack` fake、配方 fake(槽位级替代)、沙盒 fake(非破坏性网络视图 + 类型精确插入缓存,与 `NetworkCraftingSandbox` 同语义),可在纯 JVM 下验证全部规划语义。[TB-ThirdParty](https://github.com/TaoLe-si/TB-ThirdParty) 的纯 Java 规划器(`com.moakiee.thunderbolt.core.planner`,23 文件)已 vendor 进测试源集,作为参考对拍的基线设施。
 
