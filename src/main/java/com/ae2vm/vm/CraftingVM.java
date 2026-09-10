@@ -231,6 +231,13 @@ public class CraftingVM {
         // the same pattern for every sub-call (the multi-pattern repair loop
         // re-resolves keys across passes); otherwise the subtree is stale.
         final Map<IAEItemStack, ICraftingPatternDetails> subChoices = new ConcurrentHashMap<>();
+        // Direct sub-calls (incl. transitively merged ones) that resolved to NO
+        // pattern at capture time. If any of them resolves NOW, the bundle is
+        // stale: the subtree was captured with that branch reported missing, and
+        // replaying it would keep hiding the newly registered pattern (the
+        // upstream PatternRefreshReuse bug — "new pattern not recognized until
+        // restart").
+        final Set<IAEItemStack> missingSubKeys = ConcurrentHashMap.newKeySet();
 
         Bundle scale(long factor) { return scale(BigInteger.valueOf(factor)); }
 
@@ -240,6 +247,7 @@ public class CraftingVM {
             used.forEach((k, v) -> b.used.put(k, v.multiply(factor)));
             emitted.forEach((k, v) -> b.emitted.put(k, v.multiply(factor)));
             missing.forEach((k, v) -> b.missing.put(k, v.multiply(factor)));
+            b.missingSubKeys.addAll(missingSubKeys);
             internal.forEach((k, v) -> b.internal.put(k, v.multiply(factor)));
             patterns.forEach((k, v) -> b.patterns.put(k, v.multiply(factor)));
             needs.forEach((k, v) -> b.needs.put(k, v.multiply(factor)));
@@ -308,17 +316,25 @@ public class CraftingVM {
      * different request) re-resolved a sub-call to another pattern — must not
      * be replayed: its subtree effect belongs to a different pattern mix.
      */
-    private boolean bundleChoicesCurrent(Bundle bundle) {
-        for (Map.Entry<IAEItemStack, ICraftingPatternDetails> e
-                : bundle.subChoices.entrySet()) {
-            ICraftingPatternDetails current = patternResolver != null
-                    ? patternResolver.apply(e.getKey()) : null;
-            if (current != e.getValue()) {
-                return false;
+        private boolean bundleChoicesCurrent(Bundle bundle) {
+            for (Map.Entry<IAEItemStack, ICraftingPatternDetails> e
+                    : bundle.subChoices.entrySet()) {
+                ICraftingPatternDetails current = patternResolver != null
+                        ? patternResolver.apply(e.getKey()) : null;
+                if (current != e.getValue()) {
+                    return false;
+                }
             }
+            // A sub-call that had NO pattern at capture time but resolves now:
+            // the captured subtree reported that branch missing — replaying it
+            // would hide the pattern registered in the meantime.
+            for (IAEItemStack sk : bundle.missingSubKeys) {
+                if (patternResolver != null && patternResolver.apply(sk) != null) {
+                    return false;
+                }
+            }
+            return true;
         }
-        return true;
-    }
 
     private VMPlan execute(CraftingBytecode requestBytecode, SimulationState simulation,
                            BigInteger requestedAmount) {
@@ -499,8 +515,11 @@ public class CraftingVM {
                                                     new BundleKey(sk, ssbc.getCode()));
                                             if (subArr != null && subArr[0] != null) {
                                                 delta.subChoices.putAll(subArr[0].subChoices);
+                                                delta.missingSubKeys.addAll(subArr[0].missingSubKeys);
                                             }
                                         }
+                                    } else {
+                                        delta.missingSubKeys.add(sk);
                                     }
                                     if (sreq > 0) {
                                         delta.itemNeeds.merge(sk, BigInteger.valueOf(sreq), BigInteger::add);
