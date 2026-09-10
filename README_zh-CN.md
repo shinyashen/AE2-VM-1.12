@@ -34,7 +34,7 @@
 |---|---|
 | Minecraft | 1.12.2 |
 | 模组加载器 | [Cleanroom](https://github.com/CleanroomMC/Cleanroom)(推荐);或 Forge + [MixinBooter](https://www.curseforge.com/minecraft/mc-mods/mixin-booter) |
-| 应用能源 | [AE2 Unofficial Extended Life](https://www.curseforge.com/minecraft/mc-mods/ae2-extended-life) v0.56.7+(CurseForge 1.12.2 线的全部历史构建均兼容) |
+| 应用能源 | [AE2 Unofficial Extended Life](https://www.curseforge.com/minecraft/mc-mods/ae2-extended-life)(兼容 AE2UEL 1.12.2 的全部历史构建) |
 
 从 [Releases](https://github.com/shinyashen/AE2-VM-1.12/releases) 下载 jar 放入 `mods/` 目录即可。VM 在合成计算时自动接管,无需任何配置;如需切回原版逻辑,关闭配置项 `proxyEnabled` 即可。
 

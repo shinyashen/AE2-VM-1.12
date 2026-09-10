@@ -34,7 +34,7 @@ All 39 reference-suite scenarios × 3 stock modes are **SUPPORTED** with zero fl
 |---|---|
 | Minecraft | 1.12.2 |
 | Mod loader | [Cleanroom](https://github.com/CleanroomMC/Cleanroom) (recommended); or Forge + [MixinBooter](https://www.curseforge.com/minecraft/mc-mods/mixin-booter) |
-| Applied Energistics | [AE2 Unofficial Extended Life](https://www.curseforge.com/minecraft/mc-mods/ae2-extended-life) v0.56.7+ (every build on the CurseForge 1.12.2 line is compatible) |
+| Applied Energistics | [AE2 Unofficial Extended Life](https://www.curseforge.com/minecraft/mc-mods/ae2-extended-life) (compatible with every 1.12.2 build of AE2UEL) |
 
 Download `ae2_vm_112-x.y.z.jar` from [Releases](https://github.com/shinyashen/AE2-VM-1.12/releases), drop it into `mods/` — done. The VM takes over crafting calculations automatically; `proxyEnabled` in the config turns it off.
 
