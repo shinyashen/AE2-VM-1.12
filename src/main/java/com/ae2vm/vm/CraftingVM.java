@@ -106,7 +106,15 @@ public class CraftingVM {
      */
     private final Map<BundleKey, Bundle[]> bundleCache = new HashMap<>();
 
-    /** Bundle-cache identity: item key + identity of the compiled code array. */
+    /**
+     * Bundle-cache identity: item key + identity of the compiled code array.
+     * The hash uses the code LENGTH (stable across JVM runs) rather than
+     * {@code identityHashCode}: an identity-based hash made the cache's bucket
+     * layout — and with it the same-type fallback's pick — vary per run, which
+     * surfaced as run-to-run shortfall fluctuations in the allocation solver.
+     * Distinct arrays of equal length merely collide in the bucket; equals
+     * still compares the array identity.
+     */
     private static final class BundleKey {
         final IAEItemStack key;
         final byte[] code;
@@ -126,7 +134,7 @@ public class CraftingVM {
 
         @Override
         public int hashCode() {
-            return key.hashCode() * 31 + System.identityHashCode(code);
+            return key.hashCode() * 31 + code.length;
         }
     }
 

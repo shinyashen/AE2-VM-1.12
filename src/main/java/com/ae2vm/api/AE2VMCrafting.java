@@ -14,14 +14,19 @@ import com.ae2vm.compiler.PatternCompiler;
 import com.ae2vm.vm.CraftingBytecode;
 import com.ae2vm.vm.CraftingVM;
 import com.ae2vm.vm.NetworkCraftingSandbox;
+import com.ae2vm.vm.PatternChoiceRepair;
 import com.ae2vm.vm.VMCounter;
 import com.ae2vm.vm.VMPlan;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.world.World;
 
+import java.math.BigInteger;
+import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -47,6 +52,13 @@ import java.util.concurrent.ConcurrentHashMap;
 public final class AE2VMCrafting {
     private static final ConcurrentHashMap<IGrid, CraftingVM> VM_CACHE =
             new ConcurrentHashMap<>();
+
+    /**
+     * Replay budget for the multi-pattern choice repair ({@link
+     * PatternChoiceRepair}): only spent when the greedy first pass reports
+     * missing, so successful requests never pay for it.
+     */
+    private static final int REPAIR_EXTRA_PASSES = 32;
 
     private AE2VMCrafting() {
     }
@@ -83,7 +95,9 @@ public final class AE2VMCrafting {
         // Root pattern lookup mirrors the resolver: exact key first, then the
         // packet key for AE2FC fluids (the root request key arrives in canonical
         // drop form while the grid index may be amount-carrying).
-        ICraftingPatternDetails topPattern = findRootPattern(craftingGrid, what, amount, world);
+        List<ICraftingPatternDetails> rootCandidates = new ArrayList<>();
+        ICraftingPatternDetails topPattern =
+                findRootPattern(craftingGrid, what, amount, world, rootCandidates);
         if (topPattern == null) {
             return null;
         }
@@ -95,16 +109,70 @@ public final class AE2VMCrafting {
         }
 
         CraftingVM vm = vmFor(grid);
-        // Per-request resolver cache: repeated keys resolve once per calculation.
+
+        // Multi-pattern choice repair: the greedy first pass is unchanged; only
+        // when it reports missing are contended sub-pattern choices replayed
+        // (see PatternChoiceRepair). Every pass gets a fresh resolver cache and
+        // a fresh network snapshot so a replay sees the same network state. A
+        // preference on the ROOT key re-compiles the request bytecode for that
+        // pattern (its craft count derives from its own per-craft output).
+        final IAEItemStack rootKey = bytecode.getOutput();
+        // Pristine stock view for the repair model: never executed against, so
+        // its stock reflects the network rather than a pass's consumption
+        // (simulate extracts leave it untouched).
+        final NetworkCraftingSandbox stockView = NetworkCraftingSandbox.snapshot(grid);
+        final Map<VMPlan, BigInteger> remainders = new HashMap<>();
+        PatternChoiceRepair.Pass pass = prefs -> {
+            ICraftingPatternDetails passTop = prefs.get(rootKey);
+            CraftingBytecode passBytecode = bytecode;
+            if (passTop != null && passTop != topPattern) {
+                passBytecode = PatternCompiler.compileRequest(passTop, amount);
+                if (passBytecode == null) {
+                    passTop = topPattern;
+                    passBytecode = bytecode;
+                }
+            }
+            PatternChoiceRepair.PassResult result = runPass(grid, world, vm,
+                    passBytecode, passTop != null ? passTop : topPattern,
+                    rootCandidates, what, stockView, prefs);
+            remainders.put(result.plan, vm.getBatchRemainder());
+            return result;
+        };
+        VMPlan plan = PatternChoiceRepair.repair(pass, REPAIR_EXTRA_PASSES);
+        BigInteger remainder = remainders.get(plan);
+        if (remainder != null) {
+            // The winning plan is not necessarily the last replayed pass; keep
+            // the exposed batch remainder consistent with the returned plan.
+            vm.restoreBatchRemainder(remainder);
+        }
+        return applyIgnoreFix(grid, what, plan);
+    }
+
+    /** One full engine pass under the given pattern-choice preferences. */
+    private static PatternChoiceRepair.PassResult runPass(IGrid grid, World world,
+                                                          CraftingVM vm,
+                                                          CraftingBytecode bytecode,
+                                                          ICraftingPatternDetails topPattern,
+                                                          List<ICraftingPatternDetails> rootCandidates,
+                                                          IAEItemStack what,
+                                                          NetworkCraftingSandbox stockView,
+                                                          Map<IAEItemStack, ICraftingPatternDetails> prefs) {
         Map<IAEItemStack, ICraftingPatternDetails> resolverCache = new ConcurrentHashMap<>();
-        vm.setPatternResolver(key -> resolve(grid, world, resolverCache, key));
+        PatternChoiceRepair.Choices choices = new PatternChoiceRepair.Choices();
+        vm.setPatternResolver(key -> resolve(grid, world, resolverCache, prefs, choices, key));
 
         NetworkCraftingSandbox sandbox = NetworkCraftingSandbox.snapshot(grid);
         IAEItemStack ignored = AE2FCCompat.normalizeFluidItem(what);
         sandbox.ignore(ignored != null ? ignored : what);
 
+        // The root pattern is chosen by findRootPattern, not by the resolver —
+        // record it (with its alternatives) so the repair model can propagate
+        // the root demand and enumerate the root choice.
+        choices.record(bytecode.getOutput(), topPattern,
+                verifiedCandidates(rootCandidates, bytecode.getOutput()));
+
         VMPlan plan = vm.execute(bytecode, sandbox);
-        return applyIgnoreFix(grid, what, plan);
+        return new PatternChoiceRepair.PassResult(plan, choices, stockView);
     }
 
     /**
@@ -162,7 +230,8 @@ public final class AE2VMCrafting {
     private static ICraftingPatternDetails findRootPattern(ICraftingGrid grid,
                                                            IAEItemStack what,
                                                            long amount,
-                                                           World world) {
+                                                           World world,
+                                                           List<ICraftingPatternDetails> outCandidates) {
         IAEItemStack key = what.copy();
         long amountHint = key.getStackSize();
         key.reset();
@@ -174,6 +243,7 @@ public final class AE2VMCrafting {
                 addAll(candidates, grid.getCraftingFor(packet, null, -1, world));
             }
         }
+        outCandidates.addAll(candidates);
         return pickBestPattern(candidates, key);
     }
 
@@ -189,10 +259,17 @@ public final class AE2VMCrafting {
      * verified against the pattern's actual primary output — chain sub-patterns
      * with NBT variants (appflux cores, Fibonacci chains) resolve through T3.
      * Every result is verified to actually output the requested key.
+     *
+     * <p>Multi-pattern choice repair: a preference for the key (set by the
+     * {@link PatternChoiceRepair} replay loop) overrides the greedy pick, and
+     * every decision is recorded (chosen pattern + all verified alternatives)
+     * so the repair loop can blame contended ancestors of missing keys.
      */
     private static ICraftingPatternDetails resolve(IGrid grid,
                                                    World world,
                                                    Map<IAEItemStack, ICraftingPatternDetails> cache,
+                                                   Map<IAEItemStack, ICraftingPatternDetails> prefs,
+                                                   PatternChoiceRepair.Choices record,
                                                    IAEItemStack key) {
         if (key == null) {
             return null;
@@ -205,10 +282,19 @@ public final class AE2VMCrafting {
         if (craftingGrid == null) {
             return null;
         }
+        // Repair preference: a blamed key's forced pattern wins over the pick.
+        ICraftingPatternDetails forced = prefs.get(key);
+        if (forced != null) {
+            PatternCompiler.compileIfAbsent(forced);
+            cache.put(key, forced);
+            record.record(key, forced, null);
+            return forced;
+        }
         // T1: exact match.
         Collection<ICraftingPatternDetails> subs = craftingGrid.getCraftingFor(key, null, -1, world);
         if (subs != null && !subs.isEmpty()) {
             ICraftingPatternDetails sub = pickBestPattern(subs, key);
+            record.record(key, sub, verifiedCandidates(subs, key));
             PatternCompiler.compileIfAbsent(sub);
             cache.put(key, sub);
             return sub;
@@ -222,6 +308,7 @@ public final class AE2VMCrafting {
                 if (subs != null && !subs.isEmpty()) {
                     ICraftingPatternDetails sub = pickBestPattern(subs, packet);
                     if (sub != null && patternOutputs(sub, key)) {
+                        record.record(key, sub, verifiedCandidates(subs, key));
                         PatternCompiler.compileIfAbsent(sub);
                         cache.put(key, sub);
                         return sub;
@@ -241,6 +328,7 @@ public final class AE2VMCrafting {
                     if (subs != null && !subs.isEmpty()) {
                         ICraftingPatternDetails sub = pickBestPattern(subs, key);
                         if (sub != null && patternOutputs(sub, key)) {
+                            record.record(key, sub, verifiedCandidates(subs, key));
                             PatternCompiler.compileIfAbsent(sub);
                             cache.put(key, sub);
                             return sub;
@@ -252,6 +340,18 @@ public final class AE2VMCrafting {
         }
         // Not found: no cross-network matching; the caller records missing.
         return null;
+    }
+
+    /** All patterns that actually output {@code want}, in registration order. */
+    private static List<ICraftingPatternDetails> verifiedCandidates(
+            Collection<ICraftingPatternDetails> patterns, IAEItemStack want) {
+        List<ICraftingPatternDetails> verified = new ArrayList<>(patterns.size());
+        for (ICraftingPatternDetails p : patterns) {
+            if (p != null && patternOutputs(p, want)) {
+                verified.add(p);
+            }
+        }
+        return verified;
     }
 
     /**

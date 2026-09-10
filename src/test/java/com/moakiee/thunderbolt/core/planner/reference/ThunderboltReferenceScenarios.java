@@ -144,10 +144,18 @@ public final class ThunderboltReferenceScenarios {
             combine(options.get(i - 2), options.get(i - 3), candidates);
             long minimumCost = candidates.stream().mapToLong(ThunderboltReferenceScenarios::total).min()
                     .orElseThrow();
+            // Sort by a CANONICAL (key-sorted) string, not Map::toString:
+            // the candidate maps are Map.copyOf products whose iteration order
+            // carries a per-JVM random salt, so a toString-based sort picked a
+            // DIFFERENT minimum stock on every JVM launch — the whole scenario
+            // (and its expected feasibility) flipped run to run. (This also
+            // explains the original repo's documented "22/11 <-> 23/10"
+            // benchmark flapping, which shares this generator.)
             options.add(candidates.stream()
                     .filter(candidate -> total(candidate) == minimumCost)
                     .distinct()
-                    .sorted(Comparator.comparing(Map::toString))
+                    .sorted(Comparator.comparing(
+                            (Map<String, Long> candidate) -> canonical(candidate)))
                     .toList());
         }
         return options.get(depth);
@@ -410,6 +418,17 @@ public final class ThunderboltReferenceScenarios {
 
     private static long total(Map<String, Long> values) {
         return values.values().stream().mapToLong(Long::longValue).sum();
+    }
+
+    /** Deterministic, iteration-order-independent rendering of a stock map. */
+    private static String canonical(Map<String, Long> values) {
+        return values.entrySet().stream()
+                .sorted(Map.Entry.<String, Long>comparingByKey()
+                        .thenComparingLong(Map.Entry::getValue))
+                .map(e -> e.getKey() + "=" + e.getValue())
+                .reduce((a, b) -> a + ", " + b)
+                .map(s -> "{" + s + "}")
+                .orElse("{}");
     }
 
     @FunctionalInterface
