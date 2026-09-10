@@ -19,6 +19,7 @@
 | 换算环守恒 | 纯换算环 BigInteger 分数环值校验,无种子恰报最小价值键缺失 |
 | 耐久工具 | `amount x ceil(times/uses)` 闭式;容器物品 / 损伤差 / NBT 数值迁移三种探测 |
 | 模糊替换 | 替换组 + FUZZY_SLOT 槽位标记;处理配方默认同物品模糊族;精确槽/模糊槽分离 |
+| 死环预剪 | 解析时剪除"死环"样板(无种子、无外部供给的配方图 SCC,如钢粉↔钢锭互变且两者均无库存);种子环/外部供环/回流环保留,运行时守卫兜底(对标上游 GTL CYCLE-AWARE) |
 | 库存感知聚合 | 子项库存先用、缺口补合成;stock-aware 精确/模糊槽位切分 |
 | 流体样板 | AE2FC-Rework 假物品键(drop 规范化,数量承载于 AE 栈大小),深层流体子合成可解析 |
 | AE2CT 兼容 | VM 计划直接构建 LiteCraftTreeNode 显示树(@Pseudo mixin) |
@@ -31,7 +32,7 @@
 
 原版在 `CraftingService.beginCraftingCalculation` 层拦截并返回自建 `ICraftingPlan`; 1.12 的 `CraftingCPUCluster.submitJob` 只接受内部 `CraftingJob` 类型(instanceof 检查),因此本移植采用**根节点替换**:`CraftingJobMixin` 把作业根节点换成 `VMRootNode`,其 `request()` 运行 VM、`setJob()/getPlan()/dive()` 把 VM 计划喂回 AE2 原生作业生命周期(模拟通过、缺料展示、CPU 执行),失败时回退原生树。键类型相应从 `AEKey` 换为 `IAEItemStack` 类型键(equals = isSameType)。
 
-## 测试(164/164 全绿)
+## 测试(174/174 全绿)
 
 `gradlew build` 内置 JUnit5 语义测试(测试源集以 JDK 17 工具链编译运行,不进发布 jar)。原仓库的可移植测试族已全部落地,断言与源语义逐条对拍:
 
@@ -49,6 +50,7 @@
 - **能力总闸套件**(Ae2VmReferenceCapabilitySuite 39 例 + Ae2VmBoundaryCapabilitySuite 37 例 + FalsePositiveDiagnostic 1 例):经 1.12 翻译层(`Ae2VmReferencePlanner`)驱动 VM 走完Thunderbolt 参考套件全部 13 族 × 3 库存模式。参考图的 1.21 概念按真实 1.12 样板形状编码:催化剂(`returned`)→ 等量同键副产物(严格输出相等 → CATALYST_SEED,标志物/精华形状);耐久(`finiteUse`)→ maxDamage=uses 的可损伤工具 + 损伤 +1 副产物(损伤差探测);宿主复用库存(`returnedFrom`)→ 槽位替代变体 + 宿主池并入网络库存。**能力面结论:39 例全部稳定 SUPPORTED(含曾经的 FALSE_POSITIVE `multi-dag/fibonacci/minimum`,由多样板分配求解器确认零缺口闭合)** (详见"多样板分配求解器"一节)。Boundary 套件断言全部 37 例的 expectedFeasible:数量边界(x1/x2/x100)、模糊主产物 + 白库存/灰部分库存/无变体库存、10/20 级深链中段库存、可合成流体部分库存(x1/2/100)。
 
 - **多样板求解回归**(MultiPatternSolverTest 5 例):fibonacci 族与 greedy-trap 族三模式全部 SUPPORTED(即 39/39 的引擎级钉死),以及求解器机制三断言(采纳严格更优混合、可行贪心快路径零改动、等缺口不换配比)。
+- **死环预剪**(DeadCycleGuardTest 10 例):互环判定、自环恒剪、种子环保留、候选外部输入供环、兄弟候选不构成供环、环外键副产物产入供环、深链非环、剪除保留健康候选、全剪回退原候选、端到端 VM 走健康路径(对标上游 CycleAwarePatternSelectionBenchmark 场景)。
 
 测试 harness(`com.ae2vm.bench`):无 bootstrap 的 `IAEItemStack` fake、配方 fake(槽位级替代)、沙盒 fake(非破坏性网络视图 + 类型精确插入缓存,与 `NetworkCraftingSandbox` 同语义),可在纯 JVM 下验证全部规划语义。[TB-ThirdParty](https://github.com/TaoLe-si/TB-ThirdParty) 的纯 Java 规划器(`com.moakiee.thunderbolt.core.planner`,23 文件)已 vendor 进测试源集,作为参考对拍的基线设施。
 

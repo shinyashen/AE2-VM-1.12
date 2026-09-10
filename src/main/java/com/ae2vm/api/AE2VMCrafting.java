@@ -8,11 +8,13 @@ import appeng.api.networking.storage.IStorageGrid;
 import appeng.api.storage.channels.IItemStorageChannel;
 import appeng.api.storage.IMEMonitor;
 import appeng.api.storage.data.IAEItemStack;
+import appeng.api.storage.data.IItemList;
 import com.ae2vm.compat.AE2FCCompat;
 import com.ae2vm.compat.PatternCompat;
 import com.ae2vm.compiler.PatternCompiler;
 import com.ae2vm.vm.CraftingBytecode;
 import com.ae2vm.vm.CraftingVM;
+import com.ae2vm.vm.DeadCycleGuard;
 import com.ae2vm.vm.NetworkCraftingSandbox;
 import com.ae2vm.vm.PatternChoiceRepair;
 import com.ae2vm.vm.VMCounter;
@@ -30,6 +32,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Function;
 
 /**
  * Public entry point of the VM engine — the 1.12 port of the original's
@@ -159,7 +162,9 @@ public final class AE2VMCrafting {
                                                           Map<IAEItemStack, ICraftingPatternDetails> prefs) {
         Map<IAEItemStack, ICraftingPatternDetails> resolverCache = new ConcurrentHashMap<>();
         PatternChoiceRepair.Choices choices = new PatternChoiceRepair.Choices();
-        vm.setPatternResolver(key -> resolve(grid, world, resolverCache, prefs, choices, key));
+        Function<IAEItemStack, Long> stockLookup = passStockLookup(grid);
+        vm.setPatternResolver(key -> resolve(grid, world, resolverCache, prefs, choices,
+                stockLookup, key));
 
         NetworkCraftingSandbox sandbox = NetworkCraftingSandbox.snapshot(grid);
         IAEItemStack ignored = AE2FCCompat.normalizeFluidItem(what);
@@ -173,6 +178,39 @@ public final class AE2VMCrafting {
 
         VMPlan plan = vm.execute(bytecode, sandbox);
         return new PatternChoiceRepair.PassResult(plan, choices, stockView);
+    }
+
+    /**
+     * Per-pass stock view for the dead-ring guard's seeded-ring check. Lazy:
+     * the storage list reference is captured on first use and reused for every
+     * resolve in the pass — a pass is already a network snapshot, and this
+     * keeps the guard's cost at one precise lookup per graph member instead of
+     * one inventory snapshot per candidate.
+     */
+    private static Function<IAEItemStack, Long> passStockLookup(IGrid grid) {
+        final IItemList<IAEItemStack>[] captured = new IItemList[1];
+        return key -> {
+            try {
+                if (key == null) {
+                    return 0L;
+                }
+                if (captured[0] == null) {
+                    IStorageGrid sg = grid.getCache(IStorageGrid.class);
+                    IItemStorageChannel channel =
+                            AEApi.instance().storage().getStorageChannel(IItemStorageChannel.class);
+                    IMEMonitor<IAEItemStack> inv = sg == null ? null : sg.getInventory(channel);
+                    captured[0] = inv == null ? null : inv.getStorageList();
+                }
+                IItemList<IAEItemStack> list = captured[0];
+                if (list == null) {
+                    return 0L;
+                }
+                IAEItemStack stored = list.findPrecise(key);
+                return stored == null ? 0L : Math.max(0L, stored.getStackSize());
+            } catch (Throwable t) {
+                return 0L;
+            }
+        };
     }
 
     /**
@@ -270,6 +308,7 @@ public final class AE2VMCrafting {
                                                    Map<IAEItemStack, ICraftingPatternDetails> cache,
                                                    Map<IAEItemStack, ICraftingPatternDetails> prefs,
                                                    PatternChoiceRepair.Choices record,
+                                                   Function<IAEItemStack, Long> stockLookup,
                                                    IAEItemStack key) {
         if (key == null) {
             return null;
@@ -293,8 +332,18 @@ public final class AE2VMCrafting {
         // T1: exact match.
         Collection<ICraftingPatternDetails> subs = craftingGrid.getCraftingFor(key, null, -1, world);
         if (subs != null && !subs.isEmpty()) {
-            ICraftingPatternDetails sub = pickBestPattern(subs, key);
-            record.record(key, sub, verifiedCandidates(subs, key));
+            // (CYCLE-AWARE) Drop candidates whose inputs would close a DEAD ring
+            // (unseeded, externally-unfed SCC of the recipe graph, e.g.
+            // dust<->ingot with neither in stock). Seeded / externally-fed rings
+            // stay; when every candidate is ring-prone the originals are kept
+            // and the VM's CALL-time resolvingKeys guard handles the cycle.
+            // The pruned set also drives the recorded alternatives, so the
+            // multi-pattern solver never treats a dead-ring pattern as a choice.
+            List<ICraftingPatternDetails> viable = DeadCycleGuard.pruneDeadRings(
+                    k -> craftingGrid.getCraftingFor(k, null, -1, world),
+                    key, subs, stockLookup);
+            ICraftingPatternDetails sub = pickBestPattern(viable, key);
+            record.record(key, sub, verifiedCandidates(viable, key));
             PatternCompiler.compileIfAbsent(sub);
             cache.put(key, sub);
             return sub;
