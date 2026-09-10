@@ -30,6 +30,15 @@ public final class NetworkCraftingSandbox implements SimulationState {
     private final VMCounter inserted = new VMCounter();
     private final Map<ICraftingPatternDetails, Long> crafting = new HashMap<>();
     private double bytes = 0.0D;
+    /**
+     * Memoized fuzzy families. The stock KEY SET is stable for the sandbox's
+     * lifetime (extract only decrements, inserts live in {@code inserted}), so
+     * a family's member list never changes — only the per-record stack sizes
+     * do, and those stay live through the retained record references. Without
+     * this cache the variant-heavy fuzzy scenarios re-run stock.findFuzzy and
+     * re-copy the family list on every short extraction.
+     */
+    private final Map<IAEItemStack, List<IAEItemStack>> fuzzyFamilyCache = new HashMap<>();
 
     private NetworkCraftingSandbox(IItemList<IAEItemStack> stock) {
         this.stock = stock;
@@ -130,10 +139,15 @@ public final class NetworkCraftingSandbox implements SimulationState {
 
     @Override
     public List<IAEItemStack> findFuzzyFamily(IAEItemStack key) {
+        List<IAEItemStack> cached = fuzzyFamilyCache.get(key);
+        if (cached != null) {
+            return cached;
+        }
         List<IAEItemStack> family = new ArrayList<>();
         for (IAEItemStack item : stock.findFuzzy(key, FuzzyMode.IGNORE_ALL)) {
             family.add(item);
         }
+        fuzzyFamilyCache.put(key, family);
         return family;
     }
 
