@@ -653,7 +653,8 @@ public class CraftingVM {
                             callStack.push(new CallFrame(pc, code, constantPool, patternPool, tk)
                                 .withBundle(tk, snap, cts));
                             loadBytecode(sbc); pushL(1);
-                        } else if (!subBundlesComplete(bundles[0])) {
+                        } else if (!subBundlesComplete(bundles[0])
+                                || shortfallRetryable(bundles[0])) {
                             resolvingKeys.remove(tk);
                             Bundle snap = captureDelta();
                             callStack.push(new CallFrame(pc, code, constantPool, patternPool, tk)
@@ -680,6 +681,15 @@ public class CraftingVM {
                             break;
                         }
                         Bundle b0 = bundles[0];
+                        if (shortfallRetryable(b0)) {
+                            // the shortfall capture pre-dates available stock:
+                            // re-execute for real instead of replaying it
+                            jitFailCache.add(tk);
+                            resolvingKeys.remove(tk);
+                            callStack.push(new CallFrame(pc, code, constantPool, patternPool, null));
+                            loadBytecode(sbc); pushL(1);
+                            break;
+                        }
                         boolean sat1ok = true;
                         for (var e : b0.used.entrySet()) {
                             long usedPerCall = toLongSafe(e.getValue(), "sat");
@@ -704,7 +714,8 @@ public class CraftingVM {
                         break;
                     }
 
-                    if (bundles[0] != null && bundleChoicesCurrent(bundles[0])) {
+                    if (bundles[0] != null && bundleChoicesCurrent(bundles[0])
+                            && !shortfallRetryable(bundles[0])) {
                         Bundle b0 = bundles[0];
                         boolean selfSufficient = true;
                         for (var e : b0.used.entrySet()) {
@@ -1895,6 +1906,30 @@ public class CraftingVM {
 
     private Bundle[] getBundles(IAEItemStack key) {
         return activeBundles(key);
+    }
+
+    /**
+     * True when a shortfall capture should be RETRIED instead of replayed: one
+     * of its missing keys is available from stock NOW, meaning the capture
+     * pre-dates that stock ("算缺 → 补料 → 重算同一请求"). Replaying it would
+     * keep reporting a shortfall that no longer exists — or worse, an empty
+     * "feasible" plan whose crafts the CPU can never push. SIMULATE-only, so
+     * the probe costs nothing.
+     */
+    private boolean shortfallRetryable(Bundle b0) {
+        if (b0.missing.isEmpty()) {
+            return false;
+        }
+        for (var e : b0.missing.entrySet()) {
+            try {
+                if (e.getValue().signum() > 0
+                        && simulation.extract(e.getKey(), 1, true) > 0) {
+                    return true;
+                }
+            } catch (Throwable ignored) {
+            }
+        }
+        return false;
     }
 
     /** Undo a bundle's effects — reverse order of apply. */
