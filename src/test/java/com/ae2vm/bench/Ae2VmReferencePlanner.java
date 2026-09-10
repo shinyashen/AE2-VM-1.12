@@ -5,6 +5,7 @@ import appeng.api.storage.data.IAEItemStack;
 import com.ae2vm.compiler.PatternCompiler;
 import com.ae2vm.vm.CraftingBytecode;
 import com.ae2vm.vm.CraftingVM;
+import com.ae2vm.vm.PatternChoiceRepair;
 import com.moakiee.thunderbolt.core.planner.CraftGraph;
 import com.moakiee.thunderbolt.core.planner.CraftInput;
 import com.moakiee.thunderbolt.core.planner.CraftOutput;
@@ -48,6 +49,9 @@ import java.util.Set;
  * </ul>
  */
 public final class Ae2VmReferencePlanner implements ReferencePlanner {
+
+    /** Replay budget for the multi-pattern choice repair (see PatternChoiceRepair). */
+    private static final int REPAIR_EXTRA_PASSES = 32;
 
     /** Per-key item profile: (damage, maxDamage) on the fake item stack. */
     private record Profile(int damage, int maxDamage) {
@@ -105,14 +109,23 @@ public final class Ae2VmReferencePlanner implements ReferencePlanner {
         //    translated details are cached per CraftPattern so the identity is
         //    stable between the byOutput resolver and setAllPatternsResolver.
         Map<IAEItemStack, ICraftingPatternDetails> byOutput = new LinkedHashMap<>();
+        Map<IAEItemStack, List<ICraftingPatternDetails>> candidatesByOutput =
+                new LinkedHashMap<>();
         Map<BenchPatternDetails, CraftPattern<String>> origin = new HashMap<>();
         Map<CraftPattern<String>, BenchPatternDetails> translated = new HashMap<>();
         for (String output : reachable) {
+            List<ICraftingPatternDetails> forOutput = new ArrayList<>();
             for (CraftPattern<String> pattern : graph.patternsFor(output)) {
                 BenchPatternDetails details = translated.computeIfAbsent(pattern,
                         p -> toDetails(p, profiles, routes));
                 byOutput.put(profileKey(output, profiles), details);
+                forOutput.add(details);
                 origin.put(details, pattern);
+            }
+            if (forOutput.size() > 1) {
+                // Verified alternatives for the multi-pattern repair loop; the
+                // base resolver itself keeps the LAST registered pattern.
+                candidatesByOutput.put(profileKey(output, profiles), forOutput);
             }
         }
 
@@ -150,10 +163,17 @@ public final class Ae2VmReferencePlanner implements ReferencePlanner {
         }
 
         // 5) Compile + run the VM (global compile cache cleared to isolate
-        //    per-scenario cost; it also resets the fuzzy groups).
+        //    per-scenario cost; it also resets the fuzzy groups). ALL candidate
+        //    patterns are pre-compiled so a repair replay resolving an
+        //    alternative never pays compile cost inside the measured pass.
         PatternCompiler.clearCache();
         for (ICraftingPatternDetails details : byOutput.values()) {
             PatternCompiler.compileIfAbsent(details);
+        }
+        for (List<ICraftingPatternDetails> candidates : candidatesByOutput.values()) {
+            for (ICraftingPatternDetails details : candidates) {
+                PatternCompiler.compileIfAbsent(details);
+            }
         }
         CraftingBytecode requestBytecode = PatternCompiler.compileRequest(top, amount);
         CraftingVM vm = new CraftingVM("ae2vm-bench", byOutput::get);
@@ -170,7 +190,33 @@ public final class Ae2VmReferencePlanner implements ReferencePlanner {
             }
             return list;
         });
-        com.ae2vm.vm.VMPlan plan = vm.execute(requestBytecode, simulationFrom(stock));
+        // Pristine stock view for the repair model: never executed against.
+        BenchSimulationState stockView = simulationFrom(stock);
+        // Per-pass choice records: the view (base map merged with the pass's
+        // preferences) is what the repair loop blames against. A preference on
+        // the root key re-compiles the request bytecode for that pattern.
+        PatternChoiceRepair.Pass pass = prefs -> {
+            Map<IAEItemStack, ICraftingPatternDetails> view =
+                    new LinkedHashMap<>(byOutput);
+            view.putAll(prefs);
+            ICraftingPatternDetails passTop = view.get(requestBytecode.getOutput());
+            CraftingBytecode passCode = requestBytecode;
+            if (passTop != null && passTop != top) {
+                passCode = PatternCompiler.compileRequest(passTop, amount);
+            }
+            vm.setPatternResolver(view::get);
+            PatternChoiceRepair.Choices passChoices = new PatternChoiceRepair.Choices();
+            for (Map.Entry<IAEItemStack, ICraftingPatternDetails> e : view.entrySet()) {
+                passChoices.record(e.getKey(), e.getValue(),
+                        candidatesByOutput.get(e.getKey()));
+            }
+            BenchSimulationState sim = simulationFrom(stock);
+            // To trace per-craft consumption for one scenario, wrap `sim` in
+            // TraceSimulationState (test-source diagnostic tool) here.
+            com.ae2vm.vm.VMPlan p = vm.execute(passCode, sim);
+            return new PatternChoiceRepair.PassResult(p, passChoices, stockView);
+        };
+        com.ae2vm.vm.VMPlan plan = PatternChoiceRepair.repair(pass, REPAIR_EXTRA_PASSES);
 
         // 6) Map the VM plan back to the Thunderbolt CraftPlan<String>.
         Map<String, Long> used = new HashMap<>();
@@ -187,6 +233,18 @@ public final class Ae2VmReferencePlanner implements ReferencePlanner {
             if (source != null) {
                 firings.put(source, entry.getValue());
             }
+        }
+        if (scenario.target().startsWith("X")) {
+            StringBuilder sb = new StringBuilder("[solver-db] firings " + scenario.id() + ":");
+            for (Map.Entry<CraftPattern<String>, Long> e : firings.entrySet()) {
+                sb.append(" ").append(e.getKey().output()).append("<-");
+                for (CraftInput<String> i : e.getKey().inputs()) {
+                    sb.append(i.key()).append('+');
+                }
+                sb.append("x").append(e.getValue());
+            }
+            sb.append(" missing=").append(missing);
+            System.out.println(sb);
         }
         boolean feasible = missing.isEmpty();
         return new CraftPlan<>(true, feasible, firings, used, Map.of(), missing,
