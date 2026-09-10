@@ -120,7 +120,7 @@ gradle-app.setting
 !gradle-wrapper.jar
 
 # gradle.properties (tracked: project build config)compile_err.txt
+AGENTS.md
 __pycache__/
 CF-DESCRIPTION.md
 REWRITE-PLAN.md
-AGENTS.md
