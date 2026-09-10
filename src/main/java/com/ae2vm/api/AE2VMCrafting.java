@@ -57,6 +57,29 @@ public final class AE2VMCrafting {
             new ConcurrentHashMap<>();
 
     /**
+     * Memoized plans per grid: request key → entry (amount + pattern-set
+     * version + plan). A hit is returned as-is only after
+     * {@link VMPlan#planMatchesStock} re-validates it against the LIVE
+     * network stock — the "算缺 → 补料 → 重算" flow pays one stock probe
+     * instead of a full engine re-run, and a topped-up shortfall falls
+     * through to the slow path.
+     */
+    private static final ConcurrentHashMap<IGrid, ConcurrentHashMap<IAEItemStack, PlanEntry>> PLAN_CACHE =
+            new ConcurrentHashMap<>();
+
+    private static final class PlanEntry {
+        final long amount;
+        final long patternVersion;
+        final VMPlan plan;
+
+        PlanEntry(long amount, long patternVersion, VMPlan plan) {
+            this.amount = amount;
+            this.patternVersion = patternVersion;
+            this.plan = plan;
+        }
+    }
+
+    /**
      * Replay budget for the multi-pattern choice repair ({@link
      * PatternChoiceRepair}): only spent when the greedy first pass reports
      * missing, so successful requests never pay for it.
@@ -95,6 +118,26 @@ public final class AE2VMCrafting {
             return null;
         }
 
+        CraftingVM vm = vmFor(grid);
+        if (vm.cachesStale()) {
+            // the grid's pattern set changed since this VM's caches were built
+            vm.invalidateCaches();
+            PLAN_CACHE.remove(grid);
+        }
+
+        // Plan memoization hit: same request, same pattern set, and the live
+        // stock still matches the plan (see VMPlan.planMatchesStock).
+        ConcurrentHashMap<IAEItemStack, PlanEntry> plans = PLAN_CACHE.get(grid);
+        PlanEntry entry = plans == null ? null : plans.get(what);
+        if (entry != null && entry.amount == amount
+                && entry.patternVersion == PatternCompiler.patternSetVersion()) {
+            Function<IAEItemStack, Long> stock = liveStockLookup(grid);
+            if (stock != null && entry.plan.planMatchesStock(stock)) {
+                return entry.plan;
+            }
+            plans.remove(what, entry);
+        }
+
         // Root pattern lookup mirrors the resolver: exact key first, then the
         // packet key for AE2FC fluids (the root request key arrives in canonical
         // drop form while the grid index may be amount-carrying).
@@ -110,8 +153,6 @@ public final class AE2VMCrafting {
         if (bytecode == null) {
             return null;
         }
-
-        CraftingVM vm = vmFor(grid);
 
         // Multi-pattern choice repair: the greedy first pass is unchanged; only
         // when it reports missing are contended sub-pattern choices replayed
@@ -148,7 +189,40 @@ public final class AE2VMCrafting {
             // the exposed batch remainder consistent with the returned plan.
             vm.restoreBatchRemainder(remainder);
         }
-        return applyIgnoreFix(grid, what, plan);
+        VMPlan fixed = applyIgnoreFix(grid, what, plan);
+        if (fixed != null) {
+            PLAN_CACHE.computeIfAbsent(grid, g -> new ConcurrentHashMap<>())
+                    .put(what, new PlanEntry(amount, PatternCompiler.patternSetVersion(), fixed));
+        }
+        return fixed;
+    }
+
+    /**
+     * Live network stock lookup for plan re-validation (one storage-list
+     * reference per call site, precise per-key reads). Null when the grid has
+     * no usable storage — memoization is skipped in that case.
+     */
+    private static Function<IAEItemStack, Long> liveStockLookup(IGrid grid) {
+        try {
+            IStorageGrid sg = grid.getCache(IStorageGrid.class);
+            IItemStorageChannel channel =
+                    AEApi.instance().storage().getStorageChannel(IItemStorageChannel.class);
+            IMEMonitor<IAEItemStack> inv = sg == null ? null : sg.getInventory(channel);
+            IItemList<IAEItemStack> list = inv == null ? null : inv.getStorageList();
+            if (list == null) {
+                return null;
+            }
+            return key -> {
+                try {
+                    IAEItemStack stored = list.findPrecise(key);
+                    return stored == null ? 0L : Math.max(0L, stored.getStackSize());
+                } catch (Throwable t) {
+                    return 0L;
+                }
+            };
+        } catch (Throwable t) {
+            return null;
+        }
     }
 
     /** One full engine pass under the given pattern-choice preferences. */

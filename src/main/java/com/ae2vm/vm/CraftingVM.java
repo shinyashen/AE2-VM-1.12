@@ -83,6 +83,8 @@ public class CraftingVM {
     private final Set<IAEItemStack> circularCache = new HashSet<>();
     private final Set<IAEItemStack> cyclicCraftKeys = new HashSet<>();
     private final Set<IAEItemStack> jitFailCache = new HashSet<>();
+    /** Pattern-set version this VM's caches were built against (see invalidateCaches). */
+    private volatile long patternVersion = com.ae2vm.compiler.PatternCompiler.patternSetVersion();
     /** Lazily snapshotted live network stock (an IItemList supports findFuzzy). */
     private IItemList<IAEItemStack> realStockCache;
     private VMCounter executeStartStock;
@@ -303,6 +305,26 @@ public class CraftingVM {
         this.batchRemainder = remainder;
     }
 
+    /**
+     * Drops every cached state that depends on the network's pattern set
+     * (JIT bundles, negative/fail caches, cycle bookkeeping). Called when the
+     * grid's pattern-set version moves — a removed sub-pattern must not keep
+     * serving plans replayed from bundles captured while it existed.
+     */
+    public void invalidateCaches() {
+        bundleCache.clear();
+        jitFailCache.clear();
+        circularCache.clear();
+        cyclicCraftKeys.clear();
+        realStockCache = null;
+        patternVersion = com.ae2vm.compiler.PatternCompiler.patternSetVersion();
+    }
+
+    /** True when this VM's caches pre-date the current pattern set. */
+    public boolean cachesStale() {
+        return patternVersion != com.ae2vm.compiler.PatternCompiler.patternSetVersion();
+    }
+
     public VMPlan execute(CraftingBytecode requestBytecode, SimulationState simulation) {
         synchronized (this) {
             return execute(requestBytecode, simulation,
@@ -470,6 +492,22 @@ public class CraftingVM {
                     CraftingBytecode sbc = PatternCompiler.getCompiled(pat);
                     if (sbc == null) { PatternCompiler.compileIfAbsent(pat); sbc = PatternCompiler.getCompiled(pat); }
                     if (sbc == null || callStack.size() >= MAX_CALL_DEPTH) break;
+                    // Pattern-set gating (GAP-3): CALL slots bind the pattern
+                    // directly, bypassing the resolver — a pattern REMOVED from
+                    // the network since this bytecode was compiled would keep
+                    // running on the stale slot reference. If the resolver no
+                    // longer knows the key, treat the craft like any
+                    // un-patterned key: consume stock, report the shortfall.
+                    if (!isRoot && patternResolver != null && pat != null) {
+                        IAEItemStack outKey = com.ae2vm.compat.PatternCompat.getPrimaryOutput(pat);
+                        if (outKey != null && patternResolver.apply(outKey) == null) {
+                            long got = simulation.extract(outKey, ct, false);
+                            if (got > 0) usedItems.add(outKey, got);
+                            long shortfall = ct - got;
+                            if (shortfall > 0) missingItems.add(outKey, shortfall);
+                            break;
+                        }
+                    }
                     if (isRoot) {
                         // Root frame: per-1-craft bundle (never pushL(ct) — the ×ct² bug).
                         Bundle snap = captureDelta();

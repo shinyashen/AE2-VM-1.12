@@ -5,6 +5,7 @@ import appeng.api.storage.data.IAEItemStack;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.function.Function;
 
 /**
  * The VM's calculation result — the 1.12 analogue of AE2 1.21's CraftingPlan.
@@ -49,5 +50,28 @@ public final class VMPlan {
 
     public Map<ICraftingPatternDetails, Long> getPatternTimes() {
         return new HashMap<>(patternTimes);
+    }
+
+    /**
+     * Stock re-validation for a memoized plan: it may be returned as-is only
+     * while the network can still cover every planned consumption AND still
+     * cannot cover any planned shortfall — a topped-up shortfall means the
+     * world moved and the plan must be re-run. Pure function of the plan and
+     * a stock lookup; no state, so it is unit-testable in isolation.
+     */
+    public boolean planMatchesStock(Function<IAEItemStack, Long> stock) {
+        for (IAEItemStack key : usedItems.keys()) {
+            Long have = stock.apply(key);
+            if (have == null || have < usedItems.get(key)) {
+                return false;
+            }
+        }
+        for (IAEItemStack key : missingItems.keys()) {
+            Long have = stock.apply(key);
+            if (have != null && have >= missingItems.get(key)) {
+                return false;
+            }
+        }
+        return true;
     }
 }
