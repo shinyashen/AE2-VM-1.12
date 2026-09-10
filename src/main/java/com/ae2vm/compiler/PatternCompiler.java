@@ -107,17 +107,51 @@ public final class PatternCompiler {
         return copy;
     }
 
+    /**
+     * Defensive wrapper unwrap (port of the upstream UselessMod fix): some
+     * addons hand the VM a runtime WRAPPER around a real pattern (e.g. a
+     * "ScaledProcessingPattern" that multiplies inputs/outputs). Compiling the
+     * wrapper directly bakes the multiplier into the bytecode and makes the
+     * wrapper the plan's patternTimes key — which the CPU / providers do not
+     * recognize. Unwrapping to the innermost real pattern (naming convention
+     * "Scaled*" + reflective {@code getOriginal()}) keeps the compiled form
+     * and every plan key anchored to the pattern everyone knows. Unknown
+     * wrappers are left untouched: no Scaled* class, no getOriginal(), or a
+     * broken reflective call all return the input unchanged.
+     */
+    public static ICraftingPatternDetails unwrapScaled(ICraftingPatternDetails pattern) {
+        ICraftingPatternDetails cur = pattern;
+        for (int depth = 0; cur != null && depth < 8; depth++) {
+            if (!cur.getClass().getSimpleName().startsWith("Scaled")) {
+                break;
+            }
+            try {
+                Object orig = cur.getClass().getMethod("getOriginal").invoke(cur);
+                if (orig instanceof ICraftingPatternDetails) {
+                    cur = (ICraftingPatternDetails) orig;
+                    continue;
+                }
+            } catch (Throwable ignored) {
+            }
+            break;
+        }
+        return cur;
+    }
+
     public static void compileIfAbsent(ICraftingPatternDetails pattern) {
+        pattern = unwrapScaled(pattern);
         if (pattern != null && !COMPILED_PATTERNS.containsKey(pattern)) {
             COMPILED_PATTERNS.computeIfAbsent(pattern, PatternCompiler::compilePattern);
         }
     }
 
     public static CraftingBytecode getCompiled(ICraftingPatternDetails pattern) {
+        pattern = unwrapScaled(pattern);
         return COMPILED_PATTERNS.get(pattern);
     }
 
     public static CraftingBytecode compileRequest(ICraftingPatternDetails pattern, long requestedAmount) {
+        pattern = unwrapScaled(pattern);
         CraftingBytecode patternBytecode = COMPILED_PATTERNS.get(pattern);
         if (patternBytecode == null) {
             compileIfAbsent(pattern);

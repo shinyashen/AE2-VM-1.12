@@ -182,6 +182,44 @@ class PerfReportTest {
     }
 
     // ------------------------------------------------------------------
+    // Conversion-ring scenario through the reference planner (cycle +
+    // linear hybrid; mirrors the suite's cycle/conversion-ring family at
+    // request scale 1000 instead of the suite's tiny scale)
+    // ------------------------------------------------------------------
+
+    @Test
+    void conversionRingScenario() {
+        ReferenceScenario found = null;
+        for (ReferenceScenario s : ThunderboltReferenceScenarios.all()) {
+            if ("cycle/conversion-ring/unbounded".equals(s.id())) {
+                found = s;
+                break;
+            }
+        }
+        final ReferenceScenario target = found;
+        Ae2VmReferencePlanner planner = new Ae2VmReferencePlanner();
+        long t0 = System.nanoTime();
+        var cold = planner.plan(target);
+        double coldMs = (System.nanoTime() - t0) / 1_000_000.0;
+        assertTrue(cold.supported() && cold.missing().isEmpty(),
+                "the conversion-ring scenario must complete, missing=" + cold.missing());
+        List<Double> hot = new ArrayList<>();
+        for (int round = 0; round < ROUNDS; round++) {
+            for (int i = 0; i < 5; i++) {
+                t0 = System.nanoTime();
+                var p = planner.plan(target);
+                hot.add((System.nanoTime() - t0) / 1_000_000.0);
+                assertTrue(p.supported() && p.missing().isEmpty(),
+                        "repeat plans must stay complete, missing=" + p.missing());
+            }
+        }
+        System.out.printf(Locale.ROOT,
+                "[perf] case=conversionRing cold=%.3fms hotMedian=%.3fms hotMin=%.3fms "
+                        + "(%d hot samples)%n",
+                coldMs, median(hot), min(hot), hot.size());
+    }
+
+    // ------------------------------------------------------------------
     // Dead-cycle guard micro-cost
     // ------------------------------------------------------------------
 

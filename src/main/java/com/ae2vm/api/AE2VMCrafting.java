@@ -165,6 +165,12 @@ public final class AE2VMCrafting {
         // its stock reflects the network rather than a pass's consumption
         // (simulate extracts leave it untouched).
         final NetworkCraftingSandbox stockView = NetworkCraftingSandbox.snapshot(grid);
+        // Resolver cache shared across ALL passes of this calculation: cached
+        // entries are the no-preference resolutions (preference checks run
+        // BEFORE the cache lookup in resolve()), and the dead-ring pruning
+        // inside them is stock-stable within one request — re-running the
+        // pruning per pass would only repeat identical work.
+        final Map<IAEItemStack, ICraftingPatternDetails> resolverCache = new ConcurrentHashMap<>();
         final Map<VMPlan, BigInteger> remainders = new HashMap<>();
         PatternChoiceRepair.Pass pass = prefs -> {
             ICraftingPatternDetails passTop = prefs.get(rootKey);
@@ -178,7 +184,7 @@ public final class AE2VMCrafting {
             }
             PatternChoiceRepair.PassResult result = runPass(grid, world, vm,
                     passBytecode, passTop != null ? passTop : topPattern,
-                    rootCandidates, what, stockView, prefs);
+                    rootCandidates, what, stockView, prefs, resolverCache);
             remainders.put(result.plan, vm.getBatchRemainder());
             return result;
         };
@@ -233,8 +239,8 @@ public final class AE2VMCrafting {
                                                           List<ICraftingPatternDetails> rootCandidates,
                                                           IAEItemStack what,
                                                           NetworkCraftingSandbox stockView,
-                                                          Map<IAEItemStack, ICraftingPatternDetails> prefs) {
-        Map<IAEItemStack, ICraftingPatternDetails> resolverCache = new ConcurrentHashMap<>();
+                                                          Map<IAEItemStack, ICraftingPatternDetails> prefs,
+                                                          Map<IAEItemStack, ICraftingPatternDetails> resolverCache) {
         PatternChoiceRepair.Choices choices = new PatternChoiceRepair.Choices();
         Function<IAEItemStack, Long> stockLookup = passStockLookup(grid);
         vm.setPatternResolver(key -> resolve(grid, world, resolverCache, prefs, choices,
