@@ -52,9 +52,25 @@ public abstract class CraftingGridCacheMixin {
         ae2vm$precompileAll();
     }
 
+    /** Order-independent identity fingerprint of the last seen pattern set. */
+    private static int lastPatternFingerprint = 0;
+
     private void ae2vm$precompileAll() {
         if (!AE2VMConfig.proxyEnabled) {
             return;
+        }
+        // Pattern-set change detection: an order-independent identity sum over
+        // the registry. A different fingerprint means a pattern was added,
+        // removed or replaced — bump the global pattern-set version so every
+        // memoized plan and every per-grid VM bundle cache latched to the old
+        // version drops (a removed sub-pattern must not keep serving plans).
+        int fingerprint = 0;
+        for (ICraftingPatternDetails details : this.craftingMethods.keySet()) {
+            fingerprint += System.identityHashCode(details);
+        }
+        if (fingerprint != lastPatternFingerprint) {
+            lastPatternFingerprint = fingerprint;
+            PatternCompiler.bumpPatternSetVersion();
         }
         int compiled = 0;
         for (ICraftingPatternDetails details : this.craftingMethods.keySet()) {

@@ -26,6 +26,27 @@ import java.util.concurrent.ConcurrentHashMap;
  * - processing-recipe default fuzzy: every input of a !isCraftable() pattern
  */
 public final class PatternCompiler {
+
+    /**
+     * Monotonic version of the network's pattern set. Bumped by the grid
+     * recalculation hook whenever the registered pattern set changes
+     * (add / remove / replace); consumers (per-grid VM bundle caches, plan
+     * memoization) latch the version they were built with and drop their
+     * state when it moves.
+     */
+    private static final java.util.concurrent.atomic.AtomicLong PATTERN_SET_VERSION =
+            new java.util.concurrent.atomic.AtomicLong(0);
+
+    /** Current pattern-set version (latch this alongside cached state). */
+    public static long patternSetVersion() {
+        return PATTERN_SET_VERSION.get();
+    }
+
+    /** Signals a pattern-set change; invalidates every latched consumer. */
+    public static void bumpPatternSetVersion() {
+        PATTERN_SET_VERSION.incrementAndGet();
+    }
+
     private static final Map<ICraftingPatternDetails, CraftingBytecode> COMPILED_PATTERNS =
             new ConcurrentHashMap<>();
 
