@@ -136,18 +136,16 @@ class VariantSubstituteChainTest {
                             + p2.getMissingItems());
         }
 
-        // Request 3: stock restored → completes again. (A fresh VM mirrors the
-        // realistic path: a pattern-set/stock change re-runs the chain from a
-        // clean cache. Same-VM recovery after a SHORTFALL capture is a known
-        // limitation of the cts>1 replay path — see AGENTS.md.)
-        CraftingVM vm3 = new CraftingVM("variant-chain-r3", view::get);
-        // Fresh stock view: the previous pass's simulated inserts persist in the
-        // old view (m1 leftovers would satisfy the chain without crafting).
+        // Request 3: stock restored → the SAME reused VM must re-execute the
+        // shortfall capture (GAP-1 fix: shortfallRetryable) instead of
+        // replaying the stale one. Fresh stock view: the previous pass's
+        // simulated inserts persist in the old view and would satisfy the
+        // chain without crafting.
         BenchSimulationState restored = new BenchSimulationState();
         restored.seed("leaf1", 10);
         restored.seed("leaf2", 10);
         restored.seed("r2", 10);
-        VMPlan p3 = vm3.execute(request, restored);
+        VMPlan p3 = vm.execute(request, restored);
         assertTrue(p3.getMissingItems().isEmpty(), "p3 must complete, missing=" + p3.getMissingItems());
         assertEquals(2L, p3.getUsedItems().get(k("leaf1")), "leaf1 consumed for 2 crafts");
     }
