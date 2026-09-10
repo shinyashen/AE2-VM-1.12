@@ -231,6 +231,14 @@ public final class PatternChoiceRepair {
                 return best;
             }
         }
+        if (refined.missing.compareTo(missingTotal(best)) >= 0) {
+            // The model says no allocation beats the greedy plan: the confirm
+            // replay could only be adopted if it came out STRICTLY better, so
+            // skip the full engine re-run (the expected-missing scenarios —
+            // where the solver cannot improve anything — pay this confirm for
+            // nothing otherwise).
+            return best;
+        }
 
         // 3) Synthesize preferences and confirm with one real pass.
         Map<IAEItemStack, ICraftingPatternDetails> prefs = new LinkedHashMap<>();
