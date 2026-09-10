@@ -242,7 +242,7 @@ public final class AE2VMCrafting {
                                                           Map<IAEItemStack, ICraftingPatternDetails> prefs,
                                                           Map<IAEItemStack, ICraftingPatternDetails> resolverCache) {
         PatternChoiceRepair.Choices choices = new PatternChoiceRepair.Choices();
-        Function<IAEItemStack, Long> stockLookup = passStockLookup(grid);
+        Function<IAEItemStack, Long> stockLookup = liveStockLookup(grid);
         vm.setPatternResolver(key -> resolve(grid, world, resolverCache, prefs, choices,
                 stockLookup, key));
 
@@ -260,38 +260,6 @@ public final class AE2VMCrafting {
         return new PatternChoiceRepair.PassResult(plan, choices, stockView);
     }
 
-    /**
-     * Per-pass stock view for the dead-ring guard's seeded-ring check. Lazy:
-     * the storage list reference is captured on first use and reused for every
-     * resolve in the pass — a pass is already a network snapshot, and this
-     * keeps the guard's cost at one precise lookup per graph member instead of
-     * one inventory snapshot per candidate.
-     */
-    private static Function<IAEItemStack, Long> passStockLookup(IGrid grid) {
-        final IItemList<IAEItemStack>[] captured = new IItemList[1];
-        return key -> {
-            try {
-                if (key == null) {
-                    return 0L;
-                }
-                if (captured[0] == null) {
-                    IStorageGrid sg = grid.getCache(IStorageGrid.class);
-                    IItemStorageChannel channel =
-                            AEApi.instance().storage().getStorageChannel(IItemStorageChannel.class);
-                    IMEMonitor<IAEItemStack> inv = sg == null ? null : sg.getInventory(channel);
-                    captured[0] = inv == null ? null : inv.getStorageList();
-                }
-                IItemList<IAEItemStack> list = captured[0];
-                if (list == null) {
-                    return 0L;
-                }
-                IAEItemStack stored = list.findPrecise(key);
-                return stored == null ? 0L : Math.max(0L, stored.getStackSize());
-            } catch (Throwable t) {
-                return 0L;
-            }
-        };
-    }
 
     /**
      * API parity with the original's blocking entry point. The 1.12 job model is
