@@ -81,6 +81,9 @@ public class CraftingVM {
 
     private final Set<IAEItemStack> resolvingKeys = new HashSet<>();
     private final Set<IAEItemStack> circularCache = new HashSet<>();
+    /** GAP-4 phase 2: net-effect bundles produced by the ring solver, applied post-order. */
+    private final List<Bundle> ringNetBundles = new ArrayList<>();
+    private final Set<IAEItemStack> ringKeysHandled = new HashSet<>();
     private final Set<IAEItemStack> cyclicCraftKeys = new HashSet<>();
     private final Set<IAEItemStack> jitFailCache = new HashSet<>();
     /** Pattern-set version this VM's caches were built against (see invalidateCaches). */
@@ -387,6 +390,8 @@ public class CraftingVM {
         circularCache.clear();
         cyclicCraftKeys.clear();
         jitFailCache.clear();
+        ringNetBundles.clear();
+        ringKeysHandled.clear();
         this.executeStartStock = snapshotExecuteStartStock();
 
         long vmStartNs = System.nanoTime();
@@ -1053,6 +1058,8 @@ public class CraftingVM {
         if (selfAdjacentKeys != null && !selfAdjacentKeys.isEmpty()) {
             correctRecursion(total, initialStock);
         }
+        solveRings(total);
+        for (Bundle net : ringNetBundles) applyBundleDirect(net);
         Set<IAEItemStack> applied = new HashSet<>();
         for (IAEItemStack k : total.keySet()) applyOrdered(k, applied, total);
         Map<IAEItemStack, Long> loopMissing = computeFeedbackLoopMissing(total, initialStock);
@@ -2102,90 +2109,6 @@ public class CraftingVM {
         }
     }
 
-    /**
-     * GAP-4 phase 2 (shadow mode): single-source material ledger. Builds
-     * supply/demand per key from the scheduled patternTimes + starting stock +
-     * delivery, and diffs the derived shortfall against the accumulated
-     * missingItems during the transition. Read-only — behavior is unchanged.
-     */
-    private void shadowLedgerCheck(BigInteger requestedAmount) {
-        try {
-            Map<IAEItemStack, BigInteger> supply = new HashMap<>();
-            Map<IAEItemStack, BigInteger> demand = new HashMap<>();
-            for (var e : executeStartStock.entrySet()) {
-                if (e.getValue() > 0) {
-                    supply.merge(e.getKey(), BigInteger.valueOf(e.getValue()), BigInteger::add);
-                }
-            }
-            for (var pt : patternTimes.entrySet()) {
-                ICraftingPatternDetails d = pt.getKey();
-                long times = pt.getValue();
-                if (times <= 0 || d == null) continue;
-                BigInteger crafts = BigInteger.valueOf(times);
-                IAEItemStack[] ins = safeCondensedInputs(d);
-                if (ins != null) {
-                    for (IAEItemStack in : ins) {
-                        if (in == null || in.getStackSize() <= 0) continue;
-                        if (PatternCompiler.detectReturnedInput(d, in) != null) continue;
-                        IAEItemStack ik = in.copy().setStackSize(1);
-                        ik.reset();
-                        demand.merge(ik, crafts.multiply(BigInteger.valueOf(in.getStackSize())), BigInteger::add);
-                    }
-                }
-                IAEItemStack[] outs = safeOutputs(d);
-                if (outs != null) {
-                    for (IAEItemStack out : outs) {
-                        if (out == null || out.getStackSize() <= 0) continue;
-                        IAEItemStack ok = out.copy().setStackSize(1);
-                        ok.reset();
-                        supply.merge(ok, crafts.multiply(BigInteger.valueOf(out.getStackSize())), BigInteger::add);
-                    }
-                }
-            }
-            // durability tools are real consumption from stock
-            for (var e : durabilityItems.entrySet()) {
-                long[] du = e.getValue();
-                if (du[0] > 0) demand.merge(e.getKey(), BigInteger.valueOf(du[0]), BigInteger::add);
-            }
-            // catalyst seeds are startup capital drawn from stock
-            for (var e : catalystSeedItems.entrySet()) {
-                if (e.getValue() > 0) demand.merge(e.getKey(), BigInteger.valueOf(e.getValue()), BigInteger::add);
-            }
-            if (requestedAmount.signum() > 0) {
-                demand.merge(outputKey, requestedAmount, BigInteger::add);
-            }
-            // Incremental conservation (fuzzy-family aware): scheduled inputs +
-            // delivery − used-from-stock − scheduled production must be covered
-            // by the accumulated missing. left > missing ⇒ under-reporting;
-            // left < missing ⇒ over-reporting. Family-projected so substitute
-            // variants satisfy their group's demand.
-            java.util.Map<IAEItemStack, BigInteger> left = new java.util.HashMap<>();
-            java.util.function.BiConsumer<IAEItemStack, BigInteger> addLeft = (k, v) -> {
-                IAEItemStack rep = familyRep(k);
-                left.merge(rep, v, BigInteger::add);
-            };
-            for (var e : demand.entrySet()) addLeft.accept(e.getKey(), e.getValue());
-            java.util.function.BiConsumer<IAEItemStack, BigInteger> subLeft = (k, v) -> {
-                IAEItemStack rep = familyRep(k);
-                left.merge(rep, v.negate(), BigInteger::add);
-            };
-            for (var e : supply.entrySet()) subLeft.accept(e.getKey(), e.getValue());
-            for (var k : usedItems.keys()) subLeft.accept(k, BigInteger.valueOf(usedItems.get(k)));
-            for (var k : missingItems.keys()) {
-                IAEItemStack rep = familyRep(k);
-                BigInteger existing = BigInteger.valueOf(missingItems.get(k));
-                BigInteger l = left.getOrDefault(rep, BigInteger.ZERO);
-                if (existing.signum() > 0 || l.signum() > 0) {
-                    String verdict = l.compareTo(existing) == 0 ? "  OK"
-                            : (l.signum() <= 0 ? "  OVER-REPORT" : (l.compareTo(existing) > 0 ? "  UNDER-REPORT" : "  OVER-REPORT"));
-                    ledgerLog("LEDGER rep=" + rep + " left=" + l + " missingAccum=" + existing + verdict);
-                }
-            }
-        } catch (Throwable t) {
-            ledgerLog("LEDGER-ERR " + t);
-        }
-    }
-
     private IAEItemStack familyRep(IAEItemStack k) {
         try {
             var g = PatternCompiler.getFuzzyGroup(k);
@@ -2200,11 +2123,91 @@ public class CraftingVM {
         return k;
     }
 
+    /**
+     * GAP-4 phase 2: solve the pure mutual rings whose back-edge demand the
+     * propagation loop dropped, fold each into a net-effect bundle, and remove
+     * the ring keys from the aggregation total (the net bundle takes over their
+     * scheduling — including the root direction when the root key is a ring
+     * member).
+     */
+
+    private void solveRings(Map<IAEItemStack, BigInteger> total) {
+        List<RingSolver.RingPlan> plans;
+        try {
+        plans = RingSolver.solve(total, k -> {
+            ICraftingPatternDetails d = patternResolver != null ? patternResolver.apply(k) : null;
+            if (d == null) return null;
+            Map<IAEItemStack, BigInteger> in = new HashMap<>();
+            IAEItemStack[] ins = safeCondensedInputs(d);
+            if (ins != null) {
+                for (IAEItemStack i : ins) {
+                    if (i == null || i.getStackSize() <= 0) continue;
+                    if (PatternCompiler.detectReturnedInput(d, i) != null) continue;
+                    IAEItemStack ik = i.copy().setStackSize(1);
+                    ik.reset();
+                    in.merge(ik, BigInteger.valueOf(i.getStackSize()), BigInteger::add);
+                }
+            }
+            Map<IAEItemStack, BigInteger> out = new HashMap<>();
+            IAEItemStack[] outs = safeOutputs(d);
+            if (outs != null) {
+                for (IAEItemStack o : outs) {
+                    if (o == null || o.getStackSize() <= 0) continue;
+                    IAEItemStack ok = o.copy().setStackSize(1);
+                    ok.reset();
+                    out.merge(ok, BigInteger.valueOf(o.getStackSize()), BigInteger::add);
+                }
+            }
+            return new RingSolver.RecipeView() {
+                @Override
+                public ICraftingPatternDetails pattern() {
+                    return d;
+                }
+
+                @Override
+                public Map<IAEItemStack, BigInteger> inputs() {
+                    return in;
+                }
+
+                @Override
+                public Map<IAEItemStack, BigInteger> outputs() {
+                    return out;
+                }
+            };
+        }, k -> BigInteger.valueOf(executeStartStock.get(k)), outputKey, this.requestAmount);
+        for (RingSolver.RingPlan plan : plans) {
+            Bundle net = new Bundle();
+            for (var e : plan.patterns.entrySet()) {
+                long val = toLongSafe(e.getValue(), "ring-pat");
+                if (val <= 0) continue;
+                net.patterns.put(e.getKey(), BigInteger.valueOf(val));
+            }
+            for (var e : plan.emitted.entrySet()) {
+                long val = toLongSafe(e.getValue(), "ring-emit");
+                if (val > 0) net.emitted.put(e.getKey(), BigInteger.valueOf(val));
+            }
+            for (var e : plan.used.entrySet()) {
+                long val = toLongSafe(e.getValue(), "ring-use");
+                if (val > 0) net.used.put(e.getKey(), BigInteger.valueOf(val));
+            }
+            // startup seed shortfall: timing capital the network must hold
+            // before the ring's first output lands — honest missing; the
+            // ring's own production pays it back within the first round
+            for (var e : plan.seedShortfall.entrySet()) {
+                long val = toLongSafe(e.getValue(), "ring-seed");
+                if (val > 0) missingItems.add(e.getKey(), val);
+            }
+            ringNetBundles.add(net);
+        }
+        } catch (Throwable t) {
+            t.printStackTrace();
+        }
+    }
+
     private VMPlan buildPlan(BigInteger requestedAmount) {
         applyAggregation();
         // final output is delivered separately — must not duplicate in emitted
         emittedItems.remove(outputKey);
-        shadowLedgerCheck(requestedAmount);
         if (!missingItems.isEmpty()) {
             StringBuilder sb = new StringBuilder("[AE2-VM DIAG-MISS] rootCraftTimes=").append(rootCraftTimes).append(" missing:");
             for (var e : missingItems.entrySet()) {
