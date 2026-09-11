@@ -7,9 +7,9 @@ English | [简体中文](README_zh-CN.md)
 ![Minecraft](https://img.shields.io/badge/Minecraft-1.12.2-blue)
 ![License](https://img.shields.io/github/license/shinyashen/AE2-VM-1.12)
 
-**AE2 VM 1.12** replaces Applied Energistics 2's recursive crafting-tree calculation with a **pre-compiled pattern bytecode + stack-based virtual machine + JIT bundle cache**. It is a port of Tao's [AE2-VM](https://github.com/TaoLe-si/AE2-VM) (NeoForge 1.21.1) to **Minecraft 1.12.2 / Cleanroom / AE2 Unofficial Extended Life v0.56.x**.
+**AE2 VM 1.12** replaces Applied Energistics 2's recursive crafting-tree traversal with a **pre-compiled pattern bytecode + stack-based virtual machine + JIT bundle cache**. It is a **fork** of Tao's [AE2-VM](https://github.com/TaoLe-si/AE2-VM) (NeoForge 1.21.1), ported to **Minecraft 1.12.2 / Cleanroom / AE2 Unofficial Extended Life v0.56.x**.
 
-Crafting requests that stall the vanilla planner for minutes — deeply nested, exponentially recursive patterns — are planned in **milliseconds** (upstream benchmark: ~90 s → ~38 ms), and stack overflows are impossible by construction.
+Crafting requests that stall the vanilla planner for minutes — deeply nested, exponentially recursive patterns — are planned in **milliseconds** (upstream benchmark: ~90 s → ~38 ms, ~2,400×), and stack overflows are impossible by construction.
 
 ## Why it's fast *and* correct
 
@@ -33,10 +33,12 @@ All 39 reference-suite scenarios × 3 stock modes are **SUPPORTED** with zero fl
 | Requirement | Version |
 |---|---|
 | Minecraft | 1.12.2 |
-| Mod loader | [Cleanroom](https://github.com/CleanroomMC/Cleanroom) |
-| Applied Energistics | [AE2 Unofficial Extended Life](https://www.curseforge.com/minecraft/mc-mods/ae2-extended-life) v0.56.7+ |
+| Mod loader | [Cleanroom](https://github.com/CleanroomMC/Cleanroom) (recommended); or Forge + [MixinBooter](https://www.curseforge.com/minecraft/mc-mods/mixin-booter) |
+| Applied Energistics | [AE2 Unofficial Extended Life](https://www.curseforge.com/minecraft/mc-mods/ae2-extended-life) (compatible with every 1.12.2 build of AE2UEL) |
 
 Download `ae2_vm_112-x.y.z.jar` from [Releases](https://github.com/shinyashen/AE2-VM-1.12/releases), drop it into `mods/` — done. The VM takes over crafting calculations automatically; `proxyEnabled` in the config turns it off.
+
+> On the Forge route: the mod uses no Cleanroom-specific APIs and ships Java 8 bytecode, with mixins provided by MixinBooter, so it is expected to work out of the box. This route is not covered by our automated tests — feedback is welcome.
 
 ## Documentation
 
@@ -58,13 +60,22 @@ The [wiki](https://github.com/shinyashen/AE2-VM-1.12/wiki) carries the full docu
 ./gradlew build      # compiles and runs the full test suite (193 tests); artifacts in build/libs/
 ```
 
-Requires a JDK 25 build JVM (RetroFuturaGradle 2.x requirement; the JDK 17 compile toolchain is provisioned automatically). Runtime is Cleanroom on JDK 21+. Dependencies resolve through CurseMaven (AE2UEL, AE2FC-Rework, AE2CT, Baubles).
+Requires a JDK 25 build JVM (RetroFuturaGradle 2.x requirement; the JDK 17 compile toolchain is provisioned automatically). Runtime is Cleanroom (JDK 21+) or Forge (Java 8 + MixinBooter). Dependencies resolve through CurseMaven (AE2UEL, AE2FC-Rework, AE2CT, Baubles).
 
-## Credits & License
+## License & Credits
 
-LGPL-3.0, same as the original. Credits to:
+This project is a fork of [AE2-VM](https://github.com/TaoLe-si/AE2-VM) — the crafting-VM architecture, instruction semantics and test baselines all originate there.
 
-- **Tao** — original [AE2-VM](https://github.com/TaoLe-si/AE2-VM)
-- **NNYYOONNIIOO & contributors** — [AE2-Quick-Calculation](https://github.com/NNYYOONNIIOO/AE2-Quick-Calculation) (integration shell reference)
-- **Circulate233** — [RandomComplement](https://github.com/Circulate233/RandomComplement) (build system reference)
-- **moakiee** — [TB-ThirdParty](https://github.com/TaoLe-si/TB-ThirdParty) planner (vendored for test reference)
+| Component | License | Attribution |
+|---|---|---|
+| This port (code) | LGPL-3.0 | shinyashen |
+| Upstream AE2-VM (NeoForge 1.21.1) | LGPL-3.0 | Tao & [contributors](https://github.com/TaoLe-si/AE2-VM/graphs/contributors) |
+| Logo | based on the AE2-VM icon | Tao |
+| Thunderbolt planner (vendored into the test sourceset only, ships in no jar) | see [THUNDERBOLT-LICENSE](THUNDERBOLT-LICENSE) | moakiee ([TB-ThirdParty](https://github.com/TaoLe-si/TB-ThirdParty)) |
+
+Special thanks to:
+
+- **Tao** for the original AE2-VM
+- **NNYYOONNIIOO & contributors** for [AE2-Quick-Calculation](https://github.com/NNYYOONNIIOO/AE2-Quick-Calculation) (integration shell reference)
+- **Circulate233** for [RandomComplement](https://github.com/Circulate233/RandomComplement) (build system reference)
+- **AlgorithmX2 et al.** for Applied Energistics 2, and the **AE2UEL** team for the 1.12 platform ([AE2-UEL/Applied-Energistics-2](https://github.com/AE2-UEL/Applied-Energistics-2))
