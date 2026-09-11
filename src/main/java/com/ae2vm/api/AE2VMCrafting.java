@@ -149,7 +149,7 @@ public final class AE2VMCrafting {
         }
 
         PatternCompiler.compileIfAbsent(topPattern);
-        CraftingBytecode bytecode = PatternCompiler.compileRequest(topPattern, amount);
+        CraftingBytecode bytecode = PatternCompiler.compileRequest(topPattern, amount, what);
         if (bytecode == null) {
             return null;
         }
@@ -176,7 +176,7 @@ public final class AE2VMCrafting {
             ICraftingPatternDetails passTop = prefs.get(rootKey);
             CraftingBytecode passBytecode = bytecode;
             if (passTop != null && passTop != topPattern) {
-                passBytecode = PatternCompiler.compileRequest(passTop, amount);
+                passBytecode = PatternCompiler.compileRequest(passTop, amount, what);
                 if (passBytecode == null) {
                     passTop = topPattern;
                     passBytecode = bytecode;

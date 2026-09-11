@@ -6,7 +6,6 @@ import appeng.api.storage.data.IAEItemStack;
 import java.math.BigInteger;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -49,11 +48,15 @@ import java.util.function.Function;
  *
  * <p>Topology scope: strongly-connected sets with patterns and no
  * self-adjacency. Shared intermediates (a key consumed by multiple members)
- * and multi-input members are handled by the iteration; a net-drain key
- * (negative net effect) marks a conversion/lossy ring — the conversion-ring
- * guard and the working-capital simulation own those, and folding them into
- * a gross bundle would break their conservation semantics, so they are left
- * to the caller's previous behavior.
+ * and multi-input members are handled by the iteration; a net-drain on a
+ * ring MEMBER (negative net effect on a key whose producer is in the SCC)
+ * marks a conversion/lossy ring — the conversion-ring guard and the
+ * working-capital simulation own those, and folding them into a gross bundle
+ * would break their conservation semantics. A net-drain on an EXTERNAL key
+ * (no producer in the SCC — the fuel {@code C} of {@code B+C -> D} in a
+ * shared-intermediate ring) is ordinary ingredient demand: the net bundle
+ * extracts it and any stock shortfall is reported honestly, so it does not
+ * disqualify the ring.
  */
 final class RingSolver {
 
@@ -175,6 +178,34 @@ final class RingSolver {
             }
         }
 
+        // ---- external-root driver (phase 2c): AE2 indexes patterns by every
+        // output slot, so the REQUEST may be rooted at a key the ring only
+        // produces as a byproduct (order C; the ring is 4A->B, B->12A+C+D).
+        // A single member producing the root becomes a minimum-craft driver —
+        // the ring must run at least ceil(rootDeliver / outPer) rounds of it,
+        // with the surplus landing as ring byproducts. Multiple producers is
+        // the multi-pattern choice domain — decline; no producer means the
+        // root is unrelated to this ring — no driver.
+        IAEItemStack driverMember = null;
+        BigInteger driverOutPer = BigInteger.ZERO;
+        boolean rootIsMember = rootKey != null && isRingMember(scc, rootKey);
+        if (rootKey != null && rootDeliver.signum() > 0 && !rootIsMember) {
+            for (IAEItemStack m : scc) {
+                RecipeView v = recipeOf.apply(m);
+                for (var e : v.outputs().entrySet()) {
+                    if (!e.getKey().isSameType(rootKey) || e.getValue().signum() <= 0) continue;
+                    if (driverMember != null) return null; // ambiguous byproduct root
+                    driverMember = m;
+                    driverOutPer = e.getValue();
+                }
+            }
+        }
+        BigInteger driverMin = BigInteger.ZERO;
+        if (driverMember != null) {
+            driverMin = rootDeliver.add(driverOutPer).subtract(BigInteger.ONE).divide(driverOutPer);
+            if (driverMin.compareTo(CRAFT_CAP) > 0) return null; // diverged
+        }
+
         // ---- Jacobian fixed point over the member craft counts.
         Map<IAEItemStack, BigInteger> x = new HashMap<>();
         for (IAEItemStack k : scc) {
@@ -182,6 +213,11 @@ final class RingSolver {
         }
         boolean converged = false;
         for (int iter = 0; iter < MAX_ITERATIONS; iter++) {
+            // enforce the external-root driver minimum before deriving needs
+            if (driverMember != null) {
+                BigInteger cur = x.get(driverMember);
+                if (cur.compareTo(driverMin) < 0) x.put(driverMember, driverMin);
+            }
             // needed[k] = Σ consumer crafts × per-craft input + root delivery
             Map<IAEItemStack, BigInteger> needed = new HashMap<>();
             for (IAEItemStack m : scc) {
@@ -192,7 +228,7 @@ final class RingSolver {
                     needed.merge(e.getKey(), xf.multiply(e.getValue()), BigInteger::add);
                 }
             }
-            if (rootKey != null && rootDeliver.signum() > 0 && scc.contains(rootKey)) {
+            if (rootKey != null && rootDeliver.signum() > 0 && rootIsMember) {
                 needed.merge(rootKey, rootDeliver, BigInteger::add);
             }
             // cover[k] = start stock + own craft × per-craft output
@@ -218,11 +254,15 @@ final class RingSolver {
         }
         if (!converged) return null; // net-draining ring: honest fallback
 
-        // ---- gain gate: only pure-gain rings are ours. A ring whose merged
-        // net effect has a drain key (negative net effect) marks a
+        // ---- gain gate: only net-amplifying rings are ours. A DRAIN on a ring
+        // MEMBER (a key whose own producer sits in this SCC) marks a
         // conversion/lossy ring — the conversion-ring guard and the
         // working-capital simulation own those, and folding them into a gross
-        // bundle would break their conservation semantics.
+        // bundle would break their conservation semantics. A drain on an
+        // EXTERNAL key (no producer in the SCC — e.g. the fuel C of
+        // {@code B+C -> D} in a shared-intermediate ring) is ordinary
+        // ingredient demand: the net bundle extracts it and the aggregation
+        // reports any shortfall honestly.
         Map<IAEItemStack, BigInteger> produced = new HashMap<>();
         Map<IAEItemStack, BigInteger> consumed = new HashMap<>();
         for (IAEItemStack m : scc) {
@@ -243,7 +283,10 @@ final class RingSolver {
         for (IAEItemStack k : keys) {
             BigInteger netGain = produced.getOrDefault(k, BigInteger.ZERO)
                     .subtract(consumed.getOrDefault(k, BigInteger.ZERO));
-            if (netGain.signum() < 0) return null; // drain key: conversion/lossy domain
+            if (netGain.signum() < 0) {
+                if (isRingMember(scc, k)) return null; // member drain: conversion/lossy domain
+                continue; // external fuel/ingredient drain: honest demand
+            }
             if (netGain.signum() > 0) anyGain = true;
         }
         if (!anyGain) return null; // value-conserving ring: nothing to amplify
@@ -268,28 +311,39 @@ final class RingSolver {
             }
         }
         plan.ringKeys.addAll(scc);
+        if (driverMember != null) {
+            // driven byproduct root: the net bundle owns its crafting too (the
+            // captured root bundle is the producer pattern and would double-fire
+            // on replay); the request is delivered from the bundle's emitted
+            plan.ringKeys.add(rootKey);
+        }
 
-        // ---- startup seed: simulate one round along the ring (forced firing,
-        // available may go negative), report the deepest per-key deficit as a
-        // seed shortfall — timing capital the network must hold before the
-        // ring's first output lands; the ring pays it back within the first
-        // round. Both ring firing directions are probed, the smaller seed is
-        // kept.
+        // ---- startup seed: the network must hold the first round's inputs
+        // before the ring's first output lands — timing capital, not net
+        // consumption; the ring pays it back within the first round. The start
+        // point of a round is free (any member may fire first, its outputs
+        // priming the rest), so every member is probed as the start and the
+        // smallest seed wins. External (non-member) inputs are skipped: their
+        // shortfall is disclosed in full by the net bundle's extraction
+        // against network stock — a seed entry would double-report.
         Map<IAEItemStack, BigInteger> best = null;
-        List<IAEItemStack> order0 = new ArrayList<>(scc);
-        order0.sort(Comparator.comparing(k -> find(plan.ringKeys, k) == null ? 1 : 0));
-        for (int dir = 0; dir < 2; dir++) {
+        List<IAEItemStack> orderBase = new ArrayList<>(scc);
+        for (IAEItemStack start : orderBase) {
+            List<IAEItemStack> order = new ArrayList<>(orderBase.size());
+            order.add(start);
+            for (IAEItemStack k : orderBase) {
+                if (!k.isSameType(start)) order.add(k);
+            }
             Map<IAEItemStack, BigInteger> available = new HashMap<>();
             for (IAEItemStack k : scc) {
                 BigInteger s = nonNeg(startStockOf.apply(k));
                 if (s.signum() > 0) available.put(k, s);
             }
             Map<IAEItemStack, BigInteger> seed = new HashMap<>();
-            List<IAEItemStack> order = new ArrayList<>(order0);
-            if (dir == 1) java.util.Collections.reverse(order);
             for (IAEItemStack k : order) {
                 RecipeView v = recipeOf.apply(k);
                 for (var e : v.inputs().entrySet()) {
+                    if (!isRingMember(scc, e.getKey())) continue; // used-extraction's domain
                     BigInteger avail = available.getOrDefault(e.getKey(), BigInteger.ZERO);
                     if (e.getValue().compareTo(avail) > 0) {
                         BigInteger deficit = e.getValue().subtract(avail);
@@ -319,11 +373,12 @@ final class RingSolver {
         return v.signum() > 0 ? v : BigInteger.ZERO;
     }
 
-    private static IAEItemStack find(List<IAEItemStack> list, IAEItemStack key) {
-        for (IAEItemStack k : list) {
-            if (k.isSameType(key)) return k;
+    /** True when {@code key} is a member of the strongly-connected set. */
+    private static boolean isRingMember(Set<IAEItemStack> scc, IAEItemStack key) {
+        for (IAEItemStack k : scc) {
+            if (k.isSameType(key)) return true;
         }
-        return null;
+        return false;
     }
 
     /** Tarjan SCC (iterative) over {@code deps}; returns SCCs of size ≥ 2. */
