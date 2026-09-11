@@ -30,10 +30,21 @@ public final class Bench {
     }
 
     public static VMPlan run(BenchPatternDetails root, long amount, BenchSimulationState sim) {
+        return run(root, amount, null, sim);
+    }
+
+    /**
+     * Like {@link #run(BenchPatternDetails, long, BenchSimulationState)} but rooted at
+     * {@code requestedKey} (e.g. a byproduct output of {@code root}), mirroring AE2's
+     * every-output pattern index. Null keeps the primary-rooted request.
+     */
+    public static VMPlan run(BenchPatternDetails root, long amount, String requestedKey,
+                             BenchSimulationState sim) {
         for (ICraftingPatternDetails p : PATTERNS.values()) {
             PatternCompiler.compileIfAbsent(p);
         }
-        CraftingBytecode request = PatternCompiler.compileRequest(root, amount);
+        CraftingBytecode request = PatternCompiler.compileRequest(root, amount,
+                requestedKey == null ? null : k(requestedKey));
         CraftingVM vm = new CraftingVM("bench", PATTERNS::get);
         return vm.execute(request, sim);
     }
