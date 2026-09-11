@@ -7,7 +7,7 @@
 ![Minecraft](https://img.shields.io/badge/Minecraft-1.12.2-blue)
 ![License](https://img.shields.io/github/license/shinyashen/AE2-VM-1.12)
 
-**AE2 VM 1.12** 把应用能源 2(AE2)原本的**递归合成树遍历**整个换成**"样板预编译字节码 + 栈式虚拟机 + JIT 缓存"**。移植自 Tao 的 [AE2-VM](https://github.com/TaoLe-si/AE2-VM)(NeoForge 1.21.1),目标平台 **Minecraft 1.12.2 / Cleanroom / AE2 Unofficial Extended Life v0.56.x**。
+**AE2 VM 1.12** 把应用能源 2(AE2)原本的**递归合成树遍历**整个换成**"样板预编译字节码 + 栈式虚拟机 + JIT 缓存"**。它是 Tao 的 [AE2-VM](https://github.com/TaoLe-si/AE2-VM)(NeoForge 1.21.1)的 **fork**,移植到 **Minecraft 1.12.2 / Cleanroom / AE2 Unofficial Extended Life v0.56.x** 平台。
 
 动辄让原版规划器卡顿数分钟的深层嵌套、指数递归请求,现在毫秒级即可完成——上游实测约 90 秒 → 约 38 毫秒(约 2400 倍);全程无递归,不存在栈溢出。
 
@@ -62,11 +62,20 @@
 
 构建用的 JVM 需要 JDK 25(RetroFuturaGradle 2.x 的硬性要求;实际编译用的 JDK 17 工具链由 Gradle 自动下载)。运行环境为 Cleanroom(JDK 21+)或 Forge(Java 8 + MixinBooter)。依赖由 CurseMaven 自动拉取(AE2UEL、AE2FC-Rework、AE2CT、Baubles)。
 
-## 致谢与许可
+## 许可与致谢
 
-LGPL-3.0,与原版一致。致谢:
+本项目是 [AE2-VM](https://github.com/TaoLe-si/AE2-VM) 的 fork——合成虚拟机的架构、指令语义与测试基线均承自上游。
 
-- **Tao** —— 原版 [AE2-VM](https://github.com/TaoLe-si/AE2-VM)
+| 组成部分 | 许可 | 归属 |
+|---|---|---|
+| 本移植(代码) | LGPL-3.0 | shinyashen |
+| 上游 AE2-VM(NeoForge 1.21.1) | LGPL-3.0 | Tao 及[贡献者](https://github.com/TaoLe-si/AE2-VM/graphs/contributors) |
+| 图标 | 基于 AE2-VM 图标修改 | Tao |
+| Thunderbolt planner(仅 vendor 进测试源集,不随 jar 发布) | 见 [THUNDERBOLT-LICENSE](THUNDERBOLT-LICENSE) | moakiee([TB-ThirdParty](https://github.com/TaoLe-si/TB-ThirdParty)) |
+
+特别感谢:
+
+- **Tao** —— 原版 AE2-VM
 - **NNYYOONNIIOO 及贡献者** —— [AE2-Quick-Calculation](https://github.com/NNYYOONNIIOO/AE2-Quick-Calculation)(集成外壳参考)
 - **Circulate233** —— [RandomComplement](https://github.com/Circulate233/RandomComplement)(构建体系参考)
-- **moakiee** —— [TB-ThirdParty](https://github.com/TaoLe-si/TB-ThirdParty) 规划器(vendor 作测试参考)
+- **AlgorithmX2 等人** 的 Applied Energistics 2,以及 **AE2UEL** 团队维护的 1.12 平台([AE2-UEL/Applied-Energistics-2](https://github.com/AE2-UEL/Applied-Energistics-2))
