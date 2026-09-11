@@ -1,0 +1,90 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing tag to (re)publish, e.g. v1.0.0'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve tag
+        id: ref
+        run: echo "ref=${{ inputs.tag || github.ref_name }}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.ref.outputs.ref }}
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Build and test
+        run: ./gradlew build --no-daemon
+
+      - name: Verify tag matches mod_version
+        run: |
+          TAG="${{ steps.ref.outputs.ref }}"
+          VERSION=$(grep '^mod_version' gradle.properties | sed 's/^[^=]*=\s*//')
+          if [ "v${VERSION}" != "${TAG}" ]; then
+            echo "::error::tag ${TAG} does not match mod_version '${VERSION}'. Fix: update mod_version, commit, then retag."
+            exit 1
+          fi
+          echo "tag ${TAG} == v${VERSION} OK"
+
+      - name: Publish GitHub Release (create, or upload --clobber on re-run)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ steps.ref.outputs.ref }}"
+          gh release create "$TAG" build/libs/*.jar \
+            --title "AE2 VM 1.12 ${TAG#v}" --generate-notes --verify-tag \
+            || gh release upload "$TAG" build/libs/*.jar --clobber
+
+      - name: Sync benchmarks to wiki
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 scripts/extract_perf.py extract --results build/test-results/test > /tmp/bench.md
+          git clone "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.wiki.git" /tmp/wiki
+          python3 scripts/extract_perf.py inject --bench /tmp/bench.md \
+            --wiki-zh /tmp/wiki/Performance.md --wiki-en /tmp/wiki/Performance-en.md \
+            --tag "${{ steps.ref.outputs.ref }}" --date "$(date -u +%F)"
+          cd /tmp/wiki
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --quiet && echo "no benchmark changes" || {
+            git commit -m "benchmarks: ${{ steps.ref.outputs.ref }}"
+            git push
+          }
+
+      - name: Verify CurseForge token reachability (no upload; CF project pending)
+        continue-on-error: true
+        run: |
+          if [ -z "${{ secrets.CURSEFORGE_TOKEN }}" ]; then
+            echo "CURSEFORGE_TOKEN not configured, skipping"
+            exit 0
+          fi
+          code=$(curl -s -o /tmp/cf.json -w "%{http_code}" \
+            -H "x-api-key: ${{ secrets.CURSEFORGE_TOKEN }}" \
+            -H "Accept: application/json" \
+            https://api.curseforge.com/v1/games/432)
+          echo "CurseForge API HTTP ${code} (200 = token valid from US runner)"
+          [ "$code" = "200" ] && head -c 300 /tmp/cf.json || true
