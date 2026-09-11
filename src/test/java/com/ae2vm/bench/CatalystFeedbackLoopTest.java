@@ -247,17 +247,41 @@ class CatalystFeedbackLoopTest {
     }
 
     @Test
-    void sharedIntermediateRingBehavior() {
+    @Disabled("GAP-4 phase 2b: shared-intermediate rings need the general linear solve (ring solver currently declines this topology)")
+    void sharedIntermediateRingFeasible() {
+        // B feeds two consumers (makeD and the recycler): the general topology
+        // the Jacobian iteration handles since the shape restriction was lifted.
+        // Balance: makeIngot ×3848, makeD ×1924, recycler ×1924 — A nets
+        // +4/recycler round, C consumes 1924 of the stocked 5000.
         BenchPatternDetails[] loop = sharedIntermediateRing();
         for (BenchPatternDetails p : loop) {
             Bench.register(p);
         }
         BenchSimulationState sim = new BenchSimulationState().seed("A", 2304).seed("C", 5000);
         VMPlan plan = Bench.run(loop[1], 10000, sim);
-        // Shared intermediates (B feeds two consumers) need the general linear
-        // solve; record the current behavior honestly until phase 2b.
-        System.out.println("[RING-VARIANT] shared-intermediate feasible=" + feasible(plan)
-                + " missing=" + dump(plan));
+        assertTrue(feasible(plan),
+                "shared-intermediate ring with sufficient C must be feasible, got " + dump(plan));
+        assertTrue(schedulesPatternWithInput(plan, "A"),
+                "plan must schedule the synthesis pattern");
+    }
+
+    @Test
+    void sharedIntermediateRingShortOnC() {
+        BenchPatternDetails[] loop = sharedIntermediateRing();
+        for (BenchPatternDetails p : loop) {
+            Bench.register(p);
+        }
+        BenchSimulationState sim = new BenchSimulationState().seed("A", 2304).seed("C", 1000);
+        VMPlan plan = Bench.run(loop[1], 10000, sim);
+        // C is the ring's external fuel: 1000 covers 1000 rounds but the
+        // balanced plan needs 1924 — the honest outcome is either an
+        // infeasible plan reporting C (backing off) or a capped plan whose
+        // missing discloses the A shortfall. Phase 2b records the baseline.
+        if (feasible(plan)) {
+            System.out.println("[RING-VARIANT] short-C: feasible (capped), missing=" + dump(plan));
+        } else {
+            System.out.println("[RING-VARIANT] short-C: infeasible, missing=" + dump(plan));
+        }
     }
 
     // ---- amplifying loop: real-world gaia-spirit report (GAP-4) ----
