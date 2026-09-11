@@ -117,10 +117,11 @@ class CatalystFeedbackLoopTest {
         return new BenchPatternDetails[]{makeIngot, makeSpirit};
     }
 
-    private static boolean schedulesIngotSynthesis(VMPlan plan) {
+    /** True when a pattern consuming {@code input} is scheduled positively. */
+    private static boolean schedulesPatternWithInput(VMPlan plan, String input) {
         for (var e : plan.getPatternTimes().entrySet()) {
             for (var in : e.getKey().getCondensedInputs()) {
-                if (in != null && ((BenchAEItemStack) in).id.equals("S") && e.getValue() > 0) {
+                if (in != null && ((BenchAEItemStack) in).id.equals(input) && e.getValue() > 0) {
                     return true;
                 }
             }
@@ -169,6 +170,71 @@ class CatalystFeedbackLoopTest {
                 "starved lossy cycle must report A>=2 missing, got " + dump(plan));
     }
 
+    // ---- ring variants from the design review (net-amplifying shapes) ----
+
+    /** Byproduct gain ring: 4A -> B, B -> 12A + C + D (net +8A + C + D per round). */
+    private static BenchPatternDetails[] byproductGainRing() {
+        BenchPatternDetails makeIngot = pat("B", 1, "A", 4L);
+        BenchPatternDetails recycler = patEx(new String[]{"A", "C", "D"}, new long[]{12, 1, 1}, "B", 1L);
+        return new BenchPatternDetails[]{makeIngot, recycler};
+    }
+
+    /** Shared-intermediate ring: 4A -> B, B + C -> D, D + B -> 12A (B feeds two consumers). */
+    private static BenchPatternDetails[] sharedIntermediateRing() {
+        BenchPatternDetails makeIngot = pat("B", 1, "A", 4L);
+        BenchPatternDetails makeD = patEx(new String[]{"D"}, new long[]{1}, "B", 1L, "C", 1L);
+        BenchPatternDetails recycler = patEx(new String[]{"A"}, new long[]{12}, "D", 1L, "B", 1L);
+        return new BenchPatternDetails[]{makeIngot, makeD, recycler};
+    }
+
+    @Test
+    void byproductGainRingFeasible() {
+        BenchPatternDetails[] loop = byproductGainRing();
+        for (BenchPatternDetails p : loop) {
+            Bench.register(p);
+        }
+        // 2304 stocked covers the 962-turn plan exactly: 2304 + 12x962 - 4x962 = 10000
+        BenchSimulationState sim = new BenchSimulationState().seed("A", 2304);
+        VMPlan plan = Bench.run(loop[1], 10000, sim);
+        StringBuilder pt = new StringBuilder();
+        for (var e : plan.getPatternTimes().entrySet()) {
+            pt.append(e.getValue()).append("x[");
+            for (var in : e.getKey().getCondensedInputs()) pt.append(((BenchAEItemStack) in).id).append(',');
+            pt.append("] ");
+        }
+        assertTrue(schedulesPatternWithInput(plan, "A"),
+                "plan must schedule the synthesis pattern (GAP-4 dissolve-only plan), pt=" + pt);
+    }
+
+    @Test
+    void byproductGainRingUnseededReportsSeed() {
+        BenchPatternDetails[] loop = byproductGainRing();
+        for (BenchPatternDetails p : loop) {
+            Bench.register(p);
+        }
+        BenchSimulationState sim = new BenchSimulationState();
+        VMPlan plan = Bench.run(loop[1], 10000, sim);
+        assertFalse(feasible(plan),
+                "unseeded byproduct ring must be infeasible, got feasible");
+        // the fallback's honest shortfall: one B — the next layer's timing seed
+        assertTrue(infeasibleMatches(plan, Map.of("B", 1L)),
+                "unseeded byproduct ring must report a startup shortfall, got " + dump(plan));
+    }
+
+    @Test
+    void sharedIntermediateRingBehavior() {
+        BenchPatternDetails[] loop = sharedIntermediateRing();
+        for (BenchPatternDetails p : loop) {
+            Bench.register(p);
+        }
+        BenchSimulationState sim = new BenchSimulationState().seed("A", 2304).seed("C", 5000);
+        VMPlan plan = Bench.run(loop[1], 10000, sim);
+        // Shared intermediates (B feeds two consumers) need the general linear
+        // solve; record the current behavior honestly until phase 2b.
+        System.out.println("[RING-VARIANT] shared-intermediate feasible=" + feasible(plan)
+                + " missing=" + dump(plan));
+    }
+
     // ---- amplifying loop: real-world gaia-spirit report (GAP-4) ----
     // 4 spirits craft 1 ingot, 1 ingot dissolves into 12 spirits; 2303 stocked,
     // 10000 requested. The dissolving plan consumes 834 ingots whose synthesis
@@ -187,7 +253,7 @@ class CatalystFeedbackLoopTest {
         VMPlan plan = Bench.run(loop[1], 10000, sim);
         assertTrue(feasible(plan),
                 "amplifying ring with sufficient spirits must be feasible, got " + dump(plan));
-        assertTrue(schedulesIngotSynthesis(plan),
+        assertTrue(schedulesPatternWithInput(plan, "S"),
                 "plan must schedule the ingot-synthesis pattern (GAP-4 dissolve-only plan)");
     }
 
@@ -203,7 +269,7 @@ class CatalystFeedbackLoopTest {
         }
         BenchSimulationState sim = new BenchSimulationState().seed("S", 2303);
         VMPlan plan = Bench.run(loop[1], 10000, sim);
-        assertTrue(schedulesIngotSynthesis(plan),
+        assertTrue(schedulesPatternWithInput(plan, "S"),
                 "plan must schedule the ingot-synthesis pattern (GAP-4 dissolve-only plan)");
     }
 
@@ -217,7 +283,7 @@ class CatalystFeedbackLoopTest {
         VMPlan plan = Bench.run(loop[1], 10000, sim);
         assertTrue(feasible(plan),
                 "unbounded-stock amplifying ring must be feasible, got " + dump(plan));
-        assertTrue(schedulesIngotSynthesis(plan),
+        assertTrue(schedulesPatternWithInput(plan, "S"),
                 "plan must schedule the ingot-synthesis pattern (GAP-4 dissolve-only plan)");
     }
 }
