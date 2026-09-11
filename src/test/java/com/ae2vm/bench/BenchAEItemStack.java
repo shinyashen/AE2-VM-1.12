@@ -70,6 +70,11 @@ public final class BenchAEItemStack implements IAEItemStack {
     }
 
     @Override
+    public String toString() {
+        return id + (damage != 0 ? "@" + damage : "");
+    }
+
+    @Override
     public IAEItemStack copy() {
         BenchAEItemStack c = new BenchAEItemStack(id, damage, maxDamage, size);
         c.craftable = craftable;
