@@ -178,7 +178,6 @@ class CatalystFeedbackLoopTest {
     // (3400 stocked ≥ 3336 synthesis + margin) the ring is fully feasible.
 
     @Test
-    @Disabled("GAP-4: ring plans omit synthesis scheduling — needs aggregation ring-propagation redesign")
     void amplifyingLoopFeasibleWithSufficientStock() {
         BenchPatternDetails[] loop = amplifyingLoop();
         for (BenchPatternDetails p : loop) {
@@ -193,7 +192,6 @@ class CatalystFeedbackLoopTest {
     }
 
     @Test
-    @Disabled("GAP-4: ring plans omit synthesis scheduling — needs aggregation ring-propagation redesign")
     void amplifyingLoopShortfallSchedulesSynthesis() {
         // 2303 stocked is 1025 spirits short of the balanced 834/834 plan; the
         // exact shortfall disclosure is GAP-4 phase 2 (ring fixed-point). What
@@ -210,7 +208,6 @@ class CatalystFeedbackLoopTest {
     }
 
     @Test
-    @Disabled("GAP-4: ring plans omit synthesis scheduling — needs aggregation ring-propagation redesign")
     void amplifyingLoopUnboundedFeasible() {
         BenchPatternDetails[] loop = amplifyingLoop();
         for (BenchPatternDetails p : loop) {
