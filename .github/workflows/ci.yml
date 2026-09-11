@@ -3,6 +3,16 @@ name: CI
 on:
   push:
     branches: [master]
+    paths:
+      - 'src/**'
+      - 'build.gradle'
+      - 'settings.gradle'
+      - 'gradle.properties'
+      - 'dependencies.gradle'
+      - 'repositories.gradle'
+      - 'gradle/**'
+      - 'gradlew'
+      - '.github/workflows/ci.yml'
   pull_request:
   workflow_dispatch:
 
