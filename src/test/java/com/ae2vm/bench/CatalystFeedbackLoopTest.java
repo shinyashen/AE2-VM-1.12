@@ -222,6 +222,31 @@ class CatalystFeedbackLoopTest {
     }
 
     @Test
+    void byproductGainRingExternalDemand() {
+        // Same ring, but C is ALSO requested. The ring passively produces 962 C
+        // when covering 10000 A — does an order for 500 C (under-production)
+        // or 2000 C (over-production) change what the ring crafts?
+        BenchPatternDetails[] loop = byproductGainRing();
+        for (BenchPatternDetails p : loop) {
+            Bench.register(p);
+        }
+        // under: 500 C requested < 962 passively produced
+        BenchSimulationState sim = new BenchSimulationState().seed("A", 2304);
+        VMPlan under = Bench.run(loop[1], 10000, sim);
+        assertTrue(feasible(under), "under-request must stay feasible, got " + dump(under));
+        long cEmittedUnder = 0;
+        for (var k : under.getEmittedItems().keys()) {
+            if (((BenchAEItemStack) k).id.equals("C")) cEmittedUnder = under.getEmittedItems().get(k);
+        }
+        // over: 2000 C requested > 962 passively produced
+        sim = new BenchSimulationState().seed("A", 2304).seed("C", 5000);
+        VMPlan over = Bench.run(loop[1], 10000, sim);
+        assertTrue(feasible(over), "over-request must stay feasible, got " + dump(over));
+        System.out.println("[RING-VARIANT] C external: under-request C-emitted=" + cEmittedUnder
+                + " over-request missing=" + dump(over));
+    }
+
+    @Test
     void sharedIntermediateRingBehavior() {
         BenchPatternDetails[] loop = sharedIntermediateRing();
         for (BenchPatternDetails p : loop) {

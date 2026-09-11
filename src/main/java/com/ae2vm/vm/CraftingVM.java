@@ -1059,7 +1059,18 @@ public class CraftingVM {
             correctRecursion(total, initialStock);
         }
         solveRings(total);
-        for (Bundle net : ringNetBundles) applyBundleDirect(net);
+        try {
+        } catch (Exception ignored) {
+        }
+        for (Bundle net : ringNetBundles) {
+            applyBundleDirect(net);
+            // report the ring's net production in the plan (applyBundleDirect's
+            // insert is internal traffic — the net output is what the player sees)
+            for (var e : net.emitted.entrySet()) {
+                long val = toLongSafe(e.getValue(), "ring-report");
+                if (val > 0) emittedItems.add(e.getKey(), val);
+            }
+        }
         Set<IAEItemStack> applied = new HashSet<>();
         for (IAEItemStack k : total.keySet()) applyOrdered(k, applied, total);
         Map<IAEItemStack, Long> loopMissing = computeFeedbackLoopMissing(total, initialStock);

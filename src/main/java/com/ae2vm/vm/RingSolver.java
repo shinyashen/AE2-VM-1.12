@@ -251,18 +251,21 @@ final class RingSolver {
         }
         if (!anyGain) return null; // value-conserving ring: nothing to amplify
 
-        // ---- gross-flow bundle.
+        // ---- gross-flow bundle. Emitted/used are keyed by ALL recipe
+        // inputs/outputs (byproducts land in emitted, external materials in
+        // used) so the plan reports and extracts the full material flow.
         RingPlan plan = new RingPlan();
         for (IAEItemStack k : scc) {
             RecipeView v = recipeOf.apply(k);
             plan.patterns.put(v.pattern(), x.get(k));
-            BigInteger producedKey = produced.getOrDefault(k, BigInteger.ZERO);
-            if (producedKey.signum() > 0) plan.emitted.put(k, producedKey);
         }
         for (IAEItemStack m : scc) {
             RecipeView v = recipeOf.apply(m);
             BigInteger xf = x.get(m);
             if (xf.signum() <= 0) continue;
+            for (var e : v.outputs().entrySet()) {
+                plan.emitted.merge(e.getKey(), xf.multiply(e.getValue()), BigInteger::add);
+            }
             for (var e : v.inputs().entrySet()) {
                 plan.used.merge(e.getKey(), xf.multiply(e.getValue()), BigInteger::add);
             }
