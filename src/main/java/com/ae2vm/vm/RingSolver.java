@@ -178,6 +178,34 @@ final class RingSolver {
             }
         }
 
+        // ---- external-root driver (phase 2c): AE2 indexes patterns by every
+        // output slot, so the REQUEST may be rooted at a key the ring only
+        // produces as a byproduct (order C; the ring is 4A->B, B->12A+C+D).
+        // A single member producing the root becomes a minimum-craft driver —
+        // the ring must run at least ceil(rootDeliver / outPer) rounds of it,
+        // with the surplus landing as ring byproducts. Multiple producers is
+        // the multi-pattern choice domain — decline; no producer means the
+        // root is unrelated to this ring — no driver.
+        IAEItemStack driverMember = null;
+        BigInteger driverOutPer = BigInteger.ZERO;
+        boolean rootIsMember = rootKey != null && isRingMember(scc, rootKey);
+        if (rootKey != null && rootDeliver.signum() > 0 && !rootIsMember) {
+            for (IAEItemStack m : scc) {
+                RecipeView v = recipeOf.apply(m);
+                for (var e : v.outputs().entrySet()) {
+                    if (!e.getKey().isSameType(rootKey) || e.getValue().signum() <= 0) continue;
+                    if (driverMember != null) return null; // ambiguous byproduct root
+                    driverMember = m;
+                    driverOutPer = e.getValue();
+                }
+            }
+        }
+        BigInteger driverMin = BigInteger.ZERO;
+        if (driverMember != null) {
+            driverMin = rootDeliver.add(driverOutPer).subtract(BigInteger.ONE).divide(driverOutPer);
+            if (driverMin.compareTo(CRAFT_CAP) > 0) return null; // diverged
+        }
+
         // ---- Jacobian fixed point over the member craft counts.
         Map<IAEItemStack, BigInteger> x = new HashMap<>();
         for (IAEItemStack k : scc) {
@@ -185,6 +213,11 @@ final class RingSolver {
         }
         boolean converged = false;
         for (int iter = 0; iter < MAX_ITERATIONS; iter++) {
+            // enforce the external-root driver minimum before deriving needs
+            if (driverMember != null) {
+                BigInteger cur = x.get(driverMember);
+                if (cur.compareTo(driverMin) < 0) x.put(driverMember, driverMin);
+            }
             // needed[k] = Σ consumer crafts × per-craft input + root delivery
             Map<IAEItemStack, BigInteger> needed = new HashMap<>();
             for (IAEItemStack m : scc) {
@@ -195,7 +228,7 @@ final class RingSolver {
                     needed.merge(e.getKey(), xf.multiply(e.getValue()), BigInteger::add);
                 }
             }
-            if (rootKey != null && rootDeliver.signum() > 0 && scc.contains(rootKey)) {
+            if (rootKey != null && rootDeliver.signum() > 0 && rootIsMember) {
                 needed.merge(rootKey, rootDeliver, BigInteger::add);
             }
             // cover[k] = start stock + own craft × per-craft output
@@ -278,6 +311,12 @@ final class RingSolver {
             }
         }
         plan.ringKeys.addAll(scc);
+        if (driverMember != null) {
+            // driven byproduct root: the net bundle owns its crafting too (the
+            // captured root bundle is the producer pattern and would double-fire
+            // on replay); the request is delivered from the bundle's emitted
+            plan.ringKeys.add(rootKey);
+        }
 
         // ---- startup seed: the network must hold the first round's inputs
         // before the ring's first output lands — timing capital, not net
