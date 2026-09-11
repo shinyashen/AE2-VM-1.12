@@ -93,6 +93,9 @@ public class CraftingVM {
     private IItemList<IAEItemStack> realStockCache;
     private VMCounter executeStartStock;
     private BigInteger requestAmount;
+    /** The request's root pattern (patternPool[0]): a byproduct-rooted request's
+     * output key has no primary-pattern resolver entry, but this pattern produces it. */
+    private ICraftingPatternDetails rootPattern;
     private Map<IAEItemStack, Map<IAEItemStack, long[]>> selfAdjacentKeys;
     private boolean extractIsClaim;
     private boolean currentSlotFuzzy;
@@ -390,6 +393,8 @@ public class CraftingVM {
         cyclicCraftKeys.clear();
         jitFailCache.clear();
         ringNetBundles.clear();
+        ICraftingPatternDetails[] pool = requestBytecode.getPatternPool();
+        this.rootPattern = pool != null && pool.length > 0 ? pool[0] : null;
         this.executeStartStock = snapshotExecuteStartStock();
 
         long vmStartNs = System.nanoTime();
@@ -1247,6 +1252,12 @@ public class CraftingVM {
         if (key == null || !visited.add(key)) return;
         keys.add(key);
         ICraftingPatternDetails p = patternResolver != null ? patternResolver.apply(key) : null;
+        if (p == null && rootPattern != null && key.isSameType(outputKey)) {
+            // byproduct-rooted request: AE2 indexes patterns by every output, so
+            // the root key has no primary-pattern resolver entry — the request's
+            // own pattern produces it (phase 2c)
+            p = rootPattern;
+        }
         if (p == null) return;
         IAEItemStack[] condensed = safeCondensedInputs(p);
         if (condensed != null) {

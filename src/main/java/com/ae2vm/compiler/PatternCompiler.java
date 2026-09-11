@@ -151,6 +151,19 @@ public final class PatternCompiler {
     }
 
     public static CraftingBytecode compileRequest(ICraftingPatternDetails pattern, long requestedAmount) {
+        return compileRequest(pattern, requestedAmount, null);
+    }
+
+    /**
+     * Compiles a request bytecode rooted at {@code requestedKey}. AE2UEL indexes
+     * patterns by EVERY output slot, so a request may be rooted at a BYPRODUCT
+     * (the pattern's primary output is something else) — craft count and output
+     * key then derive from the requested output, not the primary one. A null or
+     * primary-matching {@code requestedKey} keeps the primary-rooted behavior;
+     * a key the pattern does not output at all also falls back to the primary.
+     */
+    public static CraftingBytecode compileRequest(ICraftingPatternDetails pattern, long requestedAmount,
+                                                  IAEItemStack requestedKey) {
         pattern = unwrapScaled(pattern);
         CraftingBytecode patternBytecode = COMPILED_PATTERNS.get(pattern);
         if (patternBytecode == null) {
@@ -162,9 +175,23 @@ public final class PatternCompiler {
         }
 
         long outputPerCraft = patternBytecode.getOutputAmountPerCraft();
+        IAEItemStack outputKey = patternBytecode.getOutput();
+        if (requestedKey != null && !requestedKey.isSameType(outputKey)) {
+            IAEItemStack[] outs = pattern.getOutputs();
+            if (outs != null) {
+                for (IAEItemStack out : outs) {
+                    if (out == null || !out.isSameType(requestedKey) || out.getStackSize() <= 0) {
+                        continue;
+                    }
+                    outputPerCraft = (long) out.getStackSize();
+                    outputKey = out;
+                    break;
+                }
+            }
+        }
         long craftTimes = (requestedAmount + outputPerCraft - 1L) / outputPerCraft;
         CraftingBytecode.Builder builder = new CraftingBytecode.Builder();
-        int outputIdx = builder.addConstant(patternBytecode.getOutput());
+        int outputIdx = builder.addConstant(outputKey);
         builder.setOutput(outputIdx, requestedAmount);
         int patternIdx = builder.addPattern(pattern);
         builder.emitPushLong(craftTimes);
