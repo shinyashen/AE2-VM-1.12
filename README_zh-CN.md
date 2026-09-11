@@ -7,7 +7,7 @@
 ![Minecraft](https://img.shields.io/badge/Minecraft-1.12.2-blue)
 ![License](https://img.shields.io/github/license/shinyashen/AE2-VM-1.12)
 
-**AE2 VM 1.12** 把应用能源 2(AE2)原本的**递归合成树遍历**整个换成**"样板预编译字节码 + 栈式虚拟机 + JIT 缓存"**。它是 Tao 的 [AE2-VM](https://github.com/TaoLe-si/AE2-VM)(NeoForge 1.21.1)的 **fork**,移植到 **Minecraft 1.12.2 / Cleanroom / AE2 Unofficial Extended Life v0.56.x** 平台。
+**AE2 VM 1.12** 把应用能源 2(AE2)原本的**递归合成树遍历**整个换成"**样板预编译字节码 + 栈式虚拟机 + JIT 缓存**"。它是 Tao 的 [AE2-VM](https://github.com/TaoLe-si/AE2-VM)(NeoForge 1.21.1)的 **fork**,移植到 **Minecraft 1.12.2 / Cleanroom / AE2 Unofficial Extended Life v0.56.x** 平台。
 
 动辄让原版规划器卡顿数分钟的深层嵌套、指数递归请求,现在毫秒级即可完成——上游实测约 90 秒 → 约 38 毫秒(约 2400 倍);全程无递归,不存在栈溢出。
 
@@ -71,7 +71,7 @@
 | 本移植(代码) | LGPL-3.0 | shinyashen |
 | 上游 AE2-VM(NeoForge 1.21.1) | LGPL-3.0 | Tao 及[贡献者](https://github.com/TaoLe-si/AE2-VM/graphs/contributors) |
 | 图标 | 基于 AE2-VM 图标修改 | Tao |
-| Thunderbolt planner(仅 vendor 进测试源集,不随 jar 发布) | 见 [THUNDERBOLT-LICENSE](THUNDERBOLT-LICENSE) | moakiee([TB-ThirdParty](https://github.com/TaoLe-si/TB-ThirdParty)) |
+| Thunderbolt planner(仅 vendor 进测试源集,不随 jar 发布) | LGPL-3.0 | moakiee([TB-ThirdParty](https://github.com/TaoLe-si/TB-ThirdParty)) |
 
 特别感谢:
 
