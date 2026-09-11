@@ -71,7 +71,7 @@ This project is a fork of [AE2-VM](https://github.com/TaoLe-si/AE2-VM) — the c
 | This port (code) | LGPL-3.0 | shinyashen |
 | Upstream AE2-VM (NeoForge 1.21.1) | LGPL-3.0 | Tao & [contributors](https://github.com/TaoLe-si/AE2-VM/graphs/contributors) |
 | Logo | based on the AE2-VM icon | Tao |
-| Thunderbolt planner (vendored into the test sourceset only, ships in no jar) | see [THUNDERBOLT-LICENSE](THUNDERBOLT-LICENSE) | moakiee ([TB-ThirdParty](https://github.com/TaoLe-si/TB-ThirdParty)) |
+| Thunderbolt planner (vendored into the test sourceset only, ships in no jar) | LGPL-3.0 | moakiee ([TB-ThirdParty](https://github.com/TaoLe-si/TB-ThirdParty)) |
 
 Special thanks to:
 
