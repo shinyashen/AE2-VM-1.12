@@ -2,17 +2,20 @@ package com.ae2vm.bench;
 
 import com.ae2vm.vm.VMPlan;
 import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.util.Arrays;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 
 import static com.ae2vm.bench.Bench.UNBOUNDED_STOCK;
 import static com.ae2vm.bench.Bench.feasible;
 import static com.ae2vm.bench.Bench.infeasibleMatches;
 import static com.ae2vm.bench.Bench.pat;
 import static com.ae2vm.bench.Bench.patEx;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -129,6 +132,19 @@ class CatalystFeedbackLoopTest {
         return false;
     }
 
+    /** Craft count of the (unique) pattern whose input-id set is exactly the given one. */
+    private static long timesOf(VMPlan plan, String... inputIds) {
+        Set<String> want = new HashSet<>(Arrays.asList(inputIds));
+        for (var e : plan.getPatternTimes().entrySet()) {
+            Set<String> have = new HashSet<>();
+            for (var in : e.getKey().getCondensedInputs()) {
+                if (in != null) have.add(((BenchAEItemStack) in).id);
+            }
+            if (have.equals(want)) return e.getValue();
+        }
+        return -1;
+    }
+
     // ---- amplifying-loop (GAP-4 regression): net +8 spirits per turn ----
 
     @Test
@@ -204,6 +220,11 @@ class CatalystFeedbackLoopTest {
         }
         assertTrue(schedulesPatternWithInput(plan, "A"),
                 "plan must schedule the synthesis pattern (GAP-4 dissolve-only plan), pt=" + pt);
+        // exact turns: the solved ring must be the ONLY scheduling — a replayed
+        // pre-solver count on top (the old integration bug) would double the
+        // dissolve crafts with no backed inputs
+        assertEquals(962, timesOf(plan, "B"), "recycler (B->12A+C+D) turns, pt=" + pt);
+        assertEquals(962, timesOf(plan, "A"), "makeIngot (4A->B) turns, pt=" + pt);
     }
 
     @Test
@@ -247,22 +268,26 @@ class CatalystFeedbackLoopTest {
     }
 
     @Test
-    @Disabled("GAP-4 phase 2b: shared-intermediate rings need the general linear solve (ring solver currently declines this topology)")
     void sharedIntermediateRingFeasible() {
-        // B feeds two consumers (makeD and the recycler): the general topology
-        // the Jacobian iteration handles since the shape restriction was lifted.
-        // Balance: makeIngot ×3848, makeD ×1924, recycler ×1924 — A nets
-        // +4/recycler round, C consumes 1924 of the stocked 5000.
+        // B feeds two consumers (makeD and the recycler): the general
+        // shared-intermediate topology. Minimal fixed point: recycler ×1924
+        // and makeD ×1924 (D balance), makeIngot ×3848 (B balance) — each
+        // recycler round nets +4 A (12 produced, 8 re-consumed via B
+        // synthesis) and burns 1 C: 2304 + 4×1924 = 10000 delivered,
+        // 1924 of the stocked 5000 C consumed. External drains (C has no
+        // producer in the ring) are honest ingredient demand, not a
+        // conversion-ring signal.
         BenchPatternDetails[] loop = sharedIntermediateRing();
         for (BenchPatternDetails p : loop) {
             Bench.register(p);
         }
         BenchSimulationState sim = new BenchSimulationState().seed("A", 2304).seed("C", 5000);
-        VMPlan plan = Bench.run(loop[1], 10000, sim);
+        VMPlan plan = Bench.run(loop[2], 10000, sim);
         assertTrue(feasible(plan),
                 "shared-intermediate ring with sufficient C must be feasible, got " + dump(plan));
-        assertTrue(schedulesPatternWithInput(plan, "A"),
-                "plan must schedule the synthesis pattern");
+        assertEquals(1924, timesOf(plan, "D", "B"), "recycler (D+B->12A) rounds");
+        assertEquals(1924, timesOf(plan, "B", "C"), "makeD (B+C->D) rounds");
+        assertEquals(3848, timesOf(plan, "A"), "makeIngot (4A->B) rounds");
     }
 
     @Test
@@ -272,16 +297,14 @@ class CatalystFeedbackLoopTest {
             Bench.register(p);
         }
         BenchSimulationState sim = new BenchSimulationState().seed("A", 2304).seed("C", 1000);
-        VMPlan plan = Bench.run(loop[1], 10000, sim);
-        // C is the ring's external fuel: 1000 covers 1000 rounds but the
-        // balanced plan needs 1924 — the honest outcome is either an
-        // infeasible plan reporting C (backing off) or a capped plan whose
-        // missing discloses the A shortfall. Phase 2b records the baseline.
-        if (feasible(plan)) {
-            System.out.println("[RING-VARIANT] short-C: feasible (capped), missing=" + dump(plan));
-        } else {
-            System.out.println("[RING-VARIANT] short-C: infeasible, missing=" + dump(plan));
-        }
+        VMPlan plan = Bench.run(loop[2], 10000, sim);
+        // C is the ring's external fuel: the solve is material-honest — the
+        // balanced plan consumes 1924 C, the network holds 1000, so the
+        // extraction shortfall must surface as missing C (never a false
+        // feasible, never a missing on a ring-internal key).
+        assertFalse(feasible(plan), "fuel-starved shared ring must be infeasible, got " + dump(plan));
+        assertTrue(infeasibleMatches(plan, Map.of("C", 924L)),
+                "fuel-starved shared ring must report the C shortfall, got " + dump(plan));
     }
 
     // ---- amplifying loop: real-world gaia-spirit report (GAP-4) ----
@@ -304,6 +327,12 @@ class CatalystFeedbackLoopTest {
                 "amplifying ring with sufficient spirits must be feasible, got " + dump(plan));
         assertTrue(schedulesPatternWithInput(plan, "S"),
                 "plan must schedule the ingot-synthesis pattern (GAP-4 dissolve-only plan)");
+        // turns stay at the propagation's root granularity ceil(10000/12) = 834:
+        // the solver only bumps UP from the demand-driven counts, so with free
+        // stock the balance closes without amplification (72-spirit surplus,
+        // one root-craft granularity — never replayed double counts)
+        assertEquals(834, timesOf(plan, "S"), "makeIngot (4S->I) turns");
+        assertEquals(834, timesOf(plan, "I"), "makeSpirit (I->12S) turns");
     }
 
     @Test
@@ -320,6 +349,11 @@ class CatalystFeedbackLoopTest {
         VMPlan plan = Bench.run(loop[1], 10000, sim);
         assertTrue(schedulesPatternWithInput(plan, "S"),
                 "plan must schedule the ingot-synthesis pattern (GAP-4 dissolve-only plan)");
+        // solved balance turns: ceil((10000-2303)/8) = 963 — and ONLY the
+        // solved counts (the replayed pre-solver 834 used to double the
+        // dissolve crafts with no backed inputs)
+        assertEquals(963, timesOf(plan, "S"), "makeIngot (4S->I) turns");
+        assertEquals(963, timesOf(plan, "I"), "makeSpirit (I->12S) turns");
     }
 
     @Test
@@ -334,5 +368,9 @@ class CatalystFeedbackLoopTest {
                 "unbounded-stock amplifying ring must be feasible, got " + dump(plan));
         assertTrue(schedulesPatternWithInput(plan, "S"),
                 "plan must schedule the ingot-synthesis pattern (GAP-4 dissolve-only plan)");
+        // free stock covers everything: no amplification needed beyond the
+        // root's own dissolve count ceil(10000/12) = 834
+        assertEquals(834, timesOf(plan, "S"), "makeIngot (4S->I) turns");
+        assertEquals(834, timesOf(plan, "I"), "makeSpirit (I->12S) turns");
     }
 }
