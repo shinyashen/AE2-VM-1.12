@@ -83,7 +83,6 @@ public class CraftingVM {
     private final Set<IAEItemStack> circularCache = new HashSet<>();
     /** GAP-4 phase 2: net-effect bundles produced by the ring solver, applied post-order. */
     private final List<Bundle> ringNetBundles = new ArrayList<>();
-    private final Set<IAEItemStack> ringKeysHandled = new HashSet<>();
     private final Set<IAEItemStack> cyclicCraftKeys = new HashSet<>();
     private final Set<IAEItemStack> jitFailCache = new HashSet<>();
     /** Pattern-set version this VM's caches were built against (see invalidateCaches). */
@@ -391,7 +390,6 @@ public class CraftingVM {
         cyclicCraftKeys.clear();
         jitFailCache.clear();
         ringNetBundles.clear();
-        ringKeysHandled.clear();
         this.executeStartStock = snapshotExecuteStartStock();
 
         long vmStartNs = System.nanoTime();
@@ -1059,9 +1057,6 @@ public class CraftingVM {
             correctRecursion(total, initialStock);
         }
         solveRings(total);
-        try {
-        } catch (Exception ignored) {
-        }
         for (Bundle net : ringNetBundles) {
             applyBundleDirect(net);
             // report the ring's net production in the plan (applyBundleDirect's
@@ -2139,7 +2134,11 @@ public class CraftingVM {
      * propagation loop dropped, fold each into a net-effect bundle, and remove
      * the ring keys from the aggregation total (the net bundle takes over their
      * scheduling — including the root direction when the root key is a ring
-     * member).
+     * member). The removal is what prevents the pre-solver propagation counts
+     * from being REPLAYED by {@code applyOrdered} on top of the solved ring:
+     * the captured root bundle's ring edges were stripped stock-only at capture
+     * time, so its replay schedules unbacked crafts (the GAP-4 "834 missing
+     * ingots" CPU stall in replay form).
      */
 
     private void solveRings(Map<IAEItemStack, BigInteger> total) {
@@ -2187,6 +2186,11 @@ public class CraftingVM {
             };
         }, k -> BigInteger.valueOf(executeStartStock.get(k)), outputKey, this.requestAmount);
         for (RingSolver.RingPlan plan : plans) {
+            // the net bundle owns the ring: drop the propagation's counts so
+            // applyOrdered never replays a ring member on top of the solved plan
+            for (IAEItemStack rk : plan.ringKeys) {
+                total.keySet().removeIf(k -> k.isSameType(rk));
+            }
             Bundle net = new Bundle();
             for (var e : plan.patterns.entrySet()) {
                 long val = toLongSafe(e.getValue(), "ring-pat");
