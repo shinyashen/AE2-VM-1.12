@@ -244,14 +244,15 @@ class CatalystFeedbackLoopTest {
 
     @Test
     void byproductGainRingExternalDemand() {
-        // Same ring, but C is ALSO requested. The ring passively produces 962 C
-        // when covering 10000 A — does an order for 500 C (under-production)
-        // or 2000 C (over-production) change what the ring crafts?
+        // The A request with C ALSO in the network stock: the ring passively
+        // produces 962 C when covering 10000 A — passive byproduct output must
+        // not break the A plan regardless of C stock. (Directly ORDERING C is
+        // the phase-2c external-root driver, tested separately below.)
         BenchPatternDetails[] loop = byproductGainRing();
         for (BenchPatternDetails p : loop) {
             Bench.register(p);
         }
-        // under: 500 C requested < 962 passively produced
+        // A request unaffected by stocked C (under the passive 962 output)
         BenchSimulationState sim = new BenchSimulationState().seed("A", 2304);
         VMPlan under = Bench.run(loop[1], 10000, sim);
         assertTrue(feasible(under), "under-request must stay feasible, got " + dump(under));
@@ -259,7 +260,7 @@ class CatalystFeedbackLoopTest {
         for (var k : under.getEmittedItems().keys()) {
             if (((BenchAEItemStack) k).id.equals("C")) cEmittedUnder = under.getEmittedItems().get(k);
         }
-        // over: 2000 C requested > 962 passively produced
+        // ... and with C stocked beyond the passive output
         sim = new BenchSimulationState().seed("A", 2304).seed("C", 5000);
         VMPlan over = Bench.run(loop[1], 10000, sim);
         assertTrue(feasible(over), "over-request must stay feasible, got " + dump(over));
@@ -305,6 +306,40 @@ class CatalystFeedbackLoopTest {
         assertFalse(feasible(plan), "fuel-starved shared ring must be infeasible, got " + dump(plan));
         assertTrue(infeasibleMatches(plan, Map.of("C", 924L)),
                 "fuel-starved shared ring must report the C shortfall, got " + dump(plan));
+    }
+
+    // ---- phase 2c: ordering a ring BYPRODUCT directly (external-root driver) ----
+    // AE2 indexes patterns by every output slot, so a C request routes to the
+    // recycler even though C is only its byproduct. The request must key off
+    // C's per-craft output (5000 C = 5000 rounds, not 5000/12) and DRIVE the
+    // ring: each recycler round nets +8 A via B synthesis.
+
+    @Test
+    void byproductRootedRequestDrivesRing() {
+        BenchPatternDetails[] loop = byproductGainRing();
+        for (BenchPatternDetails p : loop) {
+            Bench.register(p);
+        }
+        BenchSimulationState sim = new BenchSimulationState().seed("A", 2304);
+        VMPlan plan = Bench.run(loop[1], 5000, "C", sim);
+        assertTrue(feasible(plan),
+                "C-rooted request must drive the ring, got " + dump(plan));
+        assertEquals(5000, timesOf(plan, "B"), "recycler (B->12A+C+D) turns");
+        assertEquals(5000, timesOf(plan, "A"), "makeIngot (4A->B) turns");
+    }
+
+    @Test
+    void byproductRootedRequestUnseededReportsSeed() {
+        BenchPatternDetails[] loop = byproductGainRing();
+        for (BenchPatternDetails p : loop) {
+            Bench.register(p);
+        }
+        BenchSimulationState sim = new BenchSimulationState();
+        VMPlan plan = Bench.run(loop[1], 5000, "C", sim);
+        assertFalse(feasible(plan),
+                "unseeded C-rooted request must be infeasible, got feasible");
+        assertTrue(infeasibleMatches(plan, Map.of("B", 1L)),
+                "unseeded C-rooted request must report the startup seed, got " + dump(plan));
     }
 
     // ---- amplifying loop: real-world gaia-spirit report (GAP-4) ----
