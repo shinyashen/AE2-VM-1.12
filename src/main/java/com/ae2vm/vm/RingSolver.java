@@ -18,14 +18,14 @@ import java.util.Set;
 import java.util.function.Function;
 
 /**
- * GAP-4 phase 2: solver for net-amplifying <b>simple</b> mutual recipe rings
- * ("gaia loops": 4 spirits → 1 ingot, 1 ingot → 12 spirits). The propagation
- * loop drops ring back-edge demand (stock-only assumption), so a pure mutual
- * ring ends up scheduled only along the root direction — the CPU then stalls
- * on missing intermediates (834 missing ingots for the gaia report).
+ * GAP-4 phase 2: solver for net-amplifying mutual recipe rings ("gaia loops":
+ * 4 spirits → 1 ingot, 1 ingot → 12 spirits). The propagation loop drops ring
+ * back-edge demand (stock-only assumption), so a pure mutual ring ends up
+ * scheduled only along the root direction — the CPU then stalls on missing
+ * intermediates (834 missing ingots for the gaia report).
  *
- * <p>The solver folds a detected simple ring into a <b>gross-flow super
- * bundle</b>: {@code patterns} = each ring recipe × its solved turn count,
+ * <p>The solver folds a detected pure mutual ring into a <b>gross-flow super
+ * bundle</b>: {@code patterns} = each ring recipe × its solved craft count,
  * {@code emitted} = gross production per key, {@code used} = gross
  * consumption per key (including the ring's internal traffic). One
  * {@code applyBundleDirect} applies the whole ring: emitted is inserted
@@ -35,10 +35,11 @@ import java.util.function.Function;
  * <p>Math: the turn count comes from a Jacobian fixed-point iteration over
  * the ring keys. For each key {@code needed = Σ consumer crafts × per-craft
  * input + delivery (root key)} and {@code cover = start stock + own craft ×
- * per-craft output}; a shortfall bumps the key's own craft count. A
- * net-amplifying ring converges geometrically; monotonically growing
- * increments beyond the cap (a net-draining ring) abandon the solve and fall
- * back to the previous behavior.
+ * per-craft output}; a shortfall bumps the key's own craft count (every key's
+ * producer is its own resolver result, so the bump target is unambiguous even
+ * for shared intermediates). A net-amplifying ring converges geometrically;
+ * monotonically growing increments beyond the cap (a net-draining ring)
+ * abandon the solve and fall back to the previous behavior.
  *
  * <p>The startup timing constraint — the first round's inputs must be on hand
  * before the first output lands — is reported separately as a seed shortfall
@@ -46,18 +47,19 @@ import java.util.function.Function;
  * first round). Both ring firing directions are probed and the smaller seed
  * is kept.
  *
- * <p>Scope: <b>simple rings</b> only — a strongly-connected set where every
- * key has exactly one pattern, every pattern consumes exactly one in-ring
- * key, and every in-ring key is consumed by exactly one in-ring pattern (a
- * pure single cycle, no shared intermediates). Rings with shared
- * intermediates (e.g. 4A→B, B+C→D, D+B→12A where B feeds two consumers) need
- * a general linear solve and are left to the caller's previous behavior.
+ * <p>Topology scope: strongly-connected sets with patterns and no
+ * self-adjacency. Shared intermediates (a key consumed by multiple members)
+ * and multi-input members are handled by the iteration; a net-drain key
+ * (negative net effect) marks a conversion/lossy ring — the conversion-ring
+ * guard and the working-capital simulation own those, and folding them into
+ * a gross bundle would break their conservation semantics, so they are left
+ * to the caller's previous behavior.
  */
 final class RingSolver {
 
     /** Result of a successful ring solve. */
     static final class RingPlan {
-        /** Ring keys (the caller removes them from the aggregation total). */
+        /** Ring keys — the caller removes them from the aggregation total. */
         final List<IAEItemStack> ringKeys = new ArrayList<>();
         /** Ring recipe → turn count. */
         final Map<ICraftingPatternDetails, BigInteger> patterns = new LinkedHashMap<>();
@@ -78,7 +80,7 @@ final class RingSolver {
         Map<IAEItemStack, BigInteger> outputs();
     }
 
-    private static final int MAX_RING_WALK = 4096;
+    private static final int MAX_RING_SIZE = 64;
     private static final int MAX_ITERATIONS = 64;
     private static final BigInteger CRAFT_CAP = BigInteger.valueOf(1_000_000_000_000L);
 
@@ -105,10 +107,10 @@ final class RingSolver {
             BigInteger rootDeliver) {
 
         List<RingPlan> plans = new ArrayList<>();
-        // Node set: scheduled keys plus their pattern-having inputs (the
+        // Node set: scheduled keys plus their pattern-having inputs — the
         // propagation loop drops ring back-edges, so a ring member reached only
-        // through a dropped back-edge is not in total — the node set must look
-        // through the recipes' condensed inputs to see the whole ring).
+        // through a dropped back-edge is not in total; the node set must look
+        // through the recipes' condensed inputs to see the whole ring.
         Set<IAEItemStack> nodes = new LinkedHashSet<>();
         nodes.addAll(total.keySet());
         List<IAEItemStack> work = new ArrayList<>(total.keySet());
@@ -133,15 +135,17 @@ final class RingSolver {
             if (!d.isEmpty()) deps.put(k, d);
         }
         Set<IAEItemStack> handled = new HashSet<>();
-        List<Set<IAEItemStack>> allSccs = tarjan(deps, nodes);
-        for (Set<IAEItemStack> scc : allSccs) {
-            if (scc.size() < 2 || scc.size() > 64) continue;
+        for (Set<IAEItemStack> scc : tarjan(deps, nodes)) {
+            if (scc.size() < 2 || scc.size() > MAX_RING_SIZE) continue;
             boolean touched = false;
             for (IAEItemStack k : scc) {
-                if (handled.stream().anyMatch(h -> h.isSameType(k))) {
-                    touched = true;
-                    break;
+                for (IAEItemStack h : handled) {
+                    if (h.isSameType(k)) {
+                        touched = true;
+                        break;
+                    }
                 }
+                if (touched) break;
             }
             if (touched) continue;
             RingPlan plan = trySimpleRing(scc, total, recipeOf, startStockOf, rootKey, rootDeliver);
@@ -160,24 +164,16 @@ final class RingSolver {
             IAEItemStack rootKey,
             BigInteger rootDeliver) {
 
-        // ---- shape: pure single cycle. Every member's recipe consumes exactly
-        // one in-ring key; every in-ring key is consumed by exactly one member;
-        // no self-adjacency.
-        Map<IAEItemStack, IAEItemStack> consumedBy = new HashMap<>(); // key -> member consuming it
+        // ---- shape: strongly-connected set with patterns, no self-adjacency.
+        // Shared intermediates (a key consumed by multiple members) and
+        // multi-input members are fine — the Jacobian iteration aggregates all
+        // consumers' demand per key and bumps each key's own (unique) producer.
         for (IAEItemStack m : scc) {
             RecipeView v = recipeOf.apply(m);
-            IAEItemStack the = null;
             for (IAEItemStack in : v.inputs().keySet()) {
-                if (!scc.contains(in)) continue;
                 if (in.isSameType(m)) return null; // self-adjacent member
-                if (the != null && !the.isSameType(in)) return null; // two in-ring inputs
-                the = in;
             }
-            if (the == null) return null; // no in-ring input: not a cycle member
-            IAEItemStack prev = consumedBy.putIfAbsent(the, m);
-            if (prev != null && !prev.isSameType(m)) return null; // two consumers
         }
-        if (consumedBy.size() != scc.size()) return null; // some member consumes nothing in-ring
 
         // ---- Jacobian fixed point over the member craft counts.
         Map<IAEItemStack, BigInteger> x = new HashMap<>();
@@ -186,7 +182,7 @@ final class RingSolver {
         }
         boolean converged = false;
         for (int iter = 0; iter < MAX_ITERATIONS; iter++) {
-            // needed[k] = Σ consumer crafts × per-craft input (+ root delivery)
+            // needed[k] = Σ consumer crafts × per-craft input + root delivery
             Map<IAEItemStack, BigInteger> needed = new HashMap<>();
             for (IAEItemStack m : scc) {
                 RecipeView v = recipeOf.apply(m);
@@ -199,6 +195,7 @@ final class RingSolver {
             if (rootKey != null && rootDeliver.signum() > 0 && scc.contains(rootKey)) {
                 needed.merge(rootKey, rootDeliver, BigInteger::add);
             }
+            // cover[k] = start stock + own craft × per-craft output
             boolean changed = false;
             for (IAEItemStack k : scc) {
                 RecipeView v = recipeOf.apply(k);
@@ -222,11 +219,10 @@ final class RingSolver {
         if (!converged) return null; // net-draining ring: honest fallback
 
         // ---- gain gate: only pure-gain rings are ours. A ring whose merged
-        // net effect has a drain key or nets to zero (value-conserving
-        // conversion ring) belongs to the conversion-ring guard / the
-        // working-capital simulation — folding it into a gross bundle would
-        // break their conservation semantics.
-        boolean anyGain = false;
+        // net effect has a drain key (negative net effect) marks a
+        // conversion/lossy ring — the conversion-ring guard and the
+        // working-capital simulation own those, and folding them into a gross
+        // bundle would break their conservation semantics.
         Map<IAEItemStack, BigInteger> produced = new HashMap<>();
         Map<IAEItemStack, BigInteger> consumed = new HashMap<>();
         for (IAEItemStack m : scc) {
@@ -243,6 +239,7 @@ final class RingSolver {
         java.util.Set<IAEItemStack> keys = new HashSet<>();
         keys.addAll(produced.keySet());
         keys.addAll(consumed.keySet());
+        boolean anyGain = false;
         for (IAEItemStack k : keys) {
             BigInteger netGain = produced.getOrDefault(k, BigInteger.ZERO)
                     .subtract(consumed.getOrDefault(k, BigInteger.ZERO));
@@ -276,7 +273,8 @@ final class RingSolver {
         // available may go negative), report the deepest per-key deficit as a
         // seed shortfall — timing capital the network must hold before the
         // ring's first output lands; the ring pays it back within the first
-        // round. Both firing directions are probed, the smaller seed is kept.
+        // round. Both ring firing directions are probed, the smaller seed is
+        // kept.
         Map<IAEItemStack, BigInteger> best = null;
         List<IAEItemStack> order0 = new ArrayList<>(scc);
         order0.sort(Comparator.comparing(k -> find(plan.ringKeys, k) == null ? 1 : 0));
