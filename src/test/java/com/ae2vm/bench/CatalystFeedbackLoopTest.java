@@ -2,6 +2,7 @@ package com.ae2vm.bench;
 
 import com.ae2vm.vm.VMPlan;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -16,9 +17,9 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Port of the original CatalystFeedbackLoopTest — scenario tests for the v1.10.x
- * CATALYST feedback-loop fix. A catalyst feedback loop produces a byproduct that
- * feeds back into its own recipe chain:
+ * Feedback-loop scenario tests. A catalyst feedback loop produces a byproduct that
+ * feeds back into its own recipe chain. Three ring shapes are covered — balanced
+ * (raw), decreasing (lossy) and net-amplifying (the GAP-4 gaia-spirit regression):
  *
  * <ul>
  *   <li><b>raw-feedback-loop</b> — {@code A -> 2B, 2B + C -> E + D, D -> A}: a BALANCED
@@ -109,7 +110,25 @@ class CatalystFeedbackLoopTest {
                 "starved balanced cycle must report A>=1 missing, got " + dump(plan));
     }
 
-    // ---- lossy-feedback-loop: decreasing loop, needs amount+2 A ----
+    /** Net-amplifying ring: 4 spirits -> 1 ingot, 1 ingot -> 12 spirits (x3 per turn). */
+    private static BenchPatternDetails[] amplifyingLoop() {
+        BenchPatternDetails makeIngot = pat("I", 1, "S", 4L);
+        BenchPatternDetails makeSpirit = pat("S", 12, "I", 1L);
+        return new BenchPatternDetails[]{makeIngot, makeSpirit};
+    }
+
+    private static boolean schedulesIngotSynthesis(VMPlan plan) {
+        for (var e : plan.getPatternTimes().entrySet()) {
+            for (var in : e.getKey().getCondensedInputs()) {
+                if (in != null && ((BenchAEItemStack) in).id.equals("S") && e.getValue() > 0) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    // ---- amplifying-loop (GAP-4 regression): net +8 spirits per turn ----
 
     @Test
     void lossyLoopMinimumFeasible() {
@@ -148,5 +167,60 @@ class CatalystFeedbackLoopTest {
         assertFalse(feasible(plan), "starved lossy cycle must be infeasible, got missing=" + dump(plan));
         assertTrue(infeasibleMatches(plan, Map.of("A", 2L)),
                 "starved lossy cycle must report A>=2 missing, got " + dump(plan));
+    }
+
+    // ---- amplifying loop: real-world gaia-spirit report (GAP-4) ----
+    // 4 spirits craft 1 ingot, 1 ingot dissolves into 12 spirits; 2303 stocked,
+    // 10000 requested. The dissolving plan consumes 834 ingots whose synthesis
+    // needs 3336 more spirits: total demand 13336 vs 12331 coverable → the plan
+    // must be honest about the SPIRIT shortfall (GAP-4 used to schedule dissolve-
+    // only and let the CPU report 834 missing ingots). With the shortfall covered
+    // (3400 stocked ≥ 3336 synthesis + margin) the ring is fully feasible.
+
+    @Test
+    @Disabled("GAP-4: ring plans omit synthesis scheduling — needs aggregation ring-propagation redesign")
+    void amplifyingLoopFeasibleWithSufficientStock() {
+        BenchPatternDetails[] loop = amplifyingLoop();
+        for (BenchPatternDetails p : loop) {
+            Bench.register(p);
+        }
+        BenchSimulationState sim = new BenchSimulationState().seed("S", 3400);
+        VMPlan plan = Bench.run(loop[1], 10000, sim);
+        assertTrue(feasible(plan),
+                "amplifying ring with sufficient spirits must be feasible, got " + dump(plan));
+        assertTrue(schedulesIngotSynthesis(plan),
+                "plan must schedule the ingot-synthesis pattern (GAP-4 dissolve-only plan)");
+    }
+
+    @Test
+    @Disabled("GAP-4: ring plans omit synthesis scheduling — needs aggregation ring-propagation redesign")
+    void amplifyingLoopShortfallSchedulesSynthesis() {
+        // 2303 stocked is 1025 spirits short of the balanced 834/834 plan; the
+        // exact shortfall disclosure is GAP-4 phase 2 (ring fixed-point). What
+        // phase 1 guarantees is structural: the synthesis MUST be scheduled —
+        // a dissolve-only plan made the CPU stall on 834 missing ingots.
+        BenchPatternDetails[] loop = amplifyingLoop();
+        for (BenchPatternDetails p : loop) {
+            Bench.register(p);
+        }
+        BenchSimulationState sim = new BenchSimulationState().seed("S", 2303);
+        VMPlan plan = Bench.run(loop[1], 10000, sim);
+        assertTrue(schedulesIngotSynthesis(plan),
+                "plan must schedule the ingot-synthesis pattern (GAP-4 dissolve-only plan)");
+    }
+
+    @Test
+    @Disabled("GAP-4: ring plans omit synthesis scheduling — needs aggregation ring-propagation redesign")
+    void amplifyingLoopUnboundedFeasible() {
+        BenchPatternDetails[] loop = amplifyingLoop();
+        for (BenchPatternDetails p : loop) {
+            Bench.register(p);
+        }
+        BenchSimulationState sim = new BenchSimulationState().seed("S", UNBOUNDED_STOCK);
+        VMPlan plan = Bench.run(loop[1], 10000, sim);
+        assertTrue(feasible(plan),
+                "unbounded-stock amplifying ring must be feasible, got " + dump(plan));
+        assertTrue(schedulesIngotSynthesis(plan),
+                "plan must schedule the ingot-synthesis pattern (GAP-4 dissolve-only plan)");
     }
 }
