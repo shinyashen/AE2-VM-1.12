@@ -20,13 +20,13 @@ Crafting requests that stall the vanilla planner for minutes — deeply nested, 
 - **Multi-pattern assignment solver** — when one output has several patterns, mixed splits (5 crafts = 4×A + 1×B) are solved algebraically and encoded as a virtual pattern; this closed upstream's only remaining false-positive (carried since v1.9.6)
 - **Compatibility** — AE2FC fluid patterns, AE2CT display trees, third-party scaled-pattern wrappers, with automatic fallback to the vanilla tree if the VM can't handle a request
 
-Full details: [Features](https://github.com/shinyashen/AE2-VM-1.12/wiki/Features) · [Architecture](https://github.com/shinyashen/AE2-VM-1.12/wiki/Architecture) · [Multi-pattern solver](https://github.com/shinyashen/AE2-VM-1.12/wiki/MultiPatternSolver)
+Full details: [Features](https://github.com/shinyashen/AE2-VM-1.12/wiki/Features-en) · [Architecture](https://github.com/shinyashen/AE2-VM-1.12/wiki/Architecture-en) · [Multi-pattern solver](https://github.com/shinyashen/AE2-VM-1.12/wiki/MultiPatternSolver-en)
 
 ## Performance
 
 All 39 reference-suite scenarios × 3 stock modes are **SUPPORTED** with zero flakiness; the deep-chain micro-benchmark plans a Fibonacci-32 chain at 10^9 scale in **~0.6 ms** (hot median). Every release automatically publishes fresh benchmarks to the wiki:
 
-**[Performance & benchmarks →](https://github.com/shinyashen/AE2-VM-1.12/wiki/Performance)**
+**[Performance & benchmarks →](https://github.com/shinyashen/AE2-VM-1.12/wiki/Performance-en)**
 
 ## Installation
 
@@ -42,17 +42,17 @@ Download `ae2_vm_112-x.y.z.jar` from [Releases](https://github.com/shinyashen/AE
 
 ## Documentation
 
-The [wiki](https://github.com/shinyashen/AE2-VM-1.12/wiki) carries the full documentation (Chinese-primary, English available on every page):
+The [wiki](https://github.com/shinyashen/AE2-VM-1.12/wiki/Home-en) carries the full documentation (Chinese-primary, English available on every page):
 
 | Page | Contents |
 |---|---|
-| [Home](https://github.com/shinyashen/AE2-VM-1.12/wiki) | Overview & quick start |
-| [Features](https://github.com/shinyashen/AE2-VM-1.12/wiki/Features) | Every ported feature and how it works |
-| [Architecture](https://github.com/shinyashen/AE2-VM-1.12/wiki/Architecture) | Root-node replacement, bytecode, JIT cache, guard system |
-| [Multi-pattern solver](https://github.com/shinyashen/AE2-VM-1.12/wiki/MultiPatternSolver) | Enumeration + local search + virtual patterns |
-| [Performance](https://github.com/shinyashen/AE2-VM-1.12/wiki/Performance) | Methodology, optimization history, per-release benchmarks |
-| [Testing](https://github.com/shinyashen/AE2-VM-1.12/wiki/Testing) | 193 tests and the differential-testing methodology |
-| [Differences & roadmap](https://github.com/shinyashen/AE2-VM-1.12/wiki/Differences-and-Roadmap) | Deliberate deviations from upstream, gap status |
+| [Home](https://github.com/shinyashen/AE2-VM-1.12/wiki/Home-en) | Overview & quick start |
+| [Features](https://github.com/shinyashen/AE2-VM-1.12/wiki/Features-en) | Every ported feature and how it works |
+| [Architecture](https://github.com/shinyashen/AE2-VM-1.12/wiki/Architecture-en) | Root-node replacement, bytecode, JIT cache, guard system |
+| [Multi-pattern solver](https://github.com/shinyashen/AE2-VM-1.12/wiki/MultiPatternSolver-en) | Enumeration + local search + virtual patterns |
+| [Performance](https://github.com/shinyashen/AE2-VM-1.12/wiki/Performance-en) | Methodology, optimization history, per-release benchmarks |
+| [Testing](https://github.com/shinyashen/AE2-VM-1.12/wiki/Testing-en) | 193 tests and the differential-testing methodology |
+| [Differences & roadmap](https://github.com/shinyashen/AE2-VM-1.12/wiki/Differences-and-Roadmap-en) | Deliberate deviations from upstream, gap status |
 
 ## Building
 
