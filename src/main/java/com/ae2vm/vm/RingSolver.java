@@ -221,13 +221,43 @@ final class RingSolver {
         }
         if (!converged) return null; // net-draining ring: honest fallback
 
+        // ---- gain gate: only pure-gain rings are ours. A ring whose merged
+        // net effect has a drain key or nets to zero (value-conserving
+        // conversion ring) belongs to the conversion-ring guard / the
+        // working-capital simulation — folding it into a gross bundle would
+        // break their conservation semantics.
+        boolean anyGain = false;
+        Map<IAEItemStack, BigInteger> produced = new HashMap<>();
+        Map<IAEItemStack, BigInteger> consumed = new HashMap<>();
+        for (IAEItemStack m : scc) {
+            RecipeView v = recipeOf.apply(m);
+            BigInteger xf = x.get(m);
+            if (xf.signum() <= 0) continue;
+            for (var e : v.inputs().entrySet()) {
+                consumed.merge(e.getKey(), xf.multiply(e.getValue()), BigInteger::add);
+            }
+            for (var e : v.outputs().entrySet()) {
+                produced.merge(e.getKey(), xf.multiply(e.getValue()), BigInteger::add);
+            }
+        }
+        java.util.Set<IAEItemStack> keys = new HashSet<>();
+        keys.addAll(produced.keySet());
+        keys.addAll(consumed.keySet());
+        for (IAEItemStack k : keys) {
+            BigInteger netGain = produced.getOrDefault(k, BigInteger.ZERO)
+                    .subtract(consumed.getOrDefault(k, BigInteger.ZERO));
+            if (netGain.signum() < 0) return null; // drain key: conversion/lossy domain
+            if (netGain.signum() > 0) anyGain = true;
+        }
+        if (!anyGain) return null; // value-conserving ring: nothing to amplify
+
         // ---- gross-flow bundle.
         RingPlan plan = new RingPlan();
         for (IAEItemStack k : scc) {
             RecipeView v = recipeOf.apply(k);
             plan.patterns.put(v.pattern(), x.get(k));
-            BigInteger produced = x.get(k).multiply(v.outputs().getOrDefault(k, BigInteger.ZERO));
-            if (produced.signum() > 0) plan.emitted.put(k, produced);
+            BigInteger producedKey = produced.getOrDefault(k, BigInteger.ZERO);
+            if (producedKey.signum() > 0) plan.emitted.put(k, producedKey);
         }
         for (IAEItemStack m : scc) {
             RecipeView v = recipeOf.apply(m);
