@@ -96,6 +96,9 @@ public class CraftingVM {
     /** Lazily snapshotted live network stock (an IItemList supports findFuzzy). */
     private IItemList<IAEItemStack> realStockCache;
     private VMCounter executeStartStock;
+    /** Sandbox deductions made under the claim flag (delta-accounted; restocked
+     *  on revert — artifact-2 accounting symmetry). */
+    private VMCounter claimedItems;
     private BigInteger requestAmount;
     /** The request's root pattern (patternPool[0]): a byproduct-rooted request's
      * output key has no primary-pattern resolver entry, but this pattern produces it. */
@@ -237,6 +240,11 @@ public class CraftingVM {
         final Map<IAEItemStack, BigInteger> fuzzyItemNeeds = new ConcurrentHashMap<>();
         // One-time catalyst seeds (NOT scaled by craft count).
         final Map<IAEItemStack, BigInteger> seeds = new ConcurrentHashMap<>();
+        /** Sandbox deductions made under the claim flag during capture —
+         *  restored by revertBundle via restock so a reverted capture never
+         *  permanently spends its inputs (artifact-2 accounting symmetry).
+         *  Replay ignores this map: claims are capture-time bookkeeping. */
+        final Map<IAEItemStack, BigInteger> claimed = new ConcurrentHashMap<>();
         // Finite-use tool rates (key → [amount, uses]) — NOT scaled.
         final Map<IAEItemStack, long[]> durability = new ConcurrentHashMap<>();
         // The pattern each direct sub-call was resolved to at capture time.
@@ -260,6 +268,7 @@ public class CraftingVM {
             used.forEach((k, v) -> b.used.put(k, v.multiply(factor)));
             emitted.forEach((k, v) -> b.emitted.put(k, v.multiply(factor)));
             missing.forEach((k, v) -> b.missing.put(k, v.multiply(factor)));
+            claimed.forEach((k, v) -> b.claimed.put(k, v.multiply(factor)));
             b.missingSubKeys.addAll(missingSubKeys);
             internal.forEach((k, v) -> b.internal.put(k, v.multiply(factor)));
             patterns.forEach((k, v) -> b.patterns.put(k, v.multiply(factor)));
@@ -377,6 +386,7 @@ public class CraftingVM {
         this.callStack = new ArrayDeque<>(MAX_CALL_DEPTH);
         resolvingKeys.clear();
         this.usedItems = new VMCounter();
+        this.claimedItems = new VMCounter();
         this.missingItems = new VMCounter();
         this.emittedItems = new VMCounter();
         this.simInternal = new VMCounter();
@@ -442,6 +452,12 @@ public class CraftingVM {
                     if (needed <= 0) { pushL(0); break; }
                     simulation.addBytes(needed); nodeCount++;
                     long got = simulation.extract(key, needed, false);
+                    if (got > 0 && extractIsClaim) {
+                        // claim deductions must be delta-visible: the enclosing
+                        // revert restocks them, or reverted captures permanently
+                        // spend their inputs (artifact-2 leak)
+                        claimedItems.add(key, got);
+                    }
                     if (got > 0) {
                         long internal = simInternal.get(key);
                         long fromInternal = Math.min(got, internal);
@@ -2057,6 +2073,10 @@ public class CraftingVM {
             missingItems.add(e.getKey(), -val);
             if (missingItems.get(e.getKey()) == 0) missingItems.remove(e.getKey());
         }
+        for (var e : b.claimed.entrySet()) {
+            long val = toLongSafe(e.getValue(), "claim-revert");
+            simulation.restock(e.getKey(), val);
+        }
         for (var e : b.used.entrySet()) {
             long val = toLongSafe(e.getValue(), "used-revert");
             // restock (not insert): a reverted claim returns previously
@@ -2091,6 +2111,7 @@ public class CraftingVM {
         Bundle b = new Bundle();
         b.bytes = BigInteger.valueOf(simulation.getBytes());
         for (var e : usedItems.entrySet()) { if (e.getValue() != 0) b.used.put(e.getKey(), BigInteger.valueOf(e.getValue())); }
+        for (var e : claimedItems.entrySet()) { if (e.getValue() != 0) b.claimed.put(e.getKey(), BigInteger.valueOf(e.getValue())); }
         for (var e : emittedItems.entrySet()) { if (e.getValue() != 0) b.emitted.put(e.getKey(), BigInteger.valueOf(e.getValue())); }
         for (var e : missingItems.entrySet()) { if (e.getValue() != 0) b.missing.put(e.getKey(), BigInteger.valueOf(e.getValue())); }
         for (var e : simInternal.entrySet()) { if (e.getValue() != 0) b.internal.put(e.getKey(), BigInteger.valueOf(e.getValue())); }
@@ -2108,6 +2129,12 @@ public class CraftingVM {
             if (bv == null) bv = BigInteger.ZERO;
             BigInteger d = e.getValue().subtract(bv);
             if (d.signum() > 0) b.used.put(e.getKey(), d);
+        }
+        for (var e : after.claimed.entrySet()) {
+            BigInteger bv = before.claimed.get(e.getKey());
+            if (bv == null) bv = BigInteger.ZERO;
+            BigInteger d = e.getValue().subtract(bv);
+            if (d.signum() > 0) b.claimed.put(e.getKey(), d);
         }
         for (var e : after.emitted.entrySet()) {
             BigInteger bv = before.emitted.get(e.getKey());
