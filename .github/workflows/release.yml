@@ -232,14 +232,6 @@ jobs:
 
           PY
 
-      - name: Upload diagnostics (cf version tables; temporary)
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: cf-version-tables
-          path: build/cf-*.json
-          if-no-files-found: ignore
-
       - name: Verify CurseForge token reachability (legacy probe; superseded by the upload step)
         continue-on-error: true
         run: |
