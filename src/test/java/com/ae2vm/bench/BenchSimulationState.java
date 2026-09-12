@@ -40,6 +40,11 @@ public final class BenchSimulationState implements SimulationState {
         return seedKey(new BenchAEItemStack(id, damage, maxDamage, 1), amount);
     }
 
+    /** Seeds an NBT-variant stock entry (same id, same damage=0). */
+    public BenchSimulationState seedNbt(String id, String nbt, long amount) {
+        return seedKey(new BenchAEItemStack(id, 0, 0, 1).withNbt(nbt), amount);
+    }
+
     /** Package-visible so the reference-suite translation can seed profiled keys. */
     BenchSimulationState seedKey(BenchAEItemStack key, long amount) {
         stock.merge(key, amount, Long::sum);
@@ -62,7 +67,7 @@ public final class BenchSimulationState implements SimulationState {
         taken += fromIns;
         long remaining = amount - fromIns;
         if (remaining > 0 && !ignored.contains(k)) {
-            BenchAEItemStack probe = new BenchAEItemStack(k.id, k.damage, k.maxDamage, 1);
+            BenchAEItemStack probe = (BenchAEItemStack) k.copy().setStackSize(1);
             Long have = stock.get(probe);
             long haveL = have == null ? 0L : have;
             long already = extracted.getOrDefault(probe, 0L);
@@ -92,7 +97,7 @@ public final class BenchSimulationState implements SimulationState {
     public void restock(IAEItemStack key, long amount) {
         if (amount <= 0) return;
         BenchAEItemStack k = (BenchAEItemStack) key;
-        BenchAEItemStack probe = new BenchAEItemStack(k.id, k.damage, k.maxDamage, 1);
+        BenchAEItemStack probe = (BenchAEItemStack) k.copy().setStackSize(1);
         long already = extracted.getOrDefault(probe, 0L);
         if (already > 0) {
             long back = Math.min(already, amount);
@@ -104,14 +109,17 @@ public final class BenchSimulationState implements SimulationState {
         }
     }
 
-    /** Same-id any-damage variants present in stock (processing default fuzzy). */
+    /**
+     * Same (id, damage) NBT variants present in stock — damage variants are a
+     * DIFFERENT item in 1.12 and must never join the family.
+     */
     @Override
     public List<IAEItemStack> findFuzzyFamily(IAEItemStack key) {
         List<IAEItemStack> family = new ArrayList<>();
-        String id = ((BenchAEItemStack) key).id;
-        for (BenchAEItemStack k : stock.keySet()) {
-            if (k.id.equals(id)) {
-                family.add(k);
+        BenchAEItemStack k = (BenchAEItemStack) key;
+        for (BenchAEItemStack s : stock.keySet()) {
+            if (s.id.equals(k.id) && s.damage == k.damage) {
+                family.add(s);
             }
         }
         family.addAll(fuzzyFamily);

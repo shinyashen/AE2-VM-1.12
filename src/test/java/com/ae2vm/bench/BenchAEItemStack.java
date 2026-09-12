@@ -8,9 +8,13 @@ import net.minecraft.nbt.NBTTagCompound;
 
 /**
  * Minimal IAEItemStack fake for VM semantics tests — no Minecraft bootstrap.
- * Type identity = (id, damage); the AE stack size carries the quantity (and
- * for AE2FC-style fluid fakes, the mB amount). An optional shared real Item
- * backs the damageable probes used by the durability detection.
+ * Type identity = (id, damage, nbt), mirroring the real AE2 stack equality
+ * (item + damage + NBT): the nbt axis models genuine NBT variants (same item,
+ * same damage), while damage stays an IDENTITY axis — a different damage is a
+ * different item (Thermal materials), never a variant. The AE stack size
+ * carries the quantity (and for AE2FC-style fluid fakes, the mB amount). An
+ * optional shared real Item backs the damageable probes used by the
+ * durability detection.
  */
 public final class BenchAEItemStack implements IAEItemStack {
     private static final java.util.Map<Integer, Item> ITEMS = new java.util.HashMap<>();
@@ -18,6 +22,7 @@ public final class BenchAEItemStack implements IAEItemStack {
     public final String id;
     public final int damage;
     public final int maxDamage;
+    private String nbt;
     private long size;
     private boolean craftable;
     private long countRequestable;
@@ -31,6 +36,12 @@ public final class BenchAEItemStack implements IAEItemStack {
         this.damage = damage;
         this.maxDamage = maxDamage;
         this.size = size;
+    }
+
+    /** Tags this key with an NBT identity (chained; null = no NBT). */
+    public BenchAEItemStack withNbt(String nbt) {
+        this.nbt = nbt;
+        return this;
     }
 
     private Item item() {
@@ -51,7 +62,8 @@ public final class BenchAEItemStack implements IAEItemStack {
 
     @Override
     public boolean isSameType(IAEItemStack other) {
-        return other instanceof BenchAEItemStack b && b.id.equals(id) && b.damage == damage;
+        return other instanceof BenchAEItemStack b && b.id.equals(id)
+                && b.damage == damage && java.util.Objects.equals(b.nbt, nbt);
     }
 
     @Override
@@ -66,17 +78,19 @@ public final class BenchAEItemStack implements IAEItemStack {
 
     @Override
     public int hashCode() {
-        return id.hashCode() * 31 + damage;
+        return id.hashCode() * 31 + damage * 7 + java.util.Objects.hashCode(nbt);
     }
 
     @Override
     public String toString() {
-        return id + (damage != 0 ? "@" + damage : "");
+        String base = id + (damage != 0 ? "@" + damage : "");
+        return nbt != null ? base + "{" + nbt + "}" : base;
     }
 
     @Override
     public IAEItemStack copy() {
         BenchAEItemStack c = new BenchAEItemStack(id, damage, maxDamage, size);
+        c.nbt = nbt;
         c.craftable = craftable;
         c.countRequestable = countRequestable;
         return c;

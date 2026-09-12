@@ -1012,6 +1012,10 @@ public class CraftingVM {
                             if (realStockCache != null) {
                                 for (IAEItemStack v : realStockCache.findFuzzy(c, FuzzyMode.IGNORE_ALL)) {
                                     if (v.isSameType(c) || containsKey(replacementGroup, v)) continue;
+                                    // 1.12 damage is item identity: only same-damage
+                                    // NBT variants may substitute (a platinum ingot
+                                    // must not back a lumium-ingot demand).
+                                    if (v.getItemDamage() != c.getItemDamage()) continue;
                                     nbtVariants.add(v);
                                     primaryStock += realStockOf(v);
                                 }
@@ -1873,10 +1877,10 @@ public class CraftingVM {
     }
 
     /**
-     * Same-item NBT/damage variants present in the network stock — the
+     * Same-item SAME-dAMAGE NBT variants present in the network stock — the
      * PROCESSING default fuzzy family (v1.10.x: usable by ANY processing slot,
      * unlike the compile-time replacement group which only applies to
-     * replacement-enabled slots).
+     * replacement-enabled slots). Damage variants are a different item in 1.12.
      */
     private List<IAEItemStack> nbtFamilyOf(IAEItemStack key) {
         return simulation.findFuzzyFamily(key);

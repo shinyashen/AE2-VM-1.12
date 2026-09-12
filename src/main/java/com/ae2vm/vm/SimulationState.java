@@ -38,8 +38,11 @@ public interface SimulationState {
     }
 
     /**
-     * Fuzzy family of {@code key} present in the network stock (same item, any
-     * damage/NBT - FuzzyMode.IGNORE_ALL). May be empty.
+     * Fuzzy family of {@code key} present in the network stock: same item,
+     * SAME damage, different NBT — the 1.12 reading of the upstream 1.21
+     * NBT-tolerance. In 1.12 the damage value is item identity (a platinum
+     * ingot must never satisfy a lumium-ingot slot), so damage variants are
+     * NOT family members. May be empty.
      */
     List<IAEItemStack> findFuzzyFamily(IAEItemStack key);
 

@@ -145,6 +145,17 @@ public final class NetworkCraftingSandbox implements SimulationState {
         }
         List<IAEItemStack> family = new ArrayList<>();
         for (IAEItemStack item : stock.findFuzzy(key, FuzzyMode.IGNORE_ALL)) {
+            if (item == null) {
+                continue;
+            }
+            // In 1.12 the damage value is item IDENTITY (Thermal materials,
+            // dyes, ...): a lumium ingot (damage 166) must never be satisfied
+            // by a platinum ingot (damage 134) of the same Item. The upstream
+            // 1.21 NBT-tolerance maps to NBT-only variation — same item, same
+            // damage, different NBT.
+            if (item.getItemDamage() != key.getItemDamage()) {
+                continue;
+            }
             family.add(item);
         }
         fuzzyFamilyCache.put(key, family);
