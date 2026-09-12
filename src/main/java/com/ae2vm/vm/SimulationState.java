@@ -26,7 +26,7 @@ public interface SimulationState {
 
     /**
      * Return previously-extracted stock to the sandbox (the revert of a
-     * captured claim — phase 7d accounting symmetry). Distinct from
+     * captured claim — accounting symmetry with the claim's deduction). Distinct from
      * {@link #insert}: implementations that model network stock as a budget
      * must RESTORE the budget instead of adding produced items, or a reverted
      * capture would permanently consume stock the plan still needs. The

@@ -81,11 +81,11 @@ public class CraftingVM {
 
     private final Set<IAEItemStack> resolvingKeys = new HashSet<>();
     private final Set<IAEItemStack> circularCache = new HashSet<>();
-    /** GAP-4 phase 2: net-effect bundles produced by the ring solver, applied post-order. */
+    /** Net-effect bundles produced by the ring solver, applied post-order. */
     private final List<Bundle> ringNetBundles = new ArrayList<>();
     /** Stock reservations released when a ring fold supersedes the scheduled
      * plans of its keys — re-inserted into the sandbox so the net bundle's
-     * extraction can draw them (phase 7d working-stock draws). */
+     * extraction can draw them (the ring fold's working-stock draws). */
     private final Map<IAEItemStack, BigInteger> ringReleasedStock = new HashMap<>();
     private final Set<IAEItemStack> cyclicCraftKeys = new HashSet<>();
     private final Set<IAEItemStack> jitFailCache = new HashSet<>();
@@ -97,7 +97,7 @@ public class CraftingVM {
     private IItemList<IAEItemStack> realStockCache;
     private VMCounter executeStartStock;
     /** Sandbox deductions made under the claim flag (delta-accounted; restocked
-     *  on revert — artifact-2 accounting symmetry). */
+     *  on revert — capture accounting symmetry). */
     private VMCounter claimedItems;
     private BigInteger requestAmount;
     /** The request's root pattern (patternPool[0]): a byproduct-rooted request's
@@ -242,7 +242,7 @@ public class CraftingVM {
         final Map<IAEItemStack, BigInteger> seeds = new ConcurrentHashMap<>();
         /** Sandbox deductions made under the claim flag during capture —
          *  restored by revertBundle via restock so a reverted capture never
-         *  permanently spends its inputs (artifact-2 accounting symmetry).
+         *  permanently spends its inputs (capture accounting symmetry).
          *  Replay ignores this map: claims are capture-time bookkeeping. */
         final Map<IAEItemStack, BigInteger> claimed = new ConcurrentHashMap<>();
         // Finite-use tool rates (key → [amount, uses]) — NOT scaled.
@@ -455,7 +455,7 @@ public class CraftingVM {
                     if (got > 0 && extractIsClaim) {
                         // claim deductions must be delta-visible: the enclosing
                         // revert restocks them, or reverted captures permanently
-                        // spend their inputs (artifact-2 leak)
+                        // spend their inputs (accounting leak)
                         claimedItems.add(key, got);
                     }
                     if (got > 0) {
@@ -524,7 +524,7 @@ public class CraftingVM {
                     CraftingBytecode sbc = PatternCompiler.getCompiled(pat);
                     if (sbc == null) { PatternCompiler.compileIfAbsent(pat); sbc = PatternCompiler.getCompiled(pat); }
                     if (sbc == null || callStack.size() >= MAX_CALL_DEPTH) break;
-                    // Pattern-set gating (GAP-3): CALL slots bind the pattern
+                    // Pattern-set gating: CALL slots bind the pattern
                     // directly, bypassing the resolver — a pattern REMOVED from
                     // the network since this bytecode was compiled would keep
                     // running on the stale slot reference. If the resolver no
@@ -1100,7 +1100,7 @@ public class CraftingVM {
         for (var e : ringReleasedStock.entrySet()) {
             simulation.insert(e.getKey(), e.getValue().longValue());
         }
-        // two-phase application (phase 7e): ALL net emissions land before ANY
+        // two-phase application: ALL net emissions land before ANY
         // net extraction, so a downstream ring's draw can be supplied by an
         // upstream ring folded earlier in the consumers-first solve order
         for (Bundle net : ringNetBundles) {
@@ -1304,7 +1304,7 @@ public class CraftingVM {
         if (p == null && rootPattern != null && key.isSameType(outputKey)) {
             // byproduct-rooted request: AE2 indexes patterns by every output, so
             // the root key has no primary-pattern resolver entry — the request's
-            // own pattern produces it (phase 2c)
+            // own pattern produces it (the byproduct-root request's own pattern)
             p = rootPattern;
         }
         if (p == null) return;
@@ -2204,14 +2204,14 @@ public class CraftingVM {
     }
 
     /**
-     * GAP-4 phase 2: solve the pure mutual rings whose back-edge demand the
+     * Solve the pure mutual rings whose back-edge demand the
      * propagation loop dropped, fold each into a net-effect bundle, and remove
      * the ring keys from the aggregation total (the net bundle takes over their
      * scheduling — including the root direction when the root key is a ring
      * member). The removal is what prevents the pre-solver propagation counts
      * from being REPLAYED by {@code applyOrdered} on top of the solved ring:
      * the captured root bundle's ring edges were stripped stock-only at capture
-     * time, so its replay schedules unbacked crafts (the GAP-4 "834 missing
+     * time, so its replay schedules unbacked crafts (the "834 missing
      * ingots" CPU stall in replay form).
      */
 
@@ -2222,7 +2222,7 @@ public class CraftingVM {
         plans = RingSolver.solve(total, itemDemand, k -> {
             ICraftingPatternDetails d = patternResolver != null ? patternResolver.apply(k) : null;
             if (d == null) {
-                // T4 byproduct fallback (phase 7d): SOLVER-VIEW ONLY. A key
+                // T4 byproduct fallback: SOLVER-VIEW ONLY. A key
                 // with no primary producer but exactly one any-slot producer
                 // joins the ring graph through that pattern — the folded net
                 // bundle then covers its production and consumption itself.

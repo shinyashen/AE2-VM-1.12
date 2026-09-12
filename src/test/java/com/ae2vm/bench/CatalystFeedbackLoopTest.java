@@ -22,7 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * Feedback-loop scenario tests. A catalyst feedback loop produces a byproduct that
  * feeds back into its own recipe chain. Three ring shapes are covered — balanced
- * (raw), decreasing (lossy) and net-amplifying (the GAP-4 gaia-spirit regression):
+ * (raw), decreasing (lossy) and net-amplifying (the gaia-spirit regression):
  *
  * <ul>
  *   <li><b>raw-feedback-loop</b> — {@code A -> 2B, 2B + C -> E + D, D -> A}: a BALANCED
@@ -145,7 +145,7 @@ class CatalystFeedbackLoopTest {
         return -1;
     }
 
-    // ---- amplifying-loop (GAP-4 regression): net +8 spirits per turn ----
+    // ---- amplifying-loop (gaia regression): net +8 spirits per turn ----
 
     @Test
     void lossyLoopMinimumFeasible() {
@@ -219,7 +219,7 @@ class CatalystFeedbackLoopTest {
             pt.append("] ");
         }
         assertTrue(schedulesPatternWithInput(plan, "A"),
-                "plan must schedule the synthesis pattern (GAP-4 dissolve-only plan), pt=" + pt);
+                "plan must schedule the synthesis pattern , pt=" + pt);
         // exact turns: the solved ring must be the ONLY scheduling — a replayed
         // pre-solver count on top (the old integration bug) would double the
         // dissolve crafts with no backed inputs
@@ -308,7 +308,7 @@ class CatalystFeedbackLoopTest {
                 "fuel-starved shared ring must report the C shortfall, got " + dump(plan));
     }
 
-    // ---- phase 2c: ordering a ring BYPRODUCT directly (external-root driver) ----
+    // ---- ordering a ring BYPRODUCT directly (external-root driver) ----
     // AE2 indexes patterns by every output slot, so a C request routes to the
     // recycler even though C is only its byproduct. The request must key off
     // C's per-craft output (5000 C = 5000 rounds, not 5000/12) and DRIVE the
@@ -365,7 +365,7 @@ class CatalystFeedbackLoopTest {
         assertEquals(10, timesOf(plan, "I", "R"), "makeWidget (2I+R->W) turns");
     }
 
-    // ---- phase 7d: rings routed THROUGH a byproduct-only intermediate key ----
+    // ---- rings routed THROUGH a byproduct-only intermediate key (T4) ----
     // X exists only as makeIngotBy's byproduct (no pattern is primarily X):
     // the resolver's T4 fallback hands the solver the intermediate, and the
     // pattern-level variables count makeIngotBy ONCE per round (key-level
@@ -448,7 +448,7 @@ class CatalystFeedbackLoopTest {
         assertEquals(962, timesOf(plan, "B", "X"), "recycler (B+X->12A) turns");
     }
 
-    // ---- phase 7e: coupled rings (consumers-first solve + net write-back) ----
+    // ---- coupled rings (consumers-first solve + net write-back) ----
 
     @Test
     void coupledRingsShareAmplifiedDemand() {
@@ -476,11 +476,11 @@ class CatalystFeedbackLoopTest {
         assertEquals(1922, timesOf(plan, "X"), "makeF (X->3F) turns");
     }
 
-    // ---- amplifying loop: real-world gaia-spirit report (GAP-4) ----
+    // ---- amplifying loop: the real-world gaia-spirit report ----
     // 4 spirits craft 1 ingot, 1 ingot dissolves into 12 spirits; 2303 stocked,
     // 10000 requested. The dissolving plan consumes 834 ingots whose synthesis
     // needs 3336 more spirits: total demand 13336 vs 12331 coverable → the plan
-    // must be honest about the SPIRIT shortfall (GAP-4 used to schedule dissolve-
+    // must be honest about the SPIRIT shortfall (the naive plan used to schedule dissolve-
     // only and let the CPU report 834 missing ingots). With the shortfall covered
     // (3400 stocked ≥ 3336 synthesis + margin) the ring is fully feasible.
 
@@ -495,7 +495,7 @@ class CatalystFeedbackLoopTest {
         assertTrue(feasible(plan),
                 "amplifying ring with sufficient spirits must be feasible, got " + dump(plan));
         assertTrue(schedulesPatternWithInput(plan, "S"),
-                "plan must schedule the ingot-synthesis pattern (GAP-4 dissolve-only plan)");
+                "plan must schedule the ingot-synthesis pattern ");
         // material-minimal turns: the fixed point is solved FROM BELOW, so
         // ample stock no longer inherits the propagation's ceil granularity —
         // ceil((10000-3400)/8) = 825 exactly
@@ -506,8 +506,8 @@ class CatalystFeedbackLoopTest {
     @Test
     void amplifyingLoopShortfallSchedulesSynthesis() {
         // 2303 stocked is 1025 spirits short of the balanced 834/834 plan; the
-        // exact shortfall disclosure is GAP-4 phase 2 (ring fixed-point). What
-        // phase 1 guarantees is structural: the synthesis MUST be scheduled —
+        // the exact shortfall disclosure is the ring fixed-point's job. What
+        // the propagation guarantees is structural: the synthesis MUST be scheduled —
         // a dissolve-only plan made the CPU stall on 834 missing ingots.
         BenchPatternDetails[] loop = amplifyingLoop();
         for (BenchPatternDetails p : loop) {
@@ -516,7 +516,7 @@ class CatalystFeedbackLoopTest {
         BenchSimulationState sim = new BenchSimulationState().seed("S", 2303);
         VMPlan plan = Bench.run(loop[1], 10000, sim);
         assertTrue(schedulesPatternWithInput(plan, "S"),
-                "plan must schedule the ingot-synthesis pattern (GAP-4 dissolve-only plan)");
+                "plan must schedule the ingot-synthesis pattern ");
         // solved balance turns: ceil((10000-2303)/8) = 963 — and ONLY the
         // solved counts (the replayed pre-solver 834 used to double the
         // dissolve crafts with no backed inputs)

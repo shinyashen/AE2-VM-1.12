@@ -52,7 +52,7 @@ public final class PatternCompiler {
 
     /**
      * T4 byproduct fallback index: output key → the patterns producing it in
-     * ANY output slot (phase 7d). A key with no PRIMARY producer resolves
+     * ANY output slot. A key with no PRIMARY producer resolves
      * through here while exactly one known pattern produces it — a byproduct
      * intermediate of a ring. Two or more producers is the multi-pattern
      * choice domain: the entry resolves to nothing (the key keeps its legacy

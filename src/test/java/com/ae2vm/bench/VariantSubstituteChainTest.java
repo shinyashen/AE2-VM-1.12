@@ -45,7 +45,7 @@ class VariantSubstituteChainTest {
 
     // ------------------------------------------------------------------
     // 1. A fuzzy-slot substitute with no stock but its own pattern must be
-    //    crafted to satisfy the slot (GAP-2, fixed via the resolver's T2.5
+    //    crafted to satisfy the slot (fixed via the resolver's T2.5
     //    substitution-group fallback — same layer the upstream fix targets).
     // ------------------------------------------------------------------
 
@@ -145,7 +145,7 @@ class VariantSubstituteChainTest {
         }
 
         // Request 3: stock restored → the SAME reused VM must re-execute the
-        // shortfall capture (GAP-1 fix: shortfallRetryable) instead of
+        // shortfall capture (shortfallRetryable) instead of
         // replaying the stale one. Fresh stock view: the previous pass's
         // simulated inserts persist in the old view and would satisfy the
         // chain without crafting.
