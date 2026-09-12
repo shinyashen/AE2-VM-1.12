@@ -205,6 +205,12 @@ jobs:
           java8 = [v["id"] for v in versions if v.get("name") == "Java 8"]
           if not forge or not java8:
               sys.exit(f"Forge/Java 8 not found (forge={forge}, java8={java8})")
+          # environment-group candidates: dump every non-game, non-loader entry
+          # so the right one can be picked from the run log
+          envish = [(v["id"], v.get("name"), v.get("typeName") or v.get("type"))
+                    for v in versions
+                    if (v.get("typeName") or v.get("type") or "") not in ("game",) ]
+          print("non-game entries:", envish[:60])
           ids = ids + forge[:1] + java8[:1]
           print(f"1.12.2={ids[0]}, Forge={forge[0]}, Java 8={java8[0]}")
 
