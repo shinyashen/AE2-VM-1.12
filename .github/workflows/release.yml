@@ -206,28 +206,34 @@ jobs:
           env = [v["id"] for v in versions if v.get("name") in ("Client", "Server")]
           if not (forge and java8 and env):
               sys.exit(f"group lookup failed (forge={forge}, java8={java8}, env={env})")
-          # The mod supports both sides. CF's "Both" is SERVER-SIDE RENDERING:
-          # the upload API takes exactly ONE environment row, and a both-rows
-          # payload deterministically crashes the server (HTTP 500, verified via
-          # update-file under the final payload shape) — single-Client is how
-          # mc-publish and the CF web UI itself encode a both-sides mod, and the
-          # file page still shows "Supports both". Probe both-rows first anyway;
-          # if CF ever fixes the crash, the semantic form wins automatically.
-          env_variants = [env, [env[0]], [env[1]]]
-          last = None
-          for variant in env_variants:
-              attempt = ids + forge[:1] + java8[:1] + variant
-              print(f"upload attempt with env={variant}")
+          # Per the official Upload API docs there is a dedicated
+          # gameVersionNames metadata field whose documented example is exactly
+          # ["Client", "Server", ...] — that is the DOCUMENTED way to declare
+          # both-sides support (gameVersions carries the numeric ids: game +
+          # loader + java). Primary attempt: ids + explicit both-sides names;
+          # degraded fallback: a single environment id, so a release never
+          # blocks on this. Fully automatic either way.
+          attempts = [
+              {"changelog": changelog, "changelogType": "markdown",
+               "displayName": display_name,
+               "gameVersions": ids + forge[:1] + java8[:1],
+               "gameVersionNames": ["Client", "Server"],
+               "releaseType": "release"},
+              {"changelog": changelog, "changelogType": "markdown",
+               "displayName": display_name,
+               "gameVersions": ids + forge[:1] + java8[:1] + env[:1],
+               "releaseType": "release"},
+          ]
+          for i, meta in enumerate(attempts):
+              print(f"upload attempt {i + 1}/{len(attempts)}: "
+                    f"gameVersionNames={meta.get('gameVersionNames', '(none)')}")
               status, result = cf_upload(f"/projects/{project}/upload-file",
-                  data={"changelog": changelog, "changelogType": "markdown",
-                        "displayName": display_name, "gameVersions": attempt,
-                        "releaseType": "release"},
+                  data=meta,
                   files=("file", (os.path.basename(jar), open(jar, "rb").read())))
               print(f"CurseForge upload HTTP {status}")
               print(result if isinstance(result, str) else json.dumps(result)[:400])
               if status in (200, 201):
                   sys.exit(0)
-              last = (status, result)
           print("::warning::all environment variants failed"); sys.exit(1)
 
           PY
