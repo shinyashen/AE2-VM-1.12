@@ -1,0 +1,40 @@
+name: CF probe (temporary)
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Probe gameVersionNames both-sides via update-file (documented field)
+        env:
+          CF_TOKEN: ${{ secrets.CURSEFORGE_TOKEN }}
+        run: |
+          python3 - <<'PY'
+          import json, os, urllib.request
+
+          token = os.environ["CF_TOKEN"]
+          # documented metadata field per the official Upload API page:
+          # gameVersionNames — example ["Client", "Server", "26.1.2"]
+          meta = {"fileID": 8864061,
+                  "gameVersionNames": ["Client", "Server"]}
+          boundary = "----aevmprobe"
+          body = (
+              f"--{boundary}\r\nContent-Disposition: form-data; name=\"metadata\"\r\n"
+              f"Content-Type: application/json\r\n\r\n{json.dumps(meta)}\r\n"
+              f"--{boundary}--\r\n").encode()
+          req = urllib.request.Request(
+              "https://minecraft.curseforge.com/api/projects/1692278/update-file",
+              data=body, method="POST")
+          req.add_header("X-Api-Token", token)
+          req.add_header("Content-Type", f"multipart/form-data; boundary={boundary}")
+          req.add_header("Accept", "application/json")
+          try:
+              with urllib.request.urlopen(req) as r:
+                  print("update-file HTTP", r.status, r.read().decode()[:200])
+          except urllib.error.HTTPError as e:
+              print("update-file HTTP", e.code, e.read().decode(errors="replace")[:300])
+          PY
