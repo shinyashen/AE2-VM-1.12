@@ -342,6 +342,29 @@ class CatalystFeedbackLoopTest {
                 "unseeded C-rooted request must report the startup seed, got " + dump(plan));
     }
 
+    @Test
+    void externalConsumerFloorFeedsRingSolve() {
+        // A ring key drawn on by an OUTSIDE consumer (widget takes 2 I per
+        // craft): the from-below solve must floor the member at the external
+        // demand — without the floor the solve stays idle (stock covers the
+        // ring's internal balance), the ring keys are stripped with an empty
+        // plan, and the widget's 20 I come back as a false missing.
+        // With the floor: makeIngot ×20 synthesizes exactly the widget's I
+        // demand from the stocked S; makeSpirit stays idle (stock covers).
+        BenchPatternDetails makeIngot = pat("I", 1, "S", 4L);
+        BenchPatternDetails makeSpirit = pat("S", 12, "I", 1L);
+        BenchPatternDetails makeWidget = pat("W", 1, "I", 2L, "R", 1L);
+        Bench.register(makeIngot);
+        Bench.register(makeSpirit);
+        Bench.register(makeWidget);
+        BenchSimulationState sim = new BenchSimulationState().seed("S", 100).seed("R", 100);
+        VMPlan plan = Bench.run(makeWidget, 10, sim);
+        assertTrue(feasible(plan),
+                "external consumer demand must be floored into the ring solve, got " + dump(plan));
+        assertEquals(20, timesOf(plan, "S"), "makeIngot (4S->I) turns floored at the widget demand");
+        assertEquals(10, timesOf(plan, "I", "R"), "makeWidget (2I+R->W) turns");
+    }
+
     // ---- amplifying loop: real-world gaia-spirit report (GAP-4) ----
     // 4 spirits craft 1 ingot, 1 ingot dissolves into 12 spirits; 2303 stocked,
     // 10000 requested. The dissolving plan consumes 834 ingots whose synthesis
@@ -362,12 +385,11 @@ class CatalystFeedbackLoopTest {
                 "amplifying ring with sufficient spirits must be feasible, got " + dump(plan));
         assertTrue(schedulesPatternWithInput(plan, "S"),
                 "plan must schedule the ingot-synthesis pattern (GAP-4 dissolve-only plan)");
-        // turns stay at the propagation's root granularity ceil(10000/12) = 834:
-        // the solver only bumps UP from the demand-driven counts, so with free
-        // stock the balance closes without amplification (72-spirit surplus,
-        // one root-craft granularity — never replayed double counts)
-        assertEquals(834, timesOf(plan, "S"), "makeIngot (4S->I) turns");
-        assertEquals(834, timesOf(plan, "I"), "makeSpirit (I->12S) turns");
+        // material-minimal turns: the fixed point is solved FROM BELOW, so
+        // ample stock no longer inherits the propagation's ceil granularity —
+        // ceil((10000-3400)/8) = 825 exactly
+        assertEquals(825, timesOf(plan, "S"), "makeIngot (4S->I) turns");
+        assertEquals(825, timesOf(plan, "I"), "makeSpirit (I->12S) turns");
     }
 
     @Test
@@ -401,11 +423,10 @@ class CatalystFeedbackLoopTest {
         VMPlan plan = Bench.run(loop[1], 10000, sim);
         assertTrue(feasible(plan),
                 "unbounded-stock amplifying ring must be feasible, got " + dump(plan));
-        assertTrue(schedulesPatternWithInput(plan, "S"),
-                "plan must schedule the ingot-synthesis pattern (GAP-4 dissolve-only plan)");
-        // free stock covers everything: no amplification needed beyond the
-        // root's own dissolve count ceil(10000/12) = 834
-        assertEquals(834, timesOf(plan, "S"), "makeIngot (4S->I) turns");
-        assertEquals(834, timesOf(plan, "I"), "makeSpirit (I->12S) turns");
+        // the from-below solve stays at zero when stock covers the whole
+        // request: crafting nothing IS the material-minimal plan, and the
+        // idle ring plan strips the propagation's unbacked dissolve counts
+        assertTrue(plan.getPatternTimes().isEmpty(),
+                "stock-covered request must not schedule ring crafts");
     }
 }
