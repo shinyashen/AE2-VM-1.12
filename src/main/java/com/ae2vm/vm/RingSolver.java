@@ -17,7 +17,7 @@ import java.util.Set;
 import java.util.function.Function;
 
 /**
- * GAP-4 phase 2: solver for net-amplifying mutual recipe rings ("gaia loops":
+ * Solver for net-amplifying mutual recipe rings ("gaia loops":
  * 4 spirits → 1 ingot, 1 ingot → 12 spirits). The propagation loop drops ring
  * back-edge demand (stock-only assumption), so a pure mutual ring ends up
  * scheduled only along the root direction — the CPU then stalls on missing
@@ -43,7 +43,7 @@ import java.util.function.Function;
  * monotonically growing increments beyond the cap (a net-draining ring)
  * abandon the solve and fall back to the previous behavior.
  *
- * <p>Variables are per PATTERN (phase 7d): a pattern with a primary and a
+ * <p>Variables are per PATTERN: a pattern with a primary and a
  * byproduct output inside the ring is one variable feeding several keys —
  * key-level variables would double-count its crafts. The resolver hands the
  * solver the unique any-slot producer of each member key, so every key has
@@ -154,7 +154,7 @@ final class RingSolver {
         for (Set<IAEItemStack> scc : tarjan(deps, nodes)) {
             if (scc.size() >= 2 && scc.size() <= MAX_RING_SIZE) rings.add(scc);
         }
-        // ---- consumers-first order (phase 7e): a ring is solved once every
+        // ---- consumers-first order: a ring is solved once every
         // consumer ring that draws on it has been solved — their write-backs
         // size the floor this ring amplifies against.
         int n = rings.size();
@@ -257,7 +257,7 @@ final class RingSolver {
             IAEItemStack rootKey,
             BigInteger rootDeliver) {
 
-        // ---- variables: the SCC's distinct PATTERNS (phase 7d). A pattern
+        // ---- variables: the SCC's distinct PATTERNS. A pattern
         // with a primary and a byproduct output inside the ring is ONE
         // variable feeding several keys — key-level variables would
         // double-count its crafts.
@@ -287,7 +287,7 @@ final class RingSolver {
             producerOut.put(k, outPer);
         }
 
-        // ---- external-root driver (phase 2c): AE2 indexes patterns by every
+        // ---- external-root driver: AE2 indexes patterns by every
         // output slot, so the REQUEST may be rooted at a key the ring only
         // produces as a byproduct (order C; the ring is 4A->B, B->12A+C+D).
         // A pattern producing the root becomes a minimum-craft driver — the
