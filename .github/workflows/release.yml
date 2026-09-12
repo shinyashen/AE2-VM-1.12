@@ -75,7 +75,93 @@ jobs:
             git push
           }
 
-      - name: Verify CurseForge token reachability (no upload; CF project pending)
+      - name: Upload to CurseForge (main jar only; relations inherit the project defaults)
+        env:
+          CF_TOKEN: ${{ secrets.CURSEFORGE_TOKEN }}
+          CF_PROJECT: '1692278'
+          TAG: ${{ steps.ref.outputs.ref }}
+        run: |
+          if [ -z "${CF_TOKEN}" ]; then
+            echo "CURSEFORGE_TOKEN not configured — skipping the CurseForge upload"
+            exit 0
+          fi
+          python3 - <<'PY'
+          import glob, json, os, re, sys, urllib.request
+
+          token = os.environ["CF_TOKEN"]
+          project = os.environ["CF_PROJECT"]
+          version = os.environ["TAG"].removeprefix("v")
+
+          jars = [j for j in sorted(glob.glob("build/libs/ae2_vm_112-*.jar"))
+                  if "-dev" not in j and "-sources" not in j]
+          if not jars:
+              sys.exit("no release jar found in build/libs")
+          jar = jars[0]
+          display_name = f"AE2 VM 1.12 {version}"
+          print(f"uploading {jar} as '{display_name}' to project {project}")
+
+          def cf_api(path, data=None, files=None):
+              req = urllib.request.Request(f"https://curseforge.com/api{path}")
+              req.add_header("X-Api-Token", token)
+              req.add_header("Accept", "application/json")
+              boundary = "----aevm" + os.urandom(8).hex()
+              body = b""
+              if files:
+                  name, (filename, content) = files
+                  body += (f"--{boundary}\r\nContent-Disposition: form-data; "
+                           f"name=\"{name}\"; filename=\"{filename}\"\r\n"
+                           f"Content-Type: application/java-archive\r\n\r\n").encode() + content + b"\r\n"
+              if data:
+                  body += (f"--{boundary}\r\nContent-Disposition: form-data; "
+                           f"name=\"metadata\"\r\n"
+                           f"Content-Type: application/json\r\n\r\n").encode() \
+                          + json.dumps(data).encode() + b"\r\n"
+              body += f"--{boundary}--\r\n".encode()
+              req.data = body
+              req.add_header("Content-Type", f"multipart/form-data; boundary={boundary}")
+              req.method = "POST" if (files or data) else "GET"
+              try:
+                  with urllib.request.urlopen(req) as r:
+                      return r.status, json.loads(r.read() or b"{}")
+              except urllib.error.HTTPError as e:
+                  return e.code, e.read().decode(errors="replace")[:400]
+
+          # Idempotency: skip when this version's file already exists on CF
+          status, info = cf_api(f"/projects/{project}")
+          if status != 200:
+              print(f"project fetch HTTP {status}: {info}"); sys.exit(1)
+          dup = next((f["id"] for f in info.get("files", [])
+                      if f.get("displayName") == display_name), None)
+          if dup:
+              print(f"'{display_name}' already on CurseForge (file {dup}) — skipping")
+              sys.exit(0)
+
+          # Changelog: the matching CHANGELOG.md section; '# vX.Y.Z' header stripped,
+          # '## Section' inlined as 'Title:', '**' removed (CF renders no Markdown there)
+          text = open("CHANGELOG.md", encoding="utf-8").read()
+          m = re.search(r"^# " + re.escape(version) + r"\n(.*?)(?=^# |\Z)", text, re.S | re.M)
+          changelog = m.group(1) if m else ""
+          changelog = re.sub(r"^## (.+)$", r"\1:", changelog, flags=re.M).replace("**", "").strip()
+
+          # gameVersions: resolve 1.12.2's id from the live versions list (no hardcoding)
+          status, versions = cf_api("/game/versions")
+          if status != 200:
+              print(f"versions fetch HTTP {status}: {versions}"); sys.exit(1)
+          ids = [v["id"] for v in versions if v.get("name") == "1.12.2"]
+          if not ids:
+              sys.exit("game version 1.12.2 not found on CurseForge")
+
+          status, result = cf_api(f"/projects/{project}/upload-file",
+              data={"displayName": display_name, "releaseType": "release",
+                    "gameVersions": ids, "changelog": changelog},
+              files=("file", (os.path.basename(jar), open(jar, "rb").read())))
+          print(f"CurseForge upload HTTP {status}")
+          print(result if isinstance(result, str) else json.dumps(result)[:400])
+          if status not in (200, 201):
+              print("::warning::CurseForge upload failed"); sys.exit(1)
+          PY
+
+      - name: Verify CurseForge token reachability (legacy probe; superseded by the upload step)
         continue-on-error: true
         run: |
           if [ -z "${{ secrets.CURSEFORGE_TOKEN }}" ]; then
