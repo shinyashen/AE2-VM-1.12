@@ -834,6 +834,15 @@ public class CraftingVM {
     }
 
     private void applyBundleDirect(Bundle b) {
+        applyBundleDirect(b, false);
+    }
+
+    /**
+     * With {@code skipEmissions} the bundle's emitted is assumed already in
+     * the sandbox (the two-phase net application inserts ALL rings' emissions
+     * before any extraction, so cross-ring supply is order-safe).
+     */
+    private void applyBundleDirect(Bundle b, boolean skipEmissions) {
         simulation.addBytes(toBytesDouble(b.bytes));
         // Catalyst seeds are STARTUP capital: extract them BEFORE this bundle's own
         // outputs flood the sandbox, so a self-returned catalyst (A + B -> A + C)
@@ -870,10 +879,12 @@ public class CraftingVM {
             long shortfall = val - got;
             if (shortfall > 0) missingItems.add(e.getKey(), shortfall);
         }
-        for (var e : b.emitted.entrySet()) {
-            long val = toLongSafe(e.getValue(), "emit");
-            simulation.insert(e.getKey(), val);
-            simInternal.add(e.getKey(), val);
+        if (!skipEmissions) {
+            for (var e : b.emitted.entrySet()) {
+                long val = toLongSafe(e.getValue(), "emit");
+                simulation.insert(e.getKey(), val);
+                simInternal.add(e.getKey(), val);
+            }
         }
         for (var e : b.used.entrySet()) {
             long val = toLongSafe(e.getValue(), "used");
@@ -1068,13 +1079,23 @@ public class CraftingVM {
         }
         solveRings(total, itemDemand);
         // the released stock reservations of stripped ring keys go back into
-        // the sandbox so the net bundles' extraction can draw them (counted
-        // as network consumption — the plan genuinely spends them)
+        // the sandbox so the net bundles' extraction can draw them (the net
+        // draw is closure-bounded to exactly this stock)
         for (var e : ringReleasedStock.entrySet()) {
             simulation.insert(e.getKey(), e.getValue().longValue());
         }
+        // two-phase application (phase 7e): ALL net emissions land before ANY
+        // net extraction, so a downstream ring's draw can be supplied by an
+        // upstream ring folded earlier in the consumers-first solve order
         for (Bundle net : ringNetBundles) {
-            applyBundleDirect(net);
+            for (var e : net.emitted.entrySet()) {
+                long val = toLongSafe(e.getValue(), "ring-emit");
+                simulation.insert(e.getKey(), val);
+                simInternal.add(e.getKey(), val);
+            }
+        }
+        for (Bundle net : ringNetBundles) {
+            applyBundleDirect(net, true);
             // report the ring's net production in the plan (applyBundleDirect's
             // insert is internal traffic — the net output is what the player sees)
             for (var e : net.emitted.entrySet()) {
@@ -2038,7 +2059,10 @@ public class CraftingVM {
         }
         for (var e : b.used.entrySet()) {
             long val = toLongSafe(e.getValue(), "used-revert");
-            simulation.insert(e.getKey(), val);
+            // restock (not insert): a reverted claim returns previously
+            // extracted stock — implementations modelling network stock as a
+            // budget must restore the budget, not mint produced items
+            simulation.restock(e.getKey(), val);
             long internal = simInternal.get(e.getKey());
             long fromInternal = Math.min(val, internal);
             long fromNetwork = val - fromInternal;

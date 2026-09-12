@@ -88,4 +88,10 @@ public final class TraceSimulationState implements SimulationState {
     public void ignore(IAEItemStack key) {
         delegate.ignore(key);
     }
+
+    @Override
+    public void restock(IAEItemStack key, long amount) {
+        log.println((seq++) + " " + tag + " RESTOCK " + idOf(key) + " amount=" + amount);
+        delegate.restock(key, amount);
+    }
 }

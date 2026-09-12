@@ -150,9 +150,61 @@ final class RingSolver {
             }
             if (!d.isEmpty()) deps.put(k, d);
         }
-        Set<IAEItemStack> handled = new HashSet<>();
+        List<Set<IAEItemStack>> rings = new ArrayList<>();
         for (Set<IAEItemStack> scc : tarjan(deps, nodes)) {
-            if (scc.size() < 2 || scc.size() > MAX_RING_SIZE) continue;
+            if (scc.size() >= 2 && scc.size() <= MAX_RING_SIZE) rings.add(scc);
+        }
+        // ---- consumers-first order (phase 7e): a ring is solved once every
+        // consumer ring that draws on it has been solved — their write-backs
+        // size the floor this ring amplifies against.
+        int n = rings.size();
+        Map<IAEItemStack, Integer> ringOf = new HashMap<>();
+        for (int i = 0; i < rings.size(); i++) {
+            for (IAEItemStack k : rings.get(i)) ringOf.put(k, i);
+        }
+        // producers[ci] = producer rings ci's members draw on; consumers[pi] =
+        // the consumer rings drawing on pi
+        List<Set<Integer>> producers = new ArrayList<>();
+        List<Set<Integer>> consumers = new ArrayList<>();
+        for (int i = 0; i < n; i++) {
+            producers.add(new LinkedHashSet<>());
+            consumers.add(new LinkedHashSet<>());
+        }
+        for (int ci = 0; ci < n; ci++) {
+            for (IAEItemStack u : rings.get(ci)) {
+                for (IAEItemStack v : deps.getOrDefault(u, java.util.Collections.<IAEItemStack>emptySet())) {
+                    int pi = ringOf.getOrDefault(v, -1);
+                    if (pi >= 0 && pi != ci) {
+                        producers.get(ci).add(pi);
+                        consumers.get(pi).add(ci);
+                    }
+                }
+            }
+        }
+        int[] pending = new int[n];
+        Deque<Integer> ready = new ArrayDeque<>();
+        for (int ci = 0; ci < n; ci++) {
+            pending[ci] = consumers.get(ci).size();
+            if (pending[ci] == 0) ready.add(ci);
+        }
+        List<Integer> order = new ArrayList<>(n);
+        while (!ready.isEmpty()) {
+            int r = ready.poll();
+            order.add(r);
+            for (int p : producers.get(r)) {
+                if (--pending[p] == 0) ready.add(p);
+            }
+        }
+        for (int ci = 0; ci < n; ci++) {
+            if (!order.contains(ci)) order.add(ci); // defensive: unreachable in a DAG
+        }
+        // floors: solver-local copy of the propagation demand (never the
+        // engine's maps) — folded rings write their solved net draw deltas
+        // into it, and downstream solves read the updated floors.
+        Map<IAEItemStack, BigInteger> floors = new HashMap<>(itemDemand);
+        Set<IAEItemStack> handled = new HashSet<>();
+        for (int ri : order) {
+            Set<IAEItemStack> scc = rings.get(ri);
             boolean touched = false;
             for (IAEItemStack k : scc) {
                 for (IAEItemStack h : handled) {
@@ -164,10 +216,28 @@ final class RingSolver {
                 if (touched) break;
             }
             if (touched) continue;
-            RingPlan plan = trySimpleRing(scc, total, itemDemand, recipeOf, startStockOf, rootKey, rootDeliver);
+            RingPlan plan = trySimpleRing(scc, total, floors, recipeOf, startStockOf, rootKey, rootDeliver);
             if (plan == null) continue;
             plans.add(plan);
             handled.addAll(plan.ringKeys);
+            // write-back: the fold's net draw per touched key, minus what the
+            // propagation already counted (its own counts) — downstream rings
+            // re-solve against the AMPLIFIED demand, not the naive one.
+            Set<IAEItemStack> touchedKeys = new HashSet<>(plan.used.keySet());
+            touchedKeys.addAll(plan.emitted.keySet());
+            for (IAEItemStack k : touchedKeys) {
+                BigInteger solved = plan.used.getOrDefault(k, BigInteger.ZERO)
+                        .subtract(plan.emitted.getOrDefault(k, BigInteger.ZERO));
+                BigInteger prop = BigInteger.ZERO;
+                for (IAEItemStack m : scc) {
+                    RecipeView v = recipeOf.apply(m);
+                    prop = prop.add(total.getOrDefault(m, BigInteger.ZERO).multiply(
+                            v.inputs().getOrDefault(k, BigInteger.ZERO)
+                                    .subtract(v.outputs().getOrDefault(k, BigInteger.ZERO))));
+                }
+                BigInteger delta = solved.subtract(prop);
+                if (delta.signum() != 0) floors.merge(k, delta, BigInteger::add);
+            }
         }
         return plans;
     }
@@ -279,7 +349,7 @@ final class RingSolver {
         // here regardless of how much stock happens to exist.
         Map<ICraftingPatternDetails, BigInteger> ys = jacobian(views, scc, producerOut, viewOfKey,
                 startStockOf, false, driverPattern, driverMin, rootKey, rootDeliver, rootIsMember, ext);
-        if (ys == null) { System.out.println("[RS-DBG] pass1 diverged"); return null; } // diverged: structurally net-losing
+        if (ys == null) return null; // diverged: structurally net-losing
         // anyGain on the structural solution: at least one MEMBER key must
         // net a gain — a ring whose members merely circulate while an outside
         // byproduct grows (raw catalyst loops) is owned by the
@@ -306,7 +376,7 @@ final class RingSolver {
                 }
             }
         }
-        if (!anyGain) { System.out.println("[RS-DBG] no member gain"); return null; } // members merely circulate: nothing to amplify
+        if (!anyGain) return null; // members merely circulate: nothing to amplify
 
         // ---- pass 2, material minimal: the same fixed point WITH stock in
         // the cover, again solved from below — the least fixed point is the
@@ -315,7 +385,7 @@ final class RingSolver {
         // closure check below.
         Map<ICraftingPatternDetails, BigInteger> y = jacobian(views, scc, producerOut, viewOfKey,
                 startStockOf, true, driverPattern, driverMin, rootKey, rootDeliver, rootIsMember, ext);
-        if (y == null) { System.out.println("[RS-DBG] pass2 diverged"); return null; } // did not converge: honest fallback
+        if (y == null) return null; // did not converge: honest fallback
 
         // ---- stock-covered root: a from-below solve that stayed at zero
         // means the network stock covers every demand — the ring has nothing
@@ -357,7 +427,6 @@ final class RingSolver {
                 BigInteger cov = nonNeg(startStockOf.apply(k))
                         .add(y.get(viewOfKey.get(k).pattern()).multiply(producerOut.get(k)));
                 if (needed.getOrDefault(k, BigInteger.ZERO).compareTo(cov) > 0) {
-                    System.out.println("[RS-DBG] closure broken at member");
                     return null; // closure broken: adopt nothing
                 }
             }
