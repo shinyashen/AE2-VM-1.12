@@ -1061,7 +1061,7 @@ public class CraftingVM {
         if (selfAdjacentKeys != null && !selfAdjacentKeys.isEmpty()) {
             correctRecursion(total, initialStock);
         }
-        solveRings(total);
+        solveRings(total, itemDemand);
         for (Bundle net : ringNetBundles) {
             applyBundleDirect(net);
             // report the ring's net production in the plan (applyBundleDirect's
@@ -2152,10 +2152,11 @@ public class CraftingVM {
      * ingots" CPU stall in replay form).
      */
 
-    private void solveRings(Map<IAEItemStack, BigInteger> total) {
+    private void solveRings(Map<IAEItemStack, BigInteger> total,
+                            Map<IAEItemStack, BigInteger> itemDemand) {
         List<RingSolver.RingPlan> plans;
         try {
-        plans = RingSolver.solve(total, k -> {
+        plans = RingSolver.solve(total, itemDemand, k -> {
             ICraftingPatternDetails d = patternResolver != null ? patternResolver.apply(k) : null;
             if (d == null) return null;
             Map<IAEItemStack, BigInteger> in = new HashMap<>();
