@@ -2176,33 +2176,6 @@ public class CraftingVM {
         return b;
     }
 
-    private static java.io.PrintStream LEDGER_LOG;
-
-    private static void ledgerLog(String s) {
-        try {
-            if (LEDGER_LOG == null) {
-                LEDGER_LOG = new java.io.PrintStream(new java.io.FileOutputStream("/tmp/aevm-ledger.txt", true),
-                        true, java.nio.charset.StandardCharsets.UTF_8.name());
-            }
-            LEDGER_LOG.println(s);
-        } catch (Exception ignored) {
-        }
-    }
-
-    private IAEItemStack familyRep(IAEItemStack k) {
-        try {
-            var g = PatternCompiler.getFuzzyGroup(k);
-            if (g != null && !g.isEmpty()) {
-                for (var m : g) {
-                    if (m != null && m.isSameType(k)) return m;
-                }
-                return g.iterator().next();
-            }
-        } catch (Throwable ignored) {
-        }
-        return k;
-    }
-
     /**
      * Solve the pure mutual rings whose back-edge demand the
      * propagation loop dropped, fold each into a net-effect bundle, and remove
@@ -2309,7 +2282,9 @@ public class CraftingVM {
             ringNetBundles.add(net);
         }
         } catch (Throwable t) {
-            t.printStackTrace();
+            // the fold is abandoned and the propagation plan stays in force;
+            // the failure must be visible — a silent catch hid solver bugs before
+            AE2VM.LOGGER.warn("[AE2-VM] ring solver failed; falling back to the propagation plan", t);
         }
     }
 
