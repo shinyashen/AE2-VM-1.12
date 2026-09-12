@@ -1,4 +1,4 @@
-package com.ae2vm.mixin;
+package com.ae2vm;
 
 import net.minecraftforge.fml.relauncher.IFMLLoadingPlugin;
 import zone.rong.mixinbooter.IEarlyMixinLoader;
@@ -17,8 +17,14 @@ import java.util.Map;
  * engaged and rings fell back to plain out-of-ring ingredients).
  *
  * <p>Only vanilla/forge/AE2 targets belong here; configs targeting other
- * mods' classes go to {@link AE2VMLateMixinLoader}.
+ * mods' classes go to {@link AE2VMLateMixinLoader}. Both loaders MUST stay
+ * out of {@code com.ae2vm.mixin}: that package is owned by
+ * {@code mixins.ae2_vm_112.json} as a mixin package, and the mixin
+ * transformer refuses to load non-mixin classes from it
+ * ("cannot be referenced directly" — crashed the client under MixinBooter
+ * 11.x where the check is enforced on every load).
  */
+@IFMLLoadingPlugin.MCVersion("1.12.2")
 public class AE2VMEarlyMixinLoader implements IFMLLoadingPlugin, IEarlyMixinLoader {
     @Override
     public List<String> getMixinConfigs() {
