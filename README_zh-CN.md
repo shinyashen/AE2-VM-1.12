@@ -4,6 +4,8 @@
 
 ![CI](https://github.com/shinyashen/AE2-VM-1.12/actions/workflows/ci.yml/badge.svg)
 ![Release](https://img.shields.io/github/v/release/shinyashen/AE2-VM-1.12)
+[![CurseForge](https://img.shields.io/curseforge/v/1692278)](https://www.curseforge.com/minecraft/mc-mods/ae2-vm-legacy)
+[![CurseForge downloads](https://img.shields.io/curseforge/dt/1692278)](https://www.curseforge.com/minecraft/mc-mods/ae2-vm-legacy)
 ![Minecraft](https://img.shields.io/badge/Minecraft-1.12.2-blue)
 ![License](https://img.shields.io/github/license/shinyashen/AE2-VM-1.12)
 
@@ -37,7 +39,7 @@
 | 模组加载器 | [Cleanroom](https://github.com/CleanroomMC/Cleanroom)(推荐);或 Forge + [MixinBooter](https://www.curseforge.com/minecraft/mc-mods/mixin-booter) |
 | 应用能源 | [AE2 Unofficial Extended Life](https://www.curseforge.com/minecraft/mc-mods/ae2-extended-life)(兼容 AE2UEL 1.12.2 的全部历史构建) |
 
-从 [Releases](https://github.com/shinyashen/AE2-VM-1.12/releases) 下载 jar 放入 `mods/` 目录即可。VM 在合成计算时自动接管,无需任何配置;如需切回原版逻辑,关闭配置项 `proxyEnabled` 即可。
+从 [Releases](https://github.com/shinyashen/AE2-VM-1.12/releases) 或 [CurseForge](https://www.curseforge.com/minecraft/mc-mods/ae2-vm-legacy) 下载 jar 放入 `mods/` 目录即可。VM 在合成计算时自动接管,无需任何配置;如需切回原版逻辑,关闭配置项 `proxyEnabled` 即可。
 
 > 关于 Forge 路线:本模组未使用任何 Cleanroom 专属 API,产物为 Java 8 字节码,mixin 支持由 MixinBooter 提供,理论上开箱即用;该路线不在自动化测试覆盖范围内,遇到问题欢迎反馈。
 

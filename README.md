@@ -4,6 +4,8 @@ English | [简体中文](README_zh-CN.md)
 
 ![CI](https://github.com/shinyashen/AE2-VM-1.12/actions/workflows/ci.yml/badge.svg)
 ![Release](https://img.shields.io/github/v/release/shinyashen/AE2-VM-1.12)
+[![CurseForge](https://img.shields.io/curseforge/v/1692278)](https://www.curseforge.com/minecraft/mc-mods/ae2-vm-legacy)
+[![CurseForge downloads](https://img.shields.io/curseforge/dt/1692278)](https://www.curseforge.com/minecraft/mc-mods/ae2-vm-legacy)
 ![Minecraft](https://img.shields.io/badge/Minecraft-1.12.2-blue)
 ![License](https://img.shields.io/github/license/shinyashen/AE2-VM-1.12)
 
@@ -37,7 +39,7 @@ All 39 reference-suite scenarios × 3 stock modes are **SUPPORTED** with zero fl
 | Mod loader | [Cleanroom](https://github.com/CleanroomMC/Cleanroom) (recommended); or Forge + [MixinBooter](https://www.curseforge.com/minecraft/mc-mods/mixin-booter) |
 | Applied Energistics | [AE2 Unofficial Extended Life](https://www.curseforge.com/minecraft/mc-mods/ae2-extended-life) (compatible with every 1.12.2 build of AE2UEL) |
 
-Download `ae2_vm_112-x.y.z.jar` from [Releases](https://github.com/shinyashen/AE2-VM-1.12/releases), drop it into `mods/` — done. The VM takes over crafting calculations automatically; `proxyEnabled` in the config turns it off.
+Download `ae2_vm_112-x.y.z.jar` from [Releases](https://github.com/shinyashen/AE2-VM-1.12/releases) or [CurseForge](https://www.curseforge.com/minecraft/mc-mods/ae2-vm-legacy), drop it into `mods/` — done. The VM takes over crafting calculations automatically; `proxyEnabled` in the config turns it off.
 
 > On the Forge route: the mod uses no Cleanroom-specific APIs and ships Java 8 bytecode, with mixins provided by MixinBooter, so it is expected to work out of the box. This route is not covered by our automated tests — feedback is welcome.
 
