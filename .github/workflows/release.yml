@@ -166,28 +166,20 @@ jobs:
                   return e.code, e.read().decode(errors="replace")[:400]
 
           def core_api(path):
-              # public read-only Core API: api.curseforge.com (needs an x-api-key,
-              # but the upload token works for one's own projects in practice;
-              # failure is non-fatal — idempotency just degrades to a warning)
-              req = urllib.request.Request(f"https://api.curseforge.com/v1{path}")
-              req.add_header("x-api-key", token)
+              # legacy version/id endpoints live on the upload host too
+              # (GET /game/versions?cache=true — same call mc-publish makes)
+              req = urllib.request.Request(f"https://minecraft.curseforge.com/api{path}")
+              req.add_header("X-Api-Token", token)
               req.add_header("Accept", "application/json")
               try:
                   with urllib.request.urlopen(req) as r:
                       return r.status, json.loads(r.read() or b"{}")
               except urllib.error.HTTPError as e:
-                  return e.code, {}
+                  return e.code, e.read().decode(errors="replace")[:300]
 
-          # Idempotency (best effort): skip when this version's file already exists
-          status, info = core_api(f"/mods/{project}")
-          if status == 200:
-              dup = next((f["id"] for f in info.get("data", {}).get("latestFiles", [])
-                          if f.get("displayName") == display_name), None)
-              if dup:
-                  print(f"'{display_name}' already on CurseForge (file {dup}) — skipping")
-                  sys.exit(0)
-          else:
-              print(f"idempotency probe HTTP {status} — proceeding with the upload")
+          # Idempotency: the upload host has no project GET; rely on CF's own
+          # duplicate-file policy — a second upload with identical displayName
+          # is rejected by the server, so a rerun cannot create a dup pair
 
           # Changelog: the matching CHANGELOG.md section; '# vX.Y.Z' header stripped,
           # '## Section' inlined as 'Title:', '**' removed (CF renders no Markdown there)
@@ -196,16 +188,12 @@ jobs:
           changelog = m.group(1) if m else ""
           changelog = re.sub(r"^## (.+)$", r"\1:", changelog, flags=re.M).replace("**", "").strip()
 
-          # gameVersions: resolve 1.12.2's id from the live versions list (no hardcoding)
-          status, versions = core_api("/game/versions")
+          # gameVersions: resolve 1.12.2's id from the live versions list
+          # (GET /game/versions?cache=true — same call mc-publish makes)
+          status, versions = core_api("/game/versions?cache=true")
           if status != 200:
-              # Core API unavailable: fall back to the known 1.12.2 id (432=Minecraft, 7498=1.12.2)
-              print(f"versions fetch HTTP {status} — using the known id")
-              ids = [432, 7498]
-          else:
-              ids = [v["id"] for v in versions if v.get("name") == "1.12.2"]
-              if not ids:
-                  sys.exit("game version 1.12.2 not found on CurseForge")
+              print(f"versions fetch HTTP {status}: {versions}")
+              sys.exit("cannot resolve the 1.12.2 game version id")
 
           status, result = cf_upload(f"/projects/{project}/upload-file",
               data={"displayName": display_name, "releaseType": "release",
