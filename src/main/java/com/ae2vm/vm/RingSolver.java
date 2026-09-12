@@ -31,24 +31,29 @@ import java.util.function.Function;
  * before used is extracted, so the ring's own production provides the
  * working capital for its consumption — no order-of-application overdraft.
  *
- * <p>Math: the turn count comes from a Jacobian fixed-point iteration over
- * the ring keys, solved FROM BELOW — counts start at zero (the external-root
- * driver at its minimum) and a shortfall bumps the key's own craft count
- * (every key's producer is its own resolver result, so the bump target is
- * unambiguous even for shared intermediates) until {@code needed = Σ consumer
- * crafts × per-craft input + delivery (root key) + external demand floor}
- * closes against {@code cover = start stock + own craft × per-craft output}.
+ * <p>Math: the turn counts come from a Jacobian fixed-point iteration over
+ * the ring's PATTERNS, solved FROM BELOW — counts start at zero (the
+ * external-root driver at its minimum) and a shortfall bumps the producing
+ * pattern's count until {@code needed = Σ pattern crafts × per-craft input
+ * + delivery (root key) + external demand floor} closes against
+ * {@code cover = start stock + producing pattern × per-craft output}.
  * Starting below instead of at the propagation's counts converges to the
  * LEAST fixed point — the material-minimal plan, free of inherited ceil
  * granularity. A net-amplifying ring converges geometrically;
  * monotonically growing increments beyond the cap (a net-draining ring)
  * abandon the solve and fall back to the previous behavior.
  *
+ * <p>Variables are per PATTERN (phase 7d): a pattern with a primary and a
+ * byproduct output inside the ring is one variable feeding several keys —
+ * key-level variables would double-count its crafts. The resolver hands the
+ * solver the unique any-slot producer of each member key, so every key has
+ * exactly one in-ring producer to bump.
+ *
  * <p>The startup timing constraint — the first round's inputs must be on hand
  * before the first output lands — is reported separately as a seed shortfall
  * (timing capital, not net consumption; the ring pays it back within the
- * first round). Both ring firing directions are probed and the smaller seed
- * is kept.
+ * first round). Every pattern is probed as the forced round start, each
+ * continuation fires the first ready pattern, and the smallest seed wins.
  *
  * <p>Topology scope: strongly-connected sets with patterns and no
  * self-adjacency. Shared intermediates (a key consumed by multiple members)
@@ -167,6 +172,12 @@ final class RingSolver {
         return plans;
     }
 
+    /**
+     * Tries to fold one strongly-connected set into a gross-flow plan.
+     * Variables are the set's distinct PATTERNS; constraints are per member
+     * KEY. Returns null whenever the shape, the solve or the gates decline —
+     * the caller keeps the legacy propagation semantics for those keys.
+     */
     private static RingPlan trySimpleRing(
             Set<IAEItemStack> scc,
             Map<IAEItemStack, BigInteger> total,
@@ -176,44 +187,62 @@ final class RingSolver {
             IAEItemStack rootKey,
             BigInteger rootDeliver) {
 
-        // ---- shape: strongly-connected set with patterns, no self-adjacency.
-        // Shared intermediates (a key consumed by multiple members) and
-        // multi-input members are fine — the Jacobian iteration aggregates all
-        // consumers' demand per key and bumps each key's own (unique) producer.
-        for (IAEItemStack m : scc) {
-            RecipeView v = recipeOf.apply(m);
-            for (IAEItemStack in : v.inputs().keySet()) {
-                if (in.isSameType(m)) return null; // self-adjacent member
+        // ---- variables: the SCC's distinct PATTERNS (phase 7d). A pattern
+        // with a primary and a byproduct output inside the ring is ONE
+        // variable feeding several keys — key-level variables would
+        // double-count its crafts.
+        Map<IAEItemStack, RecipeView> viewOfKey = new HashMap<>();
+        LinkedHashMap<ICraftingPatternDetails, RecipeView> views = new LinkedHashMap<>();
+        for (IAEItemStack k : scc) {
+            RecipeView v = recipeOf.apply(k);
+            viewOfKey.put(k, v);
+            views.putIfAbsent(v.pattern(), v);
+        }
+        // self-adjacent pattern (one of its outputs re-enters its inputs):
+        // the amplifier/recursion family — owned by correctRecursion.
+        for (RecipeView v : views.values()) {
+            for (IAEItemStack out : v.outputs().keySet()) {
+                if (v.inputs().containsKey(out)) return null;
             }
+        }
+        // per member key: its own pattern's per-craft output of that key (the
+        // resolver — primary or T4-unique — guarantees the pattern outputs it).
+        Map<IAEItemStack, BigInteger> producerOut = new HashMap<>();
+        for (IAEItemStack k : scc) {
+            BigInteger outPer = BigInteger.ZERO;
+            for (var e : viewOfKey.get(k).outputs().entrySet()) {
+                if (e.getKey().isSameType(k)) { outPer = e.getValue(); break; }
+            }
+            if (outPer.signum() <= 0) return null; // cannot scale itself
+            producerOut.put(k, outPer);
         }
 
         // ---- external-root driver (phase 2c): AE2 indexes patterns by every
         // output slot, so the REQUEST may be rooted at a key the ring only
         // produces as a byproduct (order C; the ring is 4A->B, B->12A+C+D).
-        // A member producing the root becomes a minimum-craft driver — the
+        // A pattern producing the root becomes a minimum-craft driver — the
         // ring must run at least ceil(rootDeliver / outPer) rounds of it, with
-        // the surplus landing as ring byproducts. When several members
+        // the surplus landing as ring byproducts. When several patterns
         // qualify, the one with the largest per-craft output of the root is
         // picked (ties keep the first in SCC order — deterministic); a wrong
         // pick surfaces as a member drain in the gain gate and declines.
         // No producer means the root is unrelated to this ring — no driver.
-        IAEItemStack driverMember = null;
+        ICraftingPatternDetails driverPattern = null;
         BigInteger driverOutPer = BigInteger.ZERO;
         boolean rootIsMember = rootKey != null && isRingMember(scc, rootKey);
         if (rootKey != null && rootDeliver.signum() > 0 && !rootIsMember) {
-            for (IAEItemStack m : scc) {
-                RecipeView v = recipeOf.apply(m);
-                for (var e : v.outputs().entrySet()) {
+            for (var pe : views.entrySet()) {
+                for (var e : pe.getValue().outputs().entrySet()) {
                     if (!e.getKey().isSameType(rootKey) || e.getValue().signum() <= 0) continue;
-                    if (driverMember == null || e.getValue().compareTo(driverOutPer) > 0) {
-                        driverMember = m;
+                    if (driverPattern == null || e.getValue().compareTo(driverOutPer) > 0) {
+                        driverPattern = pe.getKey();
                         driverOutPer = e.getValue();
                     }
                 }
             }
         }
         BigInteger driverMin = BigInteger.ZERO;
-        if (driverMember != null) {
+        if (driverPattern != null) {
             driverMin = rootDeliver.add(driverOutPer).subtract(BigInteger.ONE).divide(driverOutPer);
             if (driverMin.compareTo(CRAFT_CAP) > 0) return null; // diverged
         }
@@ -233,72 +262,60 @@ final class RingSolver {
             BigInteger inRing = BigInteger.ZERO;
             for (IAEItemStack m : scc) {
                 inRing = inRing.add(total.getOrDefault(m, BigInteger.ZERO)
-                        .multiply(recipeOf.apply(m).inputs().getOrDefault(k, BigInteger.ZERO)));
+                        .multiply(viewOfKey.get(m).inputs().getOrDefault(k, BigInteger.ZERO)));
             }
-            if (driverMember != null) {
+            if (driverPattern != null) {
                 inRing = inRing.add(total.getOrDefault(rootKey, BigInteger.ZERO)
-                        .multiply(recipeOf.apply(driverMember).inputs().getOrDefault(k, BigInteger.ZERO)));
+                        .multiply(views.get(driverPattern).inputs().getOrDefault(k, BigInteger.ZERO)));
             }
             BigInteger floor = dem.subtract(inRing);
             if (floor.signum() > 0) ext.put(k, floor);
         }
 
-        // ---- Jacobian fixed point over the member craft counts, solved FROM
-        // BELOW: counts start at zero (the driver at its minimum) and the
-        // iteration bumps up until every constraint closes, converging to the
-        // LEAST fixed point — the material-minimal plan. Starting from the
-        // propagation's counts instead would inherit their ceil granularity
-        // as permanent surplus.
-        Map<IAEItemStack, BigInteger> x = new HashMap<>();
-        for (IAEItemStack k : scc) {
-            x.put(k, BigInteger.ZERO);
-        }
-        boolean converged = false;
-        for (int iter = 0; iter < MAX_ITERATIONS; iter++) {
-            // enforce the external-root driver minimum before deriving needs
-            if (driverMember != null) {
-                BigInteger cur = x.get(driverMember);
-                if (cur.compareTo(driverMin) < 0) x.put(driverMember, driverMin);
-            }
-            // needed[k] = Σ consumer crafts × per-craft input + root delivery
-            //             + external demand floor
-            Map<IAEItemStack, BigInteger> needed = new HashMap<>();
-            for (IAEItemStack m : scc) {
-                RecipeView v = recipeOf.apply(m);
-                BigInteger xf = x.get(m);
-                if (xf.signum() <= 0) continue;
-                for (var e : v.inputs().entrySet()) {
-                    needed.merge(e.getKey(), xf.multiply(e.getValue()), BigInteger::add);
+        // ---- pass 1, structural solvability: the fixed point WITHOUT stock
+        // in the cover. A ring that cannot close its own material balance
+        // absent stock is structurally net-losing (lossy catalyst cycles) or
+        // unsatisfiable — owned by the working-capital machinery, declined
+        // here regardless of how much stock happens to exist.
+        Map<ICraftingPatternDetails, BigInteger> ys = jacobian(views, scc, producerOut, viewOfKey,
+                startStockOf, false, driverPattern, driverMin, rootKey, rootDeliver, rootIsMember, ext);
+        if (ys == null) { System.out.println("[RS-DBG] pass1 diverged"); return null; } // diverged: structurally net-losing
+        // anyGain on the structural solution: at least one MEMBER key must
+        // net a gain — a ring whose members merely circulate while an outside
+        // byproduct grows (raw catalyst loops) is owned by the
+        // working-capital machinery, not by us.
+        boolean anyGain = false;
+        {
+            Map<IAEItemStack, BigInteger> produced = new HashMap<>();
+            Map<IAEItemStack, BigInteger> consumed = new HashMap<>();
+            for (var pe : views.entrySet()) {
+                BigInteger yp = ys.get(pe.getKey());
+                if (yp.signum() <= 0) continue;
+                for (var e : pe.getValue().inputs().entrySet()) {
+                    consumed.merge(e.getKey(), yp.multiply(e.getValue()), BigInteger::add);
+                }
+                for (var e : pe.getValue().outputs().entrySet()) {
+                    produced.merge(e.getKey(), yp.multiply(e.getValue()), BigInteger::add);
                 }
             }
-            if (rootKey != null && rootDeliver.signum() > 0 && rootIsMember) {
-                needed.merge(rootKey, rootDeliver, BigInteger::add);
-            }
-            for (var e : ext.entrySet()) {
-                needed.merge(e.getKey(), e.getValue(), BigInteger::add);
-            }
-            // cover[k] = start stock + own craft × per-craft output
-            boolean changed = false;
             for (IAEItemStack k : scc) {
-                RecipeView v = recipeOf.apply(k);
-                BigInteger outPer = v.outputs().getOrDefault(k, BigInteger.ZERO);
-                if (outPer.signum() <= 0) return null; // cannot scale itself
-                BigInteger dem = needed.getOrDefault(k, BigInteger.ZERO);
-                BigInteger cov = nonNeg(startStockOf.apply(k)).add(x.get(k).multiply(outPer));
-                if (dem.compareTo(cov) > 0) {
-                    BigInteger bump = dem.subtract(cov).add(outPer).subtract(BigInteger.ONE).divide(outPer);
-                    BigInteger nx = x.get(k).add(bump);
-                    if (nx.compareTo(CRAFT_CAP) > 0) return null; // diverged
-                    x.put(k, nx);
-                    changed = true;
+                if (produced.getOrDefault(k, BigInteger.ZERO)
+                        .subtract(consumed.getOrDefault(k, BigInteger.ZERO)).signum() > 0) {
+                    anyGain = true;
+                    break;
                 }
             }
-            if (!changed) {
-                converged = true;
-                break;
-            }
         }
-        if (!converged) return null; // net-draining ring: honest fallback
+        if (!anyGain) { System.out.println("[RS-DBG] no member gain"); return null; } // members merely circulate: nothing to amplify
+
+        // ---- pass 2, material minimal: the same fixed point WITH stock in
+        // the cover, again solved from below — the least fixed point is the
+        // material-minimal plan. Stock spares the ring rounds, and a
+        // stock-covered member draw is a bounded stock spend validated by the
+        // closure check below.
+        Map<ICraftingPatternDetails, BigInteger> y = jacobian(views, scc, producerOut, viewOfKey,
+                startStockOf, true, driverPattern, driverMin, rootKey, rootDeliver, rootIsMember, ext);
+        if (y == null) { System.out.println("[RS-DBG] pass2 diverged"); return null; } // did not converge: honest fallback
 
         // ---- stock-covered root: a from-below solve that stayed at zero
         // means the network stock covers every demand — the ring has nothing
@@ -306,8 +323,8 @@ final class RingSolver {
         // strips the propagation's unbacked counts (replaying them would
         // schedule crafts with no demand behind them).
         boolean allZero = true;
-        for (IAEItemStack k : scc) {
-            if (x.get(k).signum() > 0) { allZero = false; break; }
+        for (var pe : views.entrySet()) {
+            if (y.get(pe.getKey()).signum() > 0) { allZero = false; break; }
         }
         if (allZero) {
             RingPlan idle = new RingPlan();
@@ -323,12 +340,11 @@ final class RingSolver {
         // propagation plan in force (fail-safe, never adopt a broken solve).
         {
             Map<IAEItemStack, BigInteger> needed = new HashMap<>();
-            for (IAEItemStack m : scc) {
-                RecipeView v = recipeOf.apply(m);
-                BigInteger xf = x.get(m);
-                if (xf.signum() <= 0) continue;
-                for (var e : v.inputs().entrySet()) {
-                    needed.merge(e.getKey(), xf.multiply(e.getValue()), BigInteger::add);
+            for (var pe : views.entrySet()) {
+                BigInteger yp = y.get(pe.getKey());
+                if (yp.signum() <= 0) continue;
+                for (var e : pe.getValue().inputs().entrySet()) {
+                    needed.merge(e.getKey(), yp.multiply(e.getValue()), BigInteger::add);
                 }
             }
             if (rootKey != null && rootDeliver.signum() > 0 && rootIsMember) {
@@ -338,52 +354,32 @@ final class RingSolver {
                 needed.merge(e.getKey(), e.getValue(), BigInteger::add);
             }
             for (IAEItemStack k : scc) {
-                BigInteger outPer = recipeOf.apply(k).outputs().getOrDefault(k, BigInteger.ZERO);
-                if (outPer.signum() <= 0) return null; // cannot scale itself
-                BigInteger cov = nonNeg(startStockOf.apply(k)).add(x.get(k).multiply(outPer));
+                BigInteger cov = nonNeg(startStockOf.apply(k))
+                        .add(y.get(viewOfKey.get(k).pattern()).multiply(producerOut.get(k)));
                 if (needed.getOrDefault(k, BigInteger.ZERO).compareTo(cov) > 0) {
+                    System.out.println("[RS-DBG] closure broken at member");
                     return null; // closure broken: adopt nothing
                 }
             }
-        }
-
-        // ---- gain gate: only net-amplifying rings are ours. A DRAIN on a ring
-        // MEMBER (a key whose own producer sits in this SCC) marks a
-        // conversion/lossy ring — the conversion-ring guard and the
-        // working-capital simulation own those, and folding them into a gross
-        // bundle would break their conservation semantics — UNLESS the drain
-        // is covered by the member's external demand floor or its stock
-        // (working capital the plan may legitimately spend). At convergence
-        // the stock clause is implied by the material constraints; it stays
-        // as a defensive bound. A drain on an EXTERNAL key (no producer in
-        // the SCC — e.g. the fuel C of {@code B+C -> D}) is ordinary
-        // ingredient demand: the net bundle extracts it and the aggregation
-        // reports any shortfall honestly.
-        if (!isNetAmplifying(scc, x, recipeOf, startStockOf, ext)) {
-            return null; // member drain beyond external demand and stock, or value-conserving
         }
 
         // ---- gross-flow bundle. Emitted/used are keyed by ALL recipe
         // inputs/outputs (byproducts land in emitted, external materials in
         // used) so the plan reports and extracts the full material flow.
         RingPlan plan = new RingPlan();
-        for (IAEItemStack k : scc) {
-            RecipeView v = recipeOf.apply(k);
-            plan.patterns.put(v.pattern(), x.get(k));
-        }
-        for (IAEItemStack m : scc) {
-            RecipeView v = recipeOf.apply(m);
-            BigInteger xf = x.get(m);
-            if (xf.signum() <= 0) continue;
-            for (var e : v.outputs().entrySet()) {
-                plan.emitted.merge(e.getKey(), xf.multiply(e.getValue()), BigInteger::add);
+        for (var pe : views.entrySet()) {
+            BigInteger yp = y.get(pe.getKey());
+            if (yp.signum() <= 0) continue;
+            plan.patterns.put(pe.getKey(), yp);
+            for (var e : pe.getValue().outputs().entrySet()) {
+                plan.emitted.merge(e.getKey(), yp.multiply(e.getValue()), BigInteger::add);
             }
-            for (var e : v.inputs().entrySet()) {
-                plan.used.merge(e.getKey(), xf.multiply(e.getValue()), BigInteger::add);
+            for (var e : pe.getValue().inputs().entrySet()) {
+                plan.used.merge(e.getKey(), yp.multiply(e.getValue()), BigInteger::add);
             }
         }
         plan.ringKeys.addAll(scc);
-        if (driverMember != null) {
+        if (driverPattern != null) {
             // driven byproduct root: the net bundle owns its crafting too (the
             // captured root bundle is the producer pattern and would double-fire
             // on replay); the request is delivered from the bundle's emitted
@@ -393,8 +389,8 @@ final class RingSolver {
         // ---- startup seed: the network must hold the first round's inputs
         // before the ring's first output lands — timing capital, not net
         // consumption; the ring pays it back within the first round. Each
-        // member is probed as the forced START of the round; after it, the
-        // probe fires the first READY member (all member inputs already on
+        // pattern is probed as the forced START of the round; after it, the
+        // probe fires the first READY pattern (all member inputs already on
         // the probe's ledger) and only forces when nothing is ready — a
         // continuation that can never record more deficits than a fixed
         // order. The smallest seed across starts wins. External (non-member)
@@ -402,12 +398,12 @@ final class RingSolver {
         // bundle's extraction against network stock — a seed entry would
         // double-report.
         Map<IAEItemStack, BigInteger> best = null;
-        List<IAEItemStack> orderBase = new ArrayList<>(scc);
-        for (IAEItemStack start : orderBase) {
-            List<IAEItemStack> order = new ArrayList<>(orderBase.size());
+        List<RecipeView> orderBase = new ArrayList<>(views.values());
+        for (RecipeView start : orderBase) {
+            List<RecipeView> order = new ArrayList<>(orderBase.size());
             order.add(start);
-            for (IAEItemStack k : orderBase) {
-                if (!k.isSameType(start)) order.add(k);
+            for (RecipeView v : orderBase) {
+                if (v != start) order.add(v);
             }
             Map<IAEItemStack, BigInteger> available = new HashMap<>();
             for (IAEItemStack k : scc) {
@@ -419,14 +415,14 @@ final class RingSolver {
             for (int done = 0; done < order.size(); done++) {
                 int pick = -1;
                 for (int i = 0; i < order.size() && pick < 0; i++) {
-                    if (!fired[i] && isReady(recipeOf.apply(order.get(i)), available, scc)) pick = i;
+                    if (!fired[i] && isReady(order.get(i), available, scc)) pick = i;
                 }
                 if (pick < 0) {
                     for (int i = 0; i < order.size(); i++) {
                         if (!fired[i]) { pick = i; break; }
                     }
                 }
-                RecipeView v = recipeOf.apply(order.get(pick));
+                RecipeView v = order.get(pick);
                 fired[pick] = true;
                 for (var e : v.inputs().entrySet()) {
                     if (!isRingMember(scc, e.getKey())) continue; // used-extraction's domain
@@ -456,20 +452,68 @@ final class RingSolver {
     }
 
     /**
-     * True when every ring-member input of the pattern is already covered by
-     * the probe's ledger. The ledger never decreases (the seed model records
-     * only each key's deepest unfunded need), so a funded or once-produced
-     * key stays ready.
+     * One from-below Jacobian pass over the pattern counts; returns the solved
+     * counts, or null when the iteration diverged. With {@code useStock} the
+     * cover includes the start stock (the material solve); without it the
+     * cycle must close on its own production (the structural solvability
+     * pass — a net-losing cycle diverges here regardless of stock).
      */
-    private static boolean isReady(RecipeView v, Map<IAEItemStack, BigInteger> available,
-                                   Set<IAEItemStack> scc) {
-        for (var e : v.inputs().entrySet()) {
-            if (!isRingMember(scc, e.getKey())) continue;
-            if (e.getValue().compareTo(available.getOrDefault(e.getKey(), BigInteger.ZERO)) > 0) {
-                return false;
+    private static Map<ICraftingPatternDetails, BigInteger> jacobian(
+            LinkedHashMap<ICraftingPatternDetails, RecipeView> views,
+            Set<IAEItemStack> scc,
+            Map<IAEItemStack, BigInteger> producerOut,
+            Map<IAEItemStack, RecipeView> viewOfKey,
+            Function<IAEItemStack, BigInteger> startStockOf,
+            boolean useStock,
+            ICraftingPatternDetails driverPattern, BigInteger driverMin,
+            IAEItemStack rootKey, BigInteger rootDeliver, boolean rootIsMember,
+            Map<IAEItemStack, BigInteger> ext) {
+        Map<ICraftingPatternDetails, BigInteger> y = new HashMap<>();
+        for (var pe : views.entrySet()) {
+            y.put(pe.getKey(), BigInteger.ZERO);
+        }
+        for (int iter = 0; iter < MAX_ITERATIONS; iter++) {
+            // enforce the external-root driver minimum before deriving needs
+            if (driverPattern != null) {
+                BigInteger cur = y.get(driverPattern);
+                if (cur.compareTo(driverMin) < 0) y.put(driverPattern, driverMin);
+            }
+            // needed[k] = Σ pattern crafts × per-craft input + root delivery
+            //             + external demand floor
+            Map<IAEItemStack, BigInteger> needed = new HashMap<>();
+            for (var pe : views.entrySet()) {
+                BigInteger yp = y.get(pe.getKey());
+                if (yp.signum() <= 0) continue;
+                for (var e : pe.getValue().inputs().entrySet()) {
+                    needed.merge(e.getKey(), yp.multiply(e.getValue()), BigInteger::add);
+                }
+            }
+            if (rootKey != null && rootDeliver.signum() > 0 && rootIsMember) {
+                needed.merge(rootKey, rootDeliver, BigInteger::add);
+            }
+            for (var e : ext.entrySet()) {
+                needed.merge(e.getKey(), e.getValue(), BigInteger::add);
+            }
+            boolean changed = false;
+            for (IAEItemStack k : scc) {
+                BigInteger outPer = producerOut.get(k);
+                BigInteger dem = needed.getOrDefault(k, BigInteger.ZERO);
+                ICraftingPatternDetails producer = viewOfKey.get(k).pattern();
+                BigInteger cov = y.get(producer).multiply(outPer);
+                if (useStock) cov = cov.add(nonNeg(startStockOf.apply(k)));
+                if (dem.compareTo(cov) > 0) {
+                    BigInteger bump = dem.subtract(cov).add(outPer).subtract(BigInteger.ONE).divide(outPer);
+                    BigInteger nx = y.get(producer).add(bump);
+                    if (nx.compareTo(CRAFT_CAP) > 0) return null; // diverged
+                    y.put(producer, nx);
+                    changed = true;
+                }
+            }
+            if (!changed) {
+                return y;
             }
         }
-        return true;
+        return null; // did not converge
     }
 
     private static BigInteger nonNeg(BigInteger v) {
@@ -485,47 +529,20 @@ final class RingSolver {
     }
 
     /**
-     * Net-amplifying gate on the solved counts: no ring MEMBER may drain
-     * beyond its external demand floor plus its stock (a conversion/lossy
-     * ring signals exactly that), and some key must net a gain — a
-     * value-conserving ring has nothing to amplify. Drains on external keys
-     * are ordinary fuel.
+     * True when every ring-member input of the pattern is already covered by
+     * the probe's ledger. The ledger never decreases (the seed model records
+     * only each key's deepest unfunded need), so a funded or once-produced
+     * key stays ready.
      */
-    private static boolean isNetAmplifying(Set<IAEItemStack> scc,
-                                           Map<IAEItemStack, BigInteger> x,
-                                           Function<IAEItemStack, RecipeView> recipeOf,
-                                           Function<IAEItemStack, BigInteger> startStockOf,
-                                           Map<IAEItemStack, BigInteger> ext) {
-        Map<IAEItemStack, BigInteger> produced = new HashMap<>();
-        Map<IAEItemStack, BigInteger> consumed = new HashMap<>();
-        for (IAEItemStack m : scc) {
-            RecipeView v = recipeOf.apply(m);
-            BigInteger xf = x.get(m);
-            if (xf.signum() <= 0) continue;
-            for (var e : v.inputs().entrySet()) {
-                consumed.merge(e.getKey(), xf.multiply(e.getValue()), BigInteger::add);
-            }
-            for (var e : v.outputs().entrySet()) {
-                produced.merge(e.getKey(), xf.multiply(e.getValue()), BigInteger::add);
+    private static boolean isReady(RecipeView v, Map<IAEItemStack, BigInteger> available,
+                                   Set<IAEItemStack> scc) {
+        for (var e : v.inputs().entrySet()) {
+            if (!isRingMember(scc, e.getKey())) continue;
+            if (e.getValue().compareTo(available.getOrDefault(e.getKey(), BigInteger.ZERO)) > 0) {
+                return false;
             }
         }
-        java.util.Set<IAEItemStack> keys = new HashSet<>();
-        keys.addAll(produced.keySet());
-        keys.addAll(consumed.keySet());
-        boolean anyGain = false;
-        for (IAEItemStack k : keys) {
-            BigInteger net = produced.getOrDefault(k, BigInteger.ZERO)
-                    .subtract(consumed.getOrDefault(k, BigInteger.ZERO));
-            if (net.signum() < 0) {
-                if (!isRingMember(scc, k)) continue; // external fuel: honest demand
-                BigInteger allowance = ext.getOrDefault(k, BigInteger.ZERO)
-                        .add(nonNeg(startStockOf.apply(k)));
-                if (net.add(allowance).signum() < 0) return false; // true member drain
-                continue; // drain serves outside consumers or spends stock: allowed
-            }
-            if (net.signum() > 0) anyGain = true;
-        }
-        return anyGain;
+        return true;
     }
 
     /** Tarjan SCC (iterative) over {@code deps}; returns SCCs of size ≥ 2. */

@@ -50,6 +50,50 @@ public final class PatternCompiler {
     private static final Map<ICraftingPatternDetails, CraftingBytecode> COMPILED_PATTERNS =
             new ConcurrentHashMap<>();
 
+    /**
+     * T4 byproduct fallback index: output key → the patterns producing it in
+     * ANY output slot (phase 7d). A key with no PRIMARY producer resolves
+     * through here while exactly one known pattern produces it — a byproduct
+     * intermediate of a ring. Two or more producers is the multi-pattern
+     * choice domain: the entry resolves to nothing (the key keeps its legacy
+     * leaf/missing semantics). Maintained additively by
+     * {@link #indexAnyOutput} and rebuilt wholesale from the live pattern set
+     * by the grid recalculation hook (removed patterns must stop resolving).
+     */
+    private static final Map<IAEItemStack, Set<ICraftingPatternDetails>> ANY_OUTPUT_PRODUCERS =
+            new ConcurrentHashMap<>();
+
+    /** Index every output slot of the pattern (idempotent, additive). */
+    private static void indexAnyOutput(ICraftingPatternDetails pattern) {
+        IAEItemStack[] outs = pattern.getOutputs();
+        if (outs == null) return;
+        for (IAEItemStack out : outs) {
+            if (out == null || out.getStackSize() <= 0) continue;
+            ANY_OUTPUT_PRODUCERS.computeIfAbsent(normalize(out),
+                    k -> ConcurrentHashMap.newKeySet()).add(pattern);
+        }
+    }
+
+    /** Wholesale rebuild from the LIVE pattern set (grid recalculation hook). */
+    public static void rebuildAnyOutputIndex(Iterable<ICraftingPatternDetails> current) {
+        ANY_OUTPUT_PRODUCERS.clear();
+        for (ICraftingPatternDetails pattern : current) {
+            if (pattern != null) indexAnyOutput(pattern);
+        }
+    }
+
+    /**
+     * The unique pattern producing {@code key} in any output slot, or null
+     * when no / more than one producer is known (ambiguous keys keep their
+     * legacy resolution).
+     */
+    public static ICraftingPatternDetails resolveAnyOutputProducer(IAEItemStack key) {
+        if (key == null) return null;
+        Set<ICraftingPatternDetails> producers = ANY_OUTPUT_PRODUCERS.get(normalize(key));
+        if (producers == null || producers.size() != 1) return null;
+        return producers.iterator().next();
+    }
+
     /** Replacement (substitute) groups: every variant maps to the full accepted set. */
     private static final Map<IAEItemStack, Set<IAEItemStack>> FUZZY_GROUPS = new ConcurrentHashMap<>();
 
@@ -142,6 +186,9 @@ public final class PatternCompiler {
         pattern = unwrapScaled(pattern);
         if (pattern != null && !COMPILED_PATTERNS.containsKey(pattern)) {
             COMPILED_PATTERNS.computeIfAbsent(pattern, PatternCompiler::compilePattern);
+        }
+        if (pattern != null) {
+            indexAnyOutput(pattern); // T4 byproduct fallback index (idempotent)
         }
     }
 
@@ -513,6 +560,7 @@ public final class PatternCompiler {
 
     public static void clearCache() {
         COMPILED_PATTERNS.clear();
+        ANY_OUTPUT_PRODUCERS.clear();
         clearFuzzyGroups();
     }
 
