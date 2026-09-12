@@ -1,0 +1,13 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions & usage help / 问题与使用帮助
+    url: https://github.com/shinyashen/AE2-VM-1.12/wiki
+    about: |
+      The bilingual wiki covers installation, features and architecture —
+      please check it before filing an issue. /
+      双语 wiki 涵盖安装、功能与架构说明——提交 issue 前请先查阅。
+  - name: Upstream AE2-VM (NeoForge 1.21.1) / 上游 AE2-VM
+    url: https://github.com/TaoLe-si/AE2-VM
+    about: |
+      Issues with the original mod on modern versions belong upstream. /
+      上游原版(新版本平台)的问题请到上游仓库反馈。

@@ -1,0 +1,79 @@
+name: 🐛 Bug report / 缺陷报告
+description: Something doesn't work as expected / 功能不符合预期
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **English** — Please fill in the form below; write in whichever language you prefer.
+        **中文** — 请填写下表,使用你习惯的语言即可。
+  - type: textarea
+    id: description
+    attributes:
+      label: Description / 问题描述
+      description: What happened, and what did you expect? / 实际发生了什么,预期是什么?
+      placeholder: |
+        A clear description of the problem. / 请清晰描述问题。
+        遇到了什么问题?期望的行为是什么?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce / 复现步骤
+      description: |
+        The crafting request and the pattern setup that triggers it. /
+        触发问题的合成请求与样板配置。
+      placeholder: |
+        1. Patterns: ... (e.g. 4A -> B, B -> 12A) / 样板:...(如 4A→B、B→12A)
+        2. Network stock: ... / 网络库存:...
+        3. Request: ... (e.g. craft 10000 A) / 下单:...(如合成 10000 个 A)
+        4. What happens: ... / 结果:...
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / 日志
+      description: |
+        Upload `latest.log` (or the crash report) to mclo.gs and paste the
+        link — the VM logs plan details ([AE2-VM DIAG-MISS], calc time) that
+        are essential for diagnosis. /
+        请将 `latest.log`(或崩溃报告)上传到 mclo.gs 并贴出链接——VM 会输出
+        计划细节([AE2-VM DIAG-MISS]、calc time),对定位问题至关重要。
+      placeholder: https://mclo.gs/...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: AE2 VM 1.12 version / AE2 VM 1.12 版本
+      placeholder: e.g. 1.1.0 / 例如 1.1.0
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment / 运行环境
+      description: Loader and versions / 加载器与相关版本
+      placeholder: e.g. Cleanroom 0.4 + AE2UEL v0.56.7, or Forge 14.23.5.2860 + MixinBooter 9.3 / 例如 Cleanroom 0.4 + AE2UEL v0.56.7,或 Forge 14.23.5.2860 + MixinBooter 9.3
+    validations:
+      required: true
+  - type: dropdown
+    id: loader
+    attributes:
+      label: Mod loader / 模组加载器
+      options:
+        - Cleanroom
+        - Forge + MixinBooter
+        - Other / 其他
+    validations:
+      required: true
+  - type: textarea
+    id: extra
+    attributes:
+      label: Additional context / 补充信息
+      description: Screenshots, modpack, related mods / 截图、整合包、相关 mod
+    validations:
+      required: false
