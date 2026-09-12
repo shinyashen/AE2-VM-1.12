@@ -82,6 +82,28 @@ public final class BenchSimulationState implements SimulationState {
         }
     }
 
+    /**
+     * Revert of a captured claim: returning previously-extracted seeded stock
+     * RESTORES the extraction budget (the stock went back to the network) —
+     * the produced-items bucket would double-supply it. Any remainder beyond
+     * the ledger falls back to the produced bucket.
+     */
+    @Override
+    public void restock(IAEItemStack key, long amount) {
+        if (amount <= 0) return;
+        BenchAEItemStack k = (BenchAEItemStack) key;
+        BenchAEItemStack probe = new BenchAEItemStack(k.id, k.damage, k.maxDamage, 1);
+        long already = extracted.getOrDefault(probe, 0L);
+        if (already > 0) {
+            long back = Math.min(already, amount);
+            extracted.put(probe, already - back);
+            amount -= back;
+        }
+        if (amount > 0) {
+            inserted.merge((BenchAEItemStack) key, amount, Long::sum);
+        }
+    }
+
     /** Same-id any-damage variants present in stock (processing default fuzzy). */
     @Override
     public List<IAEItemStack> findFuzzyFamily(IAEItemStack key) {
