@@ -194,6 +194,10 @@ jobs:
           if status != 200:
               print(f"versions fetch HTTP {status}: {versions}")
               sys.exit("cannot resolve the 1.12.2 game version id")
+          ids = [v["id"] for v in versions if v.get("name") == "1.12.2"]
+          if not ids:
+              sys.exit(f"1.12.2 not in the version list (raw={str(versions)[:200]})")
+          print(f"1.12.2 game version id = {ids[0]}")
 
           status, result = cf_upload(f"/projects/{project}/upload-file",
               data={"displayName": display_name, "releaseType": "release",
