@@ -7,7 +7,7 @@ English | [简体中文](README_zh-CN.md)
 ![Minecraft](https://img.shields.io/badge/Minecraft-1.12.2-blue)
 ![License](https://img.shields.io/github/license/shinyashen/AE2-VM-1.12)
 
-**AE2 VM 1.12** replaces Applied Energistics 2's recursive crafting-tree traversal with a **pre-compiled pattern bytecode + stack-based virtual machine + JIT bundle cache**. It is a **fork** of Tao's [AE2-VM](https://github.com/TaoLe-si/AE2-VM) (NeoForge 1.21.1), ported to **Minecraft 1.12.2 / Cleanroom / AE2 Unofficial Extended Life v0.56.x**.
+**AE2 VM 1.12** replaces Applied Energistics 2's recursive crafting-tree traversal with a **pre-compiled pattern bytecode + stack-based virtual machine + JIT bundle cache**. It is an **unofficial fork** of Tao's [AE2-VM](https://github.com/TaoLe-si/AE2-VM) (NeoForge 1.21.1), ported to **Minecraft 1.12.2 / Cleanroom / AE2 Unofficial Extended Life v0.56.x** — not affiliated with or endorsed by the upstream author.
 
 Crafting requests that stall the vanilla planner for minutes — deeply nested, exponentially recursive patterns — are planned in **milliseconds** (upstream benchmark: ~90 s → ~38 ms, ~2,400×), and stack overflows are impossible by construction.
 
