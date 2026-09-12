@@ -206,13 +206,12 @@ jobs:
           env = [v["id"] for v in versions if v.get("name") in ("Client", "Server")]
           if not (forge and java8 and env):
               sys.exit(f"group lookup failed (forge={forge}, java8={java8}, env={env})")
-          # Per the official Upload API docs there is a dedicated
-          # gameVersionNames metadata field whose documented example is exactly
-          # ["Client", "Server", ...] — that is the DOCUMENTED way to declare
-          # both-sides support (gameVersions carries the numeric ids: game +
-          # loader + java). Primary attempt: ids + explicit both-sides names;
-          # degraded fallback: a single environment id, so a release never
-          # blocks on this. Fully automatic either way.
+          # Both-sides support goes through the DOCUMENTED gameVersionNames
+          # metadata field (official example: ["Client", "Server", ...]) —
+          # verified live: update-file accepted exactly this form with HTTP 200.
+          # gameVersions carries the numeric ids (game + loader + java). The
+          # single-row fallback exists only so a release never blocks if the
+          # server rejects the names form someday. Fully automatic either way.
           attempts = [
               {"changelog": changelog, "changelogType": "markdown",
                "displayName": display_name,
