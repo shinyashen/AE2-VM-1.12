@@ -1119,12 +1119,51 @@ public class CraftingVM {
             }
         }
         for (Bundle net : ringNetBundles) {
+            // E-case: an out-of-ring ingredient that has its own pattern gets
+            // its extraction DEFICIT scheduled instead of being reported as a
+            // raw-ingredient shortfall the network can never fill — the gap
+            // flows down the DAG (the ingredient's own inputs become the
+            // missing items). Simulate before the net extraction so the
+            // deficit is measured against untouched stock; applyOrdered's
+            // replay below then picks the injected totals up.
+            List<IAEItemStack> rescheduled = null;
+            for (var e : net.used.entrySet()) {
+                long demand = toLongSafe(e.getValue(), "ring-use");
+                ICraftingPatternDetails p = demand > 0 && patternResolver != null
+                        ? patternResolver.apply(e.getKey()) : null;
+                // Ring products are covered by the net bundle itself.
+                if (p == null || net.emitted.containsKey(e.getKey())) continue;
+                long avail = simulation.extract(e.getKey(), demand, true);
+                long deficit = demand - avail;
+                if (deficit <= 0) continue;
+                long perCraft = 1;
+                try {
+                    IAEItemStack[] outs = p.getOutputs();
+                    if (outs != null) {
+                        for (IAEItemStack out : outs) {
+                            if (out != null && out.isSameType(e.getKey()) && out.getStackSize() > 0) {
+                                perCraft = out.getStackSize();
+                                break;
+                            }
+                        }
+                    }
+                } catch (Throwable ignored) {
+                }
+                total.put(e.getKey(), BigInteger.valueOf((deficit + perCraft - 1) / perCraft));
+                if (rescheduled == null) rescheduled = new ArrayList<>();
+                rescheduled.add(e.getKey());
+            }
             applyBundleDirect(net, true);
             // report the ring's net production in the plan (applyBundleDirect's
             // insert is internal traffic — the net output is what the player sees)
             for (var e : net.emitted.entrySet()) {
                 long val = toLongSafe(e.getValue(), "ring-report");
                 if (val > 0) emittedItems.add(e.getKey(), val);
+            }
+            if (rescheduled != null) {
+                // the raw-ingredient shortfall is superseded by the injected
+                // schedule's own (deeper) disclosure
+                for (IAEItemStack k : rescheduled) missingItems.remove(k);
             }
         }
         ringReleasedStock.clear();
