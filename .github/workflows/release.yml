@@ -205,12 +205,11 @@ jobs:
           java8 = [v["id"] for v in versions if v.get("name") == "Java 8"]
           if not forge or not java8:
               sys.exit(f"Forge/Java 8 not found (forge={forge}, java8={java8})")
-          # environment-group candidates: dump every non-game, non-loader entry
-          # so the right one can be picked from the run log
-          envish = [(v["id"], v.get("name"), v.get("typeName") or v.get("type"))
-                    for v in versions
-                    if (v.get("typeName") or v.get("type") or "") not in ("game",) ]
-          print("non-game entries:", envish[:60])
+          # diagnostic: save the full version list for offline inspection
+          open("build/cf-versions.json", "w").write(json.dumps(versions)[:200000])
+          javaish = [(v["id"], v.get("name")) for v in versions
+                     if "java" in str(v.get("name", "")).lower() or v.get("name") in ("8", "11", "17", "21")]
+          print("java-ish entries:", javaish)
           ids = ids + forge[:1] + java8[:1]
           print(f"1.12.2={ids[0]}, Forge={forge[0]}, Java 8={java8[0]}")
 
@@ -230,6 +229,14 @@ jobs:
           if status not in (200, 201):
               print("::warning::CurseForge upload failed"); sys.exit(1)
           PY
+
+      - name: Upload diagnostics (cf-versions.json; temporary)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cf-versions
+          path: build/cf-versions.json
+          if-no-files-found: ignore
 
       - name: Verify CurseForge token reachability (legacy probe; superseded by the upload step)
         continue-on-error: true
