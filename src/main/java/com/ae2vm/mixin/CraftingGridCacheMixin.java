@@ -79,6 +79,9 @@ public abstract class CraftingGridCacheMixin {
                 compiled++;
             }
         }
+        // T4 byproduct fallback index: rebuilt from the LIVE set so a removed
+        // pattern stops resolving for its byproduct keys immediately.
+        PatternCompiler.rebuildAnyOutputIndex(this.craftingMethods.keySet());
         if (compiled > 0) {
             AE2VM.LOGGER.debug("[AE2-VM] pre-compiled {} new pattern(s), {} cached",
                     compiled, PatternCompiler.getCompiledCount());

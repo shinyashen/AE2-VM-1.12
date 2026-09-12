@@ -16,6 +16,7 @@ Crafting requests that stall the vanilla planner for minutes — deeply nested, 
 - **O(patterns + edges) demand propagation** over the pattern graph instead of node-by-node expansion; JIT bundles capture each pattern once and replay it scaled in O(1)
 - **BigInteger stack** — 10^9-scale chains, amount-1 boundaries, no overflow, no recursion
 - **Stock-aware planning** — inventory is consumed first, shortfalls crafted; catalyst feedback loops, durability tools and conversion rings get exact semantics
+- **Amplifying crafting rings** — circular recipes that net-grow per round (a self-feeding loop whose outputs outweigh its inputs) are detected, solved to the material-minimal counts and folded into one bundle; byproduct intermediates, external inputs, byproduct-rooted orders and coupled ring chains are all covered, and startup working capital is reported exactly
 - **Guards everywhere** — dead-cycle pre-pruning, composite-key JIT cache against stale patterns, plan memoization re-verified against live stock, and a solver confirmation gate that can never make a plan worse
 - **Multi-pattern assignment solver** — when one output has several patterns, mixed splits (5 crafts = 4×A + 1×B) are solved algebraically and encoded as a virtual pattern; this closed upstream's only remaining false-positive (carried since v1.9.6)
 - **Compatibility** — AE2FC fluid patterns, AE2CT display trees, third-party scaled-pattern wrappers, with automatic fallback to the vanilla tree if the VM can't handle a request
@@ -51,13 +52,13 @@ The [wiki](https://github.com/shinyashen/AE2-VM-1.12/wiki/Home-en) carries the f
 | [Architecture](https://github.com/shinyashen/AE2-VM-1.12/wiki/Architecture-en) | Root-node replacement, bytecode, JIT cache, guard system |
 | [Multi-pattern solver](https://github.com/shinyashen/AE2-VM-1.12/wiki/MultiPatternSolver-en) | Enumeration + local search + virtual patterns |
 | [Performance](https://github.com/shinyashen/AE2-VM-1.12/wiki/Performance-en) | Methodology, optimization history, per-release benchmarks |
-| [Testing](https://github.com/shinyashen/AE2-VM-1.12/wiki/Testing-en) | 193 tests and the differential-testing methodology |
+| [Testing](https://github.com/shinyashen/AE2-VM-1.12/wiki/Testing-en) | 209 tests and the differential-testing methodology |
 | [Differences & roadmap](https://github.com/shinyashen/AE2-VM-1.12/wiki/Differences-and-Roadmap-en) | Deliberate deviations from upstream, gap status |
 
 ## Building
 
 ```bash
-./gradlew build      # compiles and runs the full test suite (193 tests); artifacts in build/libs/
+./gradlew build      # compiles and runs the full test suite (209 tests); artifacts in build/libs/
 ```
 
 Requires a JDK 25 build JVM (RetroFuturaGradle 2.x requirement; the JDK 17 compile toolchain is provisioned automatically). Runtime is Cleanroom (JDK 21+) or Forge (Java 8 + MixinBooter). Dependencies resolve through CurseMaven (AE2UEL, AE2FC-Rework, AE2CT, Baubles).

@@ -73,7 +73,7 @@ class PlanReuseGuardTest {
     }
 
     // ------------------------------------------------------------------
-    // Pattern-set version gating (GAP-3 acceptance)
+    // Pattern-set version gating
     // ------------------------------------------------------------------
 
     @Test

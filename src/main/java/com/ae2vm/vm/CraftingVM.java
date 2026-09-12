@@ -81,8 +81,12 @@ public class CraftingVM {
 
     private final Set<IAEItemStack> resolvingKeys = new HashSet<>();
     private final Set<IAEItemStack> circularCache = new HashSet<>();
-    /** GAP-4 phase 2: net-effect bundles produced by the ring solver, applied post-order. */
+    /** Net-effect bundles produced by the ring solver, applied post-order. */
     private final List<Bundle> ringNetBundles = new ArrayList<>();
+    /** Stock reservations released when a ring fold supersedes the scheduled
+     * plans of its keys — re-inserted into the sandbox so the net bundle's
+     * extraction can draw them (the ring fold's working-stock draws). */
+    private final Map<IAEItemStack, BigInteger> ringReleasedStock = new HashMap<>();
     private final Set<IAEItemStack> cyclicCraftKeys = new HashSet<>();
     private final Set<IAEItemStack> jitFailCache = new HashSet<>();
     /** Pattern-set version this VM's caches were built against (see invalidateCaches). */
@@ -92,6 +96,9 @@ public class CraftingVM {
     /** Lazily snapshotted live network stock (an IItemList supports findFuzzy). */
     private IItemList<IAEItemStack> realStockCache;
     private VMCounter executeStartStock;
+    /** Sandbox deductions made under the claim flag (delta-accounted; restocked
+     *  on revert — capture accounting symmetry). */
+    private VMCounter claimedItems;
     private BigInteger requestAmount;
     /** The request's root pattern (patternPool[0]): a byproduct-rooted request's
      * output key has no primary-pattern resolver entry, but this pattern produces it. */
@@ -233,6 +240,11 @@ public class CraftingVM {
         final Map<IAEItemStack, BigInteger> fuzzyItemNeeds = new ConcurrentHashMap<>();
         // One-time catalyst seeds (NOT scaled by craft count).
         final Map<IAEItemStack, BigInteger> seeds = new ConcurrentHashMap<>();
+        /** Sandbox deductions made under the claim flag during capture —
+         *  restored by revertBundle via restock so a reverted capture never
+         *  permanently spends its inputs (capture accounting symmetry).
+         *  Replay ignores this map: claims are capture-time bookkeeping. */
+        final Map<IAEItemStack, BigInteger> claimed = new ConcurrentHashMap<>();
         // Finite-use tool rates (key → [amount, uses]) — NOT scaled.
         final Map<IAEItemStack, long[]> durability = new ConcurrentHashMap<>();
         // The pattern each direct sub-call was resolved to at capture time.
@@ -256,6 +268,7 @@ public class CraftingVM {
             used.forEach((k, v) -> b.used.put(k, v.multiply(factor)));
             emitted.forEach((k, v) -> b.emitted.put(k, v.multiply(factor)));
             missing.forEach((k, v) -> b.missing.put(k, v.multiply(factor)));
+            claimed.forEach((k, v) -> b.claimed.put(k, v.multiply(factor)));
             b.missingSubKeys.addAll(missingSubKeys);
             internal.forEach((k, v) -> b.internal.put(k, v.multiply(factor)));
             patterns.forEach((k, v) -> b.patterns.put(k, v.multiply(factor)));
@@ -373,6 +386,7 @@ public class CraftingVM {
         this.callStack = new ArrayDeque<>(MAX_CALL_DEPTH);
         resolvingKeys.clear();
         this.usedItems = new VMCounter();
+        this.claimedItems = new VMCounter();
         this.missingItems = new VMCounter();
         this.emittedItems = new VMCounter();
         this.simInternal = new VMCounter();
@@ -393,6 +407,7 @@ public class CraftingVM {
         cyclicCraftKeys.clear();
         jitFailCache.clear();
         ringNetBundles.clear();
+        ringReleasedStock.clear();
         ICraftingPatternDetails[] pool = requestBytecode.getPatternPool();
         this.rootPattern = pool != null && pool.length > 0 ? pool[0] : null;
         this.executeStartStock = snapshotExecuteStartStock();
@@ -437,6 +452,12 @@ public class CraftingVM {
                     if (needed <= 0) { pushL(0); break; }
                     simulation.addBytes(needed); nodeCount++;
                     long got = simulation.extract(key, needed, false);
+                    if (got > 0 && extractIsClaim) {
+                        // claim deductions must be delta-visible: the enclosing
+                        // revert restocks them, or reverted captures permanently
+                        // spend their inputs (accounting leak)
+                        claimedItems.add(key, got);
+                    }
                     if (got > 0) {
                         long internal = simInternal.get(key);
                         long fromInternal = Math.min(got, internal);
@@ -503,7 +524,7 @@ public class CraftingVM {
                     CraftingBytecode sbc = PatternCompiler.getCompiled(pat);
                     if (sbc == null) { PatternCompiler.compileIfAbsent(pat); sbc = PatternCompiler.getCompiled(pat); }
                     if (sbc == null || callStack.size() >= MAX_CALL_DEPTH) break;
-                    // Pattern-set gating (GAP-3): CALL slots bind the pattern
+                    // Pattern-set gating: CALL slots bind the pattern
                     // directly, bypassing the resolver — a pattern REMOVED from
                     // the network since this bytecode was compiled would keep
                     // running on the stale slot reference. If the resolver no
@@ -829,6 +850,15 @@ public class CraftingVM {
     }
 
     private void applyBundleDirect(Bundle b) {
+        applyBundleDirect(b, false);
+    }
+
+    /**
+     * With {@code skipEmissions} the bundle's emitted is assumed already in
+     * the sandbox (the two-phase net application inserts ALL rings' emissions
+     * before any extraction, so cross-ring supply is order-safe).
+     */
+    private void applyBundleDirect(Bundle b, boolean skipEmissions) {
         simulation.addBytes(toBytesDouble(b.bytes));
         // Catalyst seeds are STARTUP capital: extract them BEFORE this bundle's own
         // outputs flood the sandbox, so a self-returned catalyst (A + B -> A + C)
@@ -865,10 +895,12 @@ public class CraftingVM {
             long shortfall = val - got;
             if (shortfall > 0) missingItems.add(e.getKey(), shortfall);
         }
-        for (var e : b.emitted.entrySet()) {
-            long val = toLongSafe(e.getValue(), "emit");
-            simulation.insert(e.getKey(), val);
-            simInternal.add(e.getKey(), val);
+        if (!skipEmissions) {
+            for (var e : b.emitted.entrySet()) {
+                long val = toLongSafe(e.getValue(), "emit");
+                simulation.insert(e.getKey(), val);
+                simInternal.add(e.getKey(), val);
+            }
         }
         for (var e : b.used.entrySet()) {
             long val = toLongSafe(e.getValue(), "used");
@@ -1061,9 +1093,25 @@ public class CraftingVM {
         if (selfAdjacentKeys != null && !selfAdjacentKeys.isEmpty()) {
             correctRecursion(total, initialStock);
         }
-        solveRings(total);
+        solveRings(total, itemDemand);
+        // the released stock reservations of stripped ring keys go back into
+        // the sandbox so the net bundles' extraction can draw them (the net
+        // draw is closure-bounded to exactly this stock)
+        for (var e : ringReleasedStock.entrySet()) {
+            simulation.insert(e.getKey(), e.getValue().longValue());
+        }
+        // two-phase application: ALL net emissions land before ANY
+        // net extraction, so a downstream ring's draw can be supplied by an
+        // upstream ring folded earlier in the consumers-first solve order
         for (Bundle net : ringNetBundles) {
-            applyBundleDirect(net);
+            for (var e : net.emitted.entrySet()) {
+                long val = toLongSafe(e.getValue(), "ring-emit");
+                simulation.insert(e.getKey(), val);
+                simInternal.add(e.getKey(), val);
+            }
+        }
+        for (Bundle net : ringNetBundles) {
+            applyBundleDirect(net, true);
             // report the ring's net production in the plan (applyBundleDirect's
             // insert is internal traffic — the net output is what the player sees)
             for (var e : net.emitted.entrySet()) {
@@ -1071,6 +1119,7 @@ public class CraftingVM {
                 if (val > 0) emittedItems.add(e.getKey(), val);
             }
         }
+        ringReleasedStock.clear();
         Set<IAEItemStack> applied = new HashSet<>();
         for (IAEItemStack k : total.keySet()) applyOrdered(k, applied, total);
         Map<IAEItemStack, Long> loopMissing = computeFeedbackLoopMissing(total, initialStock);
@@ -1255,7 +1304,7 @@ public class CraftingVM {
         if (p == null && rootPattern != null && key.isSameType(outputKey)) {
             // byproduct-rooted request: AE2 indexes patterns by every output, so
             // the root key has no primary-pattern resolver entry — the request's
-            // own pattern produces it (phase 2c)
+            // own pattern produces it (the byproduct-root request's own pattern)
             p = rootPattern;
         }
         if (p == null) return;
@@ -2024,9 +2073,16 @@ public class CraftingVM {
             missingItems.add(e.getKey(), -val);
             if (missingItems.get(e.getKey()) == 0) missingItems.remove(e.getKey());
         }
+        for (var e : b.claimed.entrySet()) {
+            long val = toLongSafe(e.getValue(), "claim-revert");
+            simulation.restock(e.getKey(), val);
+        }
         for (var e : b.used.entrySet()) {
             long val = toLongSafe(e.getValue(), "used-revert");
-            simulation.insert(e.getKey(), val);
+            // restock (not insert): a reverted claim returns previously
+            // extracted stock — implementations modelling network stock as a
+            // budget must restore the budget, not mint produced items
+            simulation.restock(e.getKey(), val);
             long internal = simInternal.get(e.getKey());
             long fromInternal = Math.min(val, internal);
             long fromNetwork = val - fromInternal;
@@ -2055,6 +2111,7 @@ public class CraftingVM {
         Bundle b = new Bundle();
         b.bytes = BigInteger.valueOf(simulation.getBytes());
         for (var e : usedItems.entrySet()) { if (e.getValue() != 0) b.used.put(e.getKey(), BigInteger.valueOf(e.getValue())); }
+        for (var e : claimedItems.entrySet()) { if (e.getValue() != 0) b.claimed.put(e.getKey(), BigInteger.valueOf(e.getValue())); }
         for (var e : emittedItems.entrySet()) { if (e.getValue() != 0) b.emitted.put(e.getKey(), BigInteger.valueOf(e.getValue())); }
         for (var e : missingItems.entrySet()) { if (e.getValue() != 0) b.missing.put(e.getKey(), BigInteger.valueOf(e.getValue())); }
         for (var e : simInternal.entrySet()) { if (e.getValue() != 0) b.internal.put(e.getKey(), BigInteger.valueOf(e.getValue())); }
@@ -2072,6 +2129,12 @@ public class CraftingVM {
             if (bv == null) bv = BigInteger.ZERO;
             BigInteger d = e.getValue().subtract(bv);
             if (d.signum() > 0) b.used.put(e.getKey(), d);
+        }
+        for (var e : after.claimed.entrySet()) {
+            BigInteger bv = before.claimed.get(e.getKey());
+            if (bv == null) bv = BigInteger.ZERO;
+            BigInteger d = e.getValue().subtract(bv);
+            if (d.signum() > 0) b.claimed.put(e.getKey(), d);
         }
         for (var e : after.emitted.entrySet()) {
             BigInteger bv = before.emitted.get(e.getKey());
@@ -2113,51 +2176,36 @@ public class CraftingVM {
         return b;
     }
 
-    private static java.io.PrintStream LEDGER_LOG;
-
-    private static void ledgerLog(String s) {
-        try {
-            if (LEDGER_LOG == null) {
-                LEDGER_LOG = new java.io.PrintStream(new java.io.FileOutputStream("/tmp/aevm-ledger.txt", true),
-                        true, java.nio.charset.StandardCharsets.UTF_8.name());
-            }
-            LEDGER_LOG.println(s);
-        } catch (Exception ignored) {
-        }
-    }
-
-    private IAEItemStack familyRep(IAEItemStack k) {
-        try {
-            var g = PatternCompiler.getFuzzyGroup(k);
-            if (g != null && !g.isEmpty()) {
-                for (var m : g) {
-                    if (m != null && m.isSameType(k)) return m;
-                }
-                return g.iterator().next();
-            }
-        } catch (Throwable ignored) {
-        }
-        return k;
-    }
-
     /**
-     * GAP-4 phase 2: solve the pure mutual rings whose back-edge demand the
+     * Solve the pure mutual rings whose back-edge demand the
      * propagation loop dropped, fold each into a net-effect bundle, and remove
      * the ring keys from the aggregation total (the net bundle takes over their
      * scheduling — including the root direction when the root key is a ring
      * member). The removal is what prevents the pre-solver propagation counts
      * from being REPLAYED by {@code applyOrdered} on top of the solved ring:
      * the captured root bundle's ring edges were stripped stock-only at capture
-     * time, so its replay schedules unbacked crafts (the GAP-4 "834 missing
+     * time, so its replay schedules unbacked crafts (the "834 missing
      * ingots" CPU stall in replay form).
      */
 
-    private void solveRings(Map<IAEItemStack, BigInteger> total) {
+    private void solveRings(Map<IAEItemStack, BigInteger> total,
+                            Map<IAEItemStack, BigInteger> itemDemand) {
         List<RingSolver.RingPlan> plans;
         try {
-        plans = RingSolver.solve(total, k -> {
+        plans = RingSolver.solve(total, itemDemand, k -> {
             ICraftingPatternDetails d = patternResolver != null ? patternResolver.apply(k) : null;
+            if (d == null) {
+                // T4 byproduct fallback: SOLVER-VIEW ONLY. A key
+                // with no primary producer but exactly one any-slot producer
+                // joins the ring graph through that pattern — the folded net
+                // bundle then covers its production and consumption itself.
+                // Deliberately NOT in the capture resolver: capture-time
+                // resolution would re-shape the catalyst/lossy reference
+                // scenarios (their catalyst keys are byproducts too).
+                d = PatternCompiler.resolveAnyOutputProducer(k);
+            }
             if (d == null) return null;
+            final ICraftingPatternDetails pattern = d;
             Map<IAEItemStack, BigInteger> in = new HashMap<>();
             IAEItemStack[] ins = safeCondensedInputs(d);
             if (ins != null) {
@@ -2182,7 +2230,7 @@ public class CraftingVM {
             return new RingSolver.RecipeView() {
                 @Override
                 public ICraftingPatternDetails pattern() {
-                    return d;
+                    return pattern;
                 }
 
                 @Override
@@ -2201,6 +2249,14 @@ public class CraftingVM {
             // applyOrdered never replays a ring member on top of the solved plan
             for (IAEItemStack rk : plan.ringKeys) {
                 total.keySet().removeIf(k -> k.isSameType(rk));
+                // release the scheduling-phase stock reservation of the
+                // superseded plan — the net bundle re-draws what it needs
+                BigInteger reserved = getPool(stockFromNetwork, rk);
+                if (reserved != null && reserved.signum() > 0) {
+                    setPool(stockFromNetwork, rk, BigInteger.ZERO);
+                    ringReleasedStock.merge(rk, reserved, BigInteger::add);
+                    usedItems.add(rk, -reserved.longValue());
+                }
             }
             Bundle net = new Bundle();
             for (var e : plan.patterns.entrySet()) {
@@ -2226,7 +2282,9 @@ public class CraftingVM {
             ringNetBundles.add(net);
         }
         } catch (Throwable t) {
-            t.printStackTrace();
+            // the fold is abandoned and the propagation plan stays in force;
+            // the failure must be visible — a silent catch hid solver bugs before
+            AE2VM.LOGGER.warn("[AE2-VM] ring solver failed; falling back to the propagation plan", t);
         }
     }
 

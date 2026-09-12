@@ -25,6 +25,19 @@ public interface SimulationState {
     void insert(IAEItemStack key, long amount);
 
     /**
+     * Return previously-extracted stock to the sandbox (the revert of a
+     * captured claim — accounting symmetry with the claim's deduction). Distinct from
+     * {@link #insert}: implementations that model network stock as a budget
+     * must RESTORE the budget instead of adding produced items, or a reverted
+     * capture would permanently consume stock the plan still needs. The
+     * default falls back to {@link #insert} for states where the distinction
+     * does not exist.
+     */
+    default void restock(IAEItemStack key, long amount) {
+        insert(key, amount);
+    }
+
+    /**
      * Fuzzy family of {@code key} present in the network stock (same item, any
      * damage/NBT - FuzzyMode.IGNORE_ALL). May be empty.
      */

@@ -22,7 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * Feedback-loop scenario tests. A catalyst feedback loop produces a byproduct that
  * feeds back into its own recipe chain. Three ring shapes are covered — balanced
- * (raw), decreasing (lossy) and net-amplifying (the GAP-4 gaia-spirit regression):
+ * (raw), decreasing (lossy) and net-amplifying (the gaia-spirit regression):
  *
  * <ul>
  *   <li><b>raw-feedback-loop</b> — {@code A -> 2B, 2B + C -> E + D, D -> A}: a BALANCED
@@ -145,7 +145,7 @@ class CatalystFeedbackLoopTest {
         return -1;
     }
 
-    // ---- amplifying-loop (GAP-4 regression): net +8 spirits per turn ----
+    // ---- amplifying-loop (gaia regression): net +8 spirits per turn ----
 
     @Test
     void lossyLoopMinimumFeasible() {
@@ -219,7 +219,7 @@ class CatalystFeedbackLoopTest {
             pt.append("] ");
         }
         assertTrue(schedulesPatternWithInput(plan, "A"),
-                "plan must schedule the synthesis pattern (GAP-4 dissolve-only plan), pt=" + pt);
+                "plan must schedule the synthesis pattern , pt=" + pt);
         // exact turns: the solved ring must be the ONLY scheduling — a replayed
         // pre-solver count on top (the old integration bug) would double the
         // dissolve crafts with no backed inputs
@@ -308,7 +308,7 @@ class CatalystFeedbackLoopTest {
                 "fuel-starved shared ring must report the C shortfall, got " + dump(plan));
     }
 
-    // ---- phase 2c: ordering a ring BYPRODUCT directly (external-root driver) ----
+    // ---- ordering a ring BYPRODUCT directly (external-root driver) ----
     // AE2 indexes patterns by every output slot, so a C request routes to the
     // recycler even though C is only its byproduct. The request must key off
     // C's per-craft output (5000 C = 5000 rounds, not 5000/12) and DRIVE the
@@ -342,11 +342,145 @@ class CatalystFeedbackLoopTest {
                 "unseeded C-rooted request must report the startup seed, got " + dump(plan));
     }
 
-    // ---- amplifying loop: real-world gaia-spirit report (GAP-4) ----
+    @Test
+    void externalConsumerFloorFeedsRingSolve() {
+        // A ring key drawn on by an OUTSIDE consumer (widget takes 2 I per
+        // craft): the from-below solve must floor the member at the external
+        // demand — without the floor the solve stays at zero, the ring keys
+        // are stripped with an idle plan, and the widget's 20 I come back as
+        // a false missing. With the floor the counts close at makeIngot ×20
+        // (the fold itself is declined — makeSpirit would idle and S would
+        // just drain — so the propagation schedules I and covers the demand).
+        BenchPatternDetails makeIngot = pat("I", 1, "S", 4L);
+        BenchPatternDetails makeSpirit = pat("S", 12, "I", 1L);
+        BenchPatternDetails makeWidget = pat("W", 1, "I", 2L, "R", 1L);
+        Bench.register(makeIngot);
+        Bench.register(makeSpirit);
+        Bench.register(makeWidget);
+        BenchSimulationState sim = new BenchSimulationState().seed("S", 100).seed("R", 100);
+        VMPlan plan = Bench.run(makeWidget, 10, sim);
+        assertTrue(feasible(plan),
+                "external consumer demand must be floored into the ring solve, got " + dump(plan));
+        assertEquals(20, timesOf(plan, "S"), "makeIngot (4S->I) turns floored at the widget demand");
+        assertEquals(10, timesOf(plan, "I", "R"), "makeWidget (2I+R->W) turns");
+    }
+
+    // ---- rings routed THROUGH a byproduct-only intermediate key (T4) ----
+    // X exists only as makeIngotBy's byproduct (no pattern is primarily X):
+    // the resolver's T4 fallback hands the solver the intermediate, and the
+    // pattern-level variables count makeIngotBy ONCE per round (key-level
+    // variables would double-count it under B and X).
+
+    /** Byproduct-intermediate ring: 4A -> B+X, B+X -> 12A. */
+    private static BenchPatternDetails[] byproductIntermediateRing() {
+        BenchPatternDetails makeIngotBy = patEx(new String[]{"B", "X"}, new long[]{1, 1}, "A", 4L);
+        BenchPatternDetails recycler = patEx(new String[]{"A"}, new long[]{12}, "B", 1L, "X", 1L);
+        return new BenchPatternDetails[]{makeIngotBy, recycler};
+    }
+
+    @Test
+    void byproductIntermediateRingFeasible() {
+        BenchPatternDetails[] loop = byproductIntermediateRing();
+        for (BenchPatternDetails p : loop) {
+            Bench.register(p);
+        }
+        // Balance at the minimal fixed point: 962 rounds of both patterns —
+        // 2304 + 12×962 − 4×962 = 10000 delivered, B and X internally balanced.
+        BenchSimulationState sim = new BenchSimulationState().seed("A", 2304);
+        VMPlan plan = Bench.run(loop[1], 10000, sim);
+        assertTrue(feasible(plan),
+                "byproduct-intermediate ring must be feasible, got " + dump(plan));
+        assertEquals(962, timesOf(plan, "A"), "makeIngotBy (4A->B+X) turns");
+        assertEquals(962, timesOf(plan, "B", "X"), "recycler (B+X->12A) turns");
+    }
+
+    @Test
+    void byproductIntermediateRingUnseededReportsSeed() {
+        BenchPatternDetails[] loop = byproductIntermediateRing();
+        for (BenchPatternDetails p : loop) {
+            Bench.register(p);
+        }
+        BenchSimulationState sim = new BenchSimulationState();
+        VMPlan plan = Bench.run(loop[1], 10000, sim);
+        assertFalse(feasible(plan),
+                "unseeded byproduct-intermediate ring must be infeasible, got feasible");
+        // the cheapest priming order starts at the recycler: one B and one X
+        assertTrue(infeasibleMatches(plan, Map.of("B", 1L, "X", 1L)),
+                "unseeded byproduct-intermediate ring must report its startup seed, got " + dump(plan));
+    }
+
+    @Test
+    void byproductIntermediateRootDrivesRing() {
+        // Ordering the intermediate X directly: X is a ring MEMBER under T4,
+        // so the request is a member-root delivery — the solve closes at
+        // makeIngot ×7212 / recycler ×2212 (A stock fully spent: 2304 +
+        // 12×2212 − 4×7212 = 0) delivering exactly 5000 X.
+        BenchPatternDetails[] loop = byproductIntermediateRing();
+        for (BenchPatternDetails p : loop) {
+            Bench.register(p);
+        }
+        BenchSimulationState sim = new BenchSimulationState().seed("A", 2304);
+        VMPlan plan = Bench.run(loop[0], 5000, "X", sim);
+        assertTrue(feasible(plan),
+                "X-rooted request must drive the ring, got " + dump(plan));
+        assertEquals(7212, timesOf(plan, "A"), "makeIngotBy (4A->B+X) turns");
+        assertEquals(2212, timesOf(plan, "B", "X"), "recycler (B+X->12A) turns");
+    }
+
+    @Test
+    void byproductIntermediateAmbiguousProducerDegradesGracefully() {
+        // X produced by TWO patterns: the T4 index resolves to nothing (the
+        // multi-pattern choice domain), so X degrades to external-byproduct
+        // semantics — the ring solves without X as a member, and X being
+        // internally balanced (produced = consumed by the recycler) keeps the
+        // plan feasible at the same 962 turns. Deterministic, no crash.
+        BenchPatternDetails makeIngotBy = patEx(new String[]{"B", "X"}, new long[]{1, 1}, "A", 4L);
+        BenchPatternDetails makeIngotC = patEx(new String[]{"C", "X"}, new long[]{1, 1}, "A", 4L, "Q", 1L);
+        BenchPatternDetails recycler = patEx(new String[]{"A"}, new long[]{12}, "B", 1L, "X", 1L);
+        Bench.register(makeIngotBy);
+        Bench.register(makeIngotC);
+        Bench.register(recycler);
+        BenchSimulationState sim = new BenchSimulationState().seed("A", 2304).seed("Q", 50);
+        VMPlan plan = Bench.run(recycler, 10000, sim);
+        assertTrue(feasible(plan),
+                "ambiguous X producer must degrade gracefully, got " + dump(plan));
+        assertEquals(962, timesOf(plan, "A"), "makeIngotBy (4A->B+X) turns");
+        assertEquals(962, timesOf(plan, "B", "X"), "recycler (B+X->12A) turns");
+    }
+
+    // ---- coupled rings (consumers-first solve + net write-back) ----
+
+    @Test
+    void coupledRingsShareAmplifiedDemand() {
+        // ring1 (A economy: 4A->B, B+X->12A) draws X from ring2 (F economy:
+        // 2F->X, X->3F). The consumers-first solve writes ring1's SOLVED X
+        // draw (962) into ring2's floor — without the write-back ring2 would
+        // size itself on the propagation's naive 834 and the plan would miss
+        // X×128. Balance: X 2884 = 1922 (makeF) + 962 (recycler); F closes
+        // exactly on its 2 stocked (2 + 3×1922 − 2×2884 = 0).
+        BenchPatternDetails makeIngot = pat("B", 1, "A", 4L);
+        BenchPatternDetails recycler = patEx(new String[]{"A"}, new long[]{12}, "B", 1L, "X", 1L);
+        BenchPatternDetails makeX = pat("X", 1, "F", 2L);
+        BenchPatternDetails makeF = pat("F", 3, "X", 1L);
+        Bench.register(makeIngot);
+        Bench.register(recycler);
+        Bench.register(makeX);
+        Bench.register(makeF);
+        BenchSimulationState sim = new BenchSimulationState().seed("A", 2304).seed("F", 2);
+        VMPlan plan = Bench.run(recycler, 10000, sim);
+        assertTrue(feasible(plan),
+                "coupled rings must close on the amplified demand, got " + dump(plan));
+        assertEquals(962, timesOf(plan, "A"), "makeIngot (4A->B) turns");
+        assertEquals(962, timesOf(plan, "B", "X"), "recycler (B+X->12A) turns");
+        assertEquals(2884, timesOf(plan, "F"), "makeX (2F->X) turns");
+        assertEquals(1922, timesOf(plan, "X"), "makeF (X->3F) turns");
+    }
+
+    // ---- amplifying loop: the real-world gaia-spirit report ----
     // 4 spirits craft 1 ingot, 1 ingot dissolves into 12 spirits; 2303 stocked,
     // 10000 requested. The dissolving plan consumes 834 ingots whose synthesis
     // needs 3336 more spirits: total demand 13336 vs 12331 coverable → the plan
-    // must be honest about the SPIRIT shortfall (GAP-4 used to schedule dissolve-
+    // must be honest about the SPIRIT shortfall (the naive plan used to schedule dissolve-
     // only and let the CPU report 834 missing ingots). With the shortfall covered
     // (3400 stocked ≥ 3336 synthesis + margin) the ring is fully feasible.
 
@@ -361,20 +495,19 @@ class CatalystFeedbackLoopTest {
         assertTrue(feasible(plan),
                 "amplifying ring with sufficient spirits must be feasible, got " + dump(plan));
         assertTrue(schedulesPatternWithInput(plan, "S"),
-                "plan must schedule the ingot-synthesis pattern (GAP-4 dissolve-only plan)");
-        // turns stay at the propagation's root granularity ceil(10000/12) = 834:
-        // the solver only bumps UP from the demand-driven counts, so with free
-        // stock the balance closes without amplification (72-spirit surplus,
-        // one root-craft granularity — never replayed double counts)
-        assertEquals(834, timesOf(plan, "S"), "makeIngot (4S->I) turns");
-        assertEquals(834, timesOf(plan, "I"), "makeSpirit (I->12S) turns");
+                "plan must schedule the ingot-synthesis pattern ");
+        // material-minimal turns: the fixed point is solved FROM BELOW, so
+        // ample stock no longer inherits the propagation's ceil granularity —
+        // ceil((10000-3400)/8) = 825 exactly
+        assertEquals(825, timesOf(plan, "S"), "makeIngot (4S->I) turns");
+        assertEquals(825, timesOf(plan, "I"), "makeSpirit (I->12S) turns");
     }
 
     @Test
     void amplifyingLoopShortfallSchedulesSynthesis() {
         // 2303 stocked is 1025 spirits short of the balanced 834/834 plan; the
-        // exact shortfall disclosure is GAP-4 phase 2 (ring fixed-point). What
-        // phase 1 guarantees is structural: the synthesis MUST be scheduled —
+        // the exact shortfall disclosure is the ring fixed-point's job. What
+        // the propagation guarantees is structural: the synthesis MUST be scheduled —
         // a dissolve-only plan made the CPU stall on 834 missing ingots.
         BenchPatternDetails[] loop = amplifyingLoop();
         for (BenchPatternDetails p : loop) {
@@ -383,7 +516,7 @@ class CatalystFeedbackLoopTest {
         BenchSimulationState sim = new BenchSimulationState().seed("S", 2303);
         VMPlan plan = Bench.run(loop[1], 10000, sim);
         assertTrue(schedulesPatternWithInput(plan, "S"),
-                "plan must schedule the ingot-synthesis pattern (GAP-4 dissolve-only plan)");
+                "plan must schedule the ingot-synthesis pattern ");
         // solved balance turns: ceil((10000-2303)/8) = 963 — and ONLY the
         // solved counts (the replayed pre-solver 834 used to double the
         // dissolve crafts with no backed inputs)
@@ -401,11 +534,10 @@ class CatalystFeedbackLoopTest {
         VMPlan plan = Bench.run(loop[1], 10000, sim);
         assertTrue(feasible(plan),
                 "unbounded-stock amplifying ring must be feasible, got " + dump(plan));
-        assertTrue(schedulesPatternWithInput(plan, "S"),
-                "plan must schedule the ingot-synthesis pattern (GAP-4 dissolve-only plan)");
-        // free stock covers everything: no amplification needed beyond the
-        // root's own dissolve count ceil(10000/12) = 834
-        assertEquals(834, timesOf(plan, "S"), "makeIngot (4S->I) turns");
-        assertEquals(834, timesOf(plan, "I"), "makeSpirit (I->12S) turns");
+        // the from-below solve stays at zero when stock covers the whole
+        // request: crafting nothing IS the material-minimal plan, and the
+        // idle ring plan strips the propagation's unbacked dissolve counts
+        assertTrue(plan.getPatternTimes().isEmpty(),
+                "stock-covered request must not schedule ring crafts");
     }
 }
