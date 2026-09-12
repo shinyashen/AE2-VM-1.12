@@ -206,11 +206,14 @@ jobs:
           env = [v["id"] for v in versions if v.get("name") in ("Client", "Server")]
           if not (forge and java8 and env):
               sys.exit(f"group lookup failed (forge={forge}, java8={java8}, env={env})")
-          # CF web UI's "Both" maps to version-table rows: empirically the pair
-          # (Client+Server) can crash the server (HTTP 500), a single row always
-          # passes — probe the variants in order, first accepted wins. Fully
-          # automatic: no manual step in any release.
-          env_variants = [[env[0]], [env[1]], env]
+          # The mod supports both sides, and "Both" in CF's web UI maps to
+          # BOTH version-table rows (Client+Server) submitted together — that
+          # is the semantically correct form. An earlier single-row fallback
+          # existed because a both-rows upload once returned HTTP 500 under a
+          # since-fixed payload shape; the probe below tries both-rows FIRST
+          # and only degrades to single-row variants if the server still
+          # rejects them. Fully automatic: no manual step in any release.
+          env_variants = [env, [env[0]], [env[1]]]
           last = None
           for variant in env_variants:
               attempt = ids + forge[:1] + java8[:1] + variant
