@@ -64,7 +64,11 @@ class AE2FCCompatTest {
         if (FCItems.FLUID_PACKET == null) {
             FCItems.FLUID_PACKET = new ItemFluidPacket();
         }
-        FakeFluids.init();
+        try {
+            FakeFluids.init();
+        } catch (IllegalArgumentException alreadyRegistered) {
+            // another test class registered the handlers first
+        }
         assertTrue(AE2FCCompat.isAvailable(), "AE2FC classes must be loadable");
         waterDrop = AE2FCCompat.packFluid(fluid(FluidRegistry.WATER, 1000));
         assertNotNull(waterDrop, "packing a fluid must produce a fake drop");

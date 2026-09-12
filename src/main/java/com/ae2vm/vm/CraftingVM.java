@@ -1007,7 +1007,11 @@ public class CraftingVM {
                         boolean hasReplacement = replacementGroup.size() > 1;
                         long primaryStock = realStockOf(c);
                         Set<IAEItemStack> nbtVariants = new HashSet<>();
-                        if (PatternCompiler.isProcessingInput(c)) {
+                        if (PatternCompiler.isProcessingInput(c)
+                                // AE2FC fluid keys have no NBT family: the NBT is
+                                // the fluid identity — any-family would let water
+                                // back a molten-platinum demand.
+                                && !com.ae2vm.compat.AE2FCCompat.isFluidFakeItem(c)) {
                             ensureRealStockSnapshot();
                             if (realStockCache != null) {
                                 for (IAEItemStack v : realStockCache.findFuzzy(c, FuzzyMode.IGNORE_ALL)) {

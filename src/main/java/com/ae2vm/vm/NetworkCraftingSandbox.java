@@ -40,7 +40,8 @@ public final class NetworkCraftingSandbox implements SimulationState {
      */
     private final Map<IAEItemStack, List<IAEItemStack>> fuzzyFamilyCache = new HashMap<>();
 
-    private NetworkCraftingSandbox(IItemList<IAEItemStack> stock) {
+    /** Package-private: tests in this package construct a sandbox from a bare stock list. */
+    NetworkCraftingSandbox(IItemList<IAEItemStack> stock) {
         this.stock = stock;
     }
 
@@ -142,6 +143,16 @@ public final class NetworkCraftingSandbox implements SimulationState {
         List<IAEItemStack> cached = fuzzyFamilyCache.get(key);
         if (cached != null) {
             return cached;
+        }
+        // AE2FC fluid drops/packets: the NBT IS the identity (FluidName) —
+        // every fluid shares the same Item and damage, so an NBT-tolerant
+        // family would let ANY fluid substitute ANY other (water covering a
+        // molten-platinum demand). Fluids resolve through exact keys and the
+        // packet-key index; they have no family.
+        if (AE2FCCompat.isFluidFakeItem(key)) {
+            List<IAEItemStack> empty = new ArrayList<>(0);
+            fuzzyFamilyCache.put(key, empty);
+            return empty;
         }
         List<IAEItemStack> family = new ArrayList<>();
         for (IAEItemStack item : stock.findFuzzy(key, FuzzyMode.IGNORE_ALL)) {
