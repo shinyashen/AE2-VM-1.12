@@ -220,7 +220,7 @@ jobs:
                   "changelogType": "markdown",
                   "displayName": display_name,
                   "gameVersions": ids,
-                  "environments": ["Both"],
+                  "environments": ["Client", "Server"],
                   "releaseType": "release"}
           status, result = cf_upload(f"/projects/{project}/upload-file",
               data=meta,
