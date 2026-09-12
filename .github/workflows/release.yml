@@ -206,9 +206,10 @@ jobs:
           env = [v["id"] for v in versions if v.get("name") in ("Client", "Server")]
           if not (forge and java8 and env):
               sys.exit(f"group lookup failed (forge={forge}, java8={java8}, env={env})")
-          # CF web UI's "Both" maps to ONE environment row pair in gameVersions;
-          # empirically sending both 9638+9639 crashes the server (HTTP 500) —
-          # retry logic: try [Client, Server] variants, first accepted wins
+          # CF web UI's "Both" maps to version-table rows: empirically the pair
+          # (Client+Server) can crash the server (HTTP 500), a single row always
+          # passes — probe the variants in order, first accepted wins. Fully
+          # automatic: no manual step in any release.
           env_variants = [[env[0]], [env[1]], env]
           last = None
           for variant in env_variants:
@@ -226,22 +227,4 @@ jobs:
               last = (status, result)
           print("::warning::all environment variants failed"); sys.exit(1)
 
-          # metadata shape per mc-publish's packCurseForgeVersionInit —
-          # camelCase: changelog/changelogType/displayName/gameVersions/releaseType
-          # (relations omitted — CF project defaults apply)
-
           PY
-
-      - name: Verify CurseForge token reachability (legacy probe; superseded by the upload step)
-        continue-on-error: true
-        run: |
-          if [ -z "${{ secrets.CURSEFORGE_TOKEN }}" ]; then
-            echo "CURSEFORGE_TOKEN not configured, skipping"
-            exit 0
-          fi
-          code=$(curl -s -o /tmp/cf.json -w "%{http_code}" \
-            -H "x-api-key: ${{ secrets.CURSEFORGE_TOKEN }}" \
-            -H "Accept: application/json" \
-            https://api.curseforge.com/v1/games/432)
-          echo "CurseForge API HTTP ${code} (200 = token valid from US runner)"
-          [ "$code" = "200" ] && head -c 300 /tmp/cf.json || true
