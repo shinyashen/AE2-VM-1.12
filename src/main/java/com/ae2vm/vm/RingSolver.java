@@ -315,6 +315,38 @@ final class RingSolver {
             return idle;
         }
 
+        // ---- material closure post-check (the adoption gate): independently
+        // re-verify the FINAL counts close material balance for every member —
+        // own output plus stock must cover in-ring consumption, the root
+        // delivery and the external floor. A violation means the iteration's
+        // model diverged from the constraint set; adopting nothing keeps the
+        // propagation plan in force (fail-safe, never adopt a broken solve).
+        {
+            Map<IAEItemStack, BigInteger> needed = new HashMap<>();
+            for (IAEItemStack m : scc) {
+                RecipeView v = recipeOf.apply(m);
+                BigInteger xf = x.get(m);
+                if (xf.signum() <= 0) continue;
+                for (var e : v.inputs().entrySet()) {
+                    needed.merge(e.getKey(), xf.multiply(e.getValue()), BigInteger::add);
+                }
+            }
+            if (rootKey != null && rootDeliver.signum() > 0 && rootIsMember) {
+                needed.merge(rootKey, rootDeliver, BigInteger::add);
+            }
+            for (var e : ext.entrySet()) {
+                needed.merge(e.getKey(), e.getValue(), BigInteger::add);
+            }
+            for (IAEItemStack k : scc) {
+                BigInteger outPer = recipeOf.apply(k).outputs().getOrDefault(k, BigInteger.ZERO);
+                if (outPer.signum() <= 0) return null; // cannot scale itself
+                BigInteger cov = nonNeg(startStockOf.apply(k)).add(x.get(k).multiply(outPer));
+                if (needed.getOrDefault(k, BigInteger.ZERO).compareTo(cov) > 0) {
+                    return null; // closure broken: adopt nothing
+                }
+            }
+        }
+
         // ---- gain gate: only net-amplifying rings are ours. A DRAIN on a ring
         // MEMBER (a key whose own producer sits in this SCC) marks a
         // conversion/lossy ring — the conversion-ring guard and the
@@ -543,7 +575,7 @@ final class RingSolver {
                     low.put(parent, Math.min(low.get(parent), low.get(v)));
                 }
                 if (low.get(v).equals(index.get(v))) {
-                    Set<IAEItemStack> comp = new HashSet<>();
+                    Set<IAEItemStack> comp = new LinkedHashSet<>(); // record order: deterministic iteration
                     IAEItemStack w;
                     do {
                         w = stack.remove(stack.size() - 1);
