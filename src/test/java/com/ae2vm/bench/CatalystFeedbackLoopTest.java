@@ -3,7 +3,6 @@ package com.ae2vm.bench;
 import com.ae2vm.vm.VMPlan;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import java.util.Arrays;
@@ -452,7 +451,6 @@ class CatalystFeedbackLoopTest {
     // ---- phase 7e: coupled rings (consumers-first solve + net write-back) ----
 
     @Test
-    @Disabled("伪影②: 捕获期 claim 提取扣减沙盒但对 delta 不可见, 紧库存下预算泄漏 F×2 — 待 capture 账目对称化(AGENTS.md 待查项)")
     void coupledRingsShareAmplifiedDemand() {
         // ring1 (A economy: 4A->B, B+X->12A) draws X from ring2 (F economy:
         // 2F->X, X->3F). The consumers-first solve writes ring1's SOLVED X
@@ -468,16 +466,14 @@ class CatalystFeedbackLoopTest {
         Bench.register(recycler);
         Bench.register(makeX);
         Bench.register(makeF);
-        // F seed 8: covers the capture-phase budget spend (2) plus the plan's
-        // net F draw (2) — see the tight-stock ledger note in AGENTS.md.
-        BenchSimulationState sim = new BenchSimulationState().seed("A", 2304).seed("F", 8);
+        BenchSimulationState sim = new BenchSimulationState().seed("A", 2304).seed("F", 2);
         VMPlan plan = Bench.run(recycler, 10000, sim);
         assertTrue(feasible(plan),
                 "coupled rings must close on the amplified demand, got " + dump(plan));
         assertEquals(962, timesOf(plan, "A"), "makeIngot (4A->B) turns");
         assertEquals(962, timesOf(plan, "B", "X"), "recycler (B+X->12A) turns");
-        assertEquals(2878, timesOf(plan, "F"), "makeX (2F->X) turns");
-        assertEquals(1916, timesOf(plan, "X"), "makeF (X->3F) turns");
+        assertEquals(2884, timesOf(plan, "F"), "makeX (2F->X) turns");
+        assertEquals(1922, timesOf(plan, "X"), "makeF (X->3F) turns");
     }
 
     // ---- amplifying loop: real-world gaia-spirit report (GAP-4) ----
