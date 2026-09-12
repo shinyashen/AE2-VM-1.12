@@ -75,6 +75,44 @@ jobs:
             git push
           }
 
+      - name: Probe legacy game version IDs
+        env:
+          CF_TOKEN: ${{ secrets.CURSEFORGE_TOKEN }}
+        run: |
+          python3 - <<'PY'
+          import json, os, urllib.request
+
+          token = os.environ["CF_TOKEN"]
+          # Known candidates for 1.12.2 in the legacy ID space (curse.maven era)
+          candidates = [69118, 74690, 7498, 8170, 7125, 7126, 4458, 69119, 7147, 7157]
+
+          def probe(vid):
+              boundary = "----aevm" + vid.__str__().replace('-', '')
+              meta = json.dumps({"displayName": f"probe-v{vid}-delete-me",
+                                 "releaseType": "alpha",
+                                 "gameVersions": [vid],
+                                 "changelog": "temporary probe; will be deleted"})
+              body = (
+                  f"--{boundary}\r\nContent-Disposition: form-data; name=\"metadata\"\r\n"
+                  f"Content-Type: application/json\r\n\r\n{meta}\r\n"
+                  f"--{boundary}--\r\n").encode()
+              req = urllib.request.Request(
+                  "https://minecraft.curseforge.com/api/projects/1692278/upload-file",
+                  data=body, method="POST")
+              req.add_header("X-Api-Token", token)
+              req.add_header("Content-Type", f"multipart/form-data; boundary={boundary}")
+              req.add_header("Accept", "application/json")
+              try:
+                  with urllib.request.urlopen(req) as r:
+                      return r.status, r.read().decode()[:200]
+              except urllib.error.HTTPError as e:
+                  return e.code, e.read().decode(errors="replace")[:200]
+
+          for vid in candidates:
+              code, resp = probe(vid)
+              print(f"id={vid} -> HTTP {code} {resp[:150]}")
+          PY
+
       - name: Upload to CurseForge (main jar only; relations inherit the project defaults)
         env:
           CF_TOKEN: ${{ secrets.CURSEFORGE_TOKEN }}
