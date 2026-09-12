@@ -206,24 +206,30 @@ jobs:
           env = [v["id"] for v in versions if v.get("name") in ("Client", "Server")]
           if not (forge and java8 and env):
               sys.exit(f"group lookup failed (forge={forge}, java8={java8}, env={env})")
-          ids = ids + forge[:1] + java8[:1] + env
-          print(f"1.12.2={ids[0]}, Forge={forge[0]}, Java 8={java8[0]}, env={env}")
+          # CF web UI's "Both" maps to ONE environment row pair in gameVersions;
+          # empirically sending both 9638+9639 crashes the server (HTTP 500) —
+          # retry logic: try [Client, Server] variants, first accepted wins
+          env_variants = [[env[0]], [env[1]], env]
+          last = None
+          for variant in env_variants:
+              attempt = ids + forge[:1] + java8[:1] + variant
+              print(f"upload attempt with env={variant}")
+              status, result = cf_upload(f"/projects/{project}/upload-file",
+                  data={"changelog": changelog, "changelogType": "markdown",
+                        "displayName": display_name, "gameVersions": attempt,
+                        "releaseType": "release"},
+                  files=("file", (os.path.basename(jar), open(jar, "rb").read())))
+              print(f"CurseForge upload HTTP {status}")
+              print(result if isinstance(result, str) else json.dumps(result)[:400])
+              if status in (200, 201):
+                  sys.exit(0)
+              last = (status, result)
+          print("::warning::all environment variants failed"); sys.exit(1)
 
           # metadata shape per mc-publish's packCurseForgeVersionInit —
           # camelCase: changelog/changelogType/displayName/gameVersions/releaseType
           # (relations omitted — CF project defaults apply)
-          meta = {"changelog": changelog,
-                  "changelogType": "markdown",
-                  "displayName": display_name,
-                  "gameVersions": ids,
-                  "releaseType": "release"}
-          status, result = cf_upload(f"/projects/{project}/upload-file",
-              data=meta,
-              files=("file", (os.path.basename(jar), open(jar, "rb").read())))
-          print(f"CurseForge upload HTTP {status}")
-          print(result if isinstance(result, str) else json.dumps(result)[:400])
-          if status not in (200, 201):
-              print("::warning::CurseForge upload failed"); sys.exit(1)
+
           PY
 
       - name: Upload diagnostics (cf version tables; temporary)
