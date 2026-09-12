@@ -206,13 +206,13 @@ jobs:
           env = [v["id"] for v in versions if v.get("name") in ("Client", "Server")]
           if not (forge and java8 and env):
               sys.exit(f"group lookup failed (forge={forge}, java8={java8}, env={env})")
-          # The mod supports both sides, and "Both" in CF's web UI maps to
-          # BOTH version-table rows (Client+Server) submitted together — that
-          # is the semantically correct form. An earlier single-row fallback
-          # existed because a both-rows upload once returned HTTP 500 under a
-          # since-fixed payload shape; the probe below tries both-rows FIRST
-          # and only degrades to single-row variants if the server still
-          # rejects them. Fully automatic: no manual step in any release.
+          # The mod supports both sides. CF's "Both" is SERVER-SIDE RENDERING:
+          # the upload API takes exactly ONE environment row, and a both-rows
+          # payload deterministically crashes the server (HTTP 500, verified via
+          # update-file under the final payload shape) — single-Client is how
+          # mc-publish and the CF web UI itself encode a both-sides mod, and the
+          # file page still shows "Supports both". Probe both-rows first anyway;
+          # if CF ever fixes the crash, the semantic form wins automatically.
           env_variants = [env, [env[0]], [env[1]]]
           last = None
           for variant in env_variants:
