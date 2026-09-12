@@ -197,16 +197,23 @@ jobs:
           ids = [v["id"] for v in versions if v.get("name") == "1.12.2"]
           if not ids:
               sys.exit(f"1.12.2 not in the version list (raw={str(versions)[:200]})")
-          # CF requires an entry from the environment (Java) group as well;
-          # the mod ships release-8 bytecode → Java 8
+          # loader + java versions in the same payload (CF requires a loader
+          # entry per project class; the mod ships release-8 bytecode → Java 8)
+          forge = [v["id"] for v in versions if v.get("name") == "Forge"]
           java8 = [v["id"] for v in versions if v.get("name") == "Java 8"]
-          print(f"1.12.2 game version id = {ids[0]}, Java 8 id = {java8[0] if java8 else 'NOT FOUND'}")
-          if java8:
-              ids.append(java8[0])
+          print(f"1.12.2={ids[0]}, Forge={forge[0] if forge else 'NF'}, Java 8={java8[0] if java8 else 'NF'}")
 
+          # metadata field names are SNAKE_CASE (mc-publish reference payload):
+          # game_versions/java_versions/loaders + environments ("Both")
+          meta = {"name": display_name,
+                  "version_type": "release",
+                  "changelog": changelog,
+                  "game_versions": ids,
+                  "loaders": forge[:1],
+                  "java_versions": java8[:1],
+                  "environments": ["Both"]}
           status, result = cf_upload(f"/projects/{project}/upload-file",
-              data={"displayName": display_name, "releaseType": "release",
-                    "gameVersions": ids, "changelog": changelog},
+              data=meta,
               files=("file", (os.path.basename(jar), open(jar, "rb").read())))
           print(f"CurseForge upload HTTP {status}")
           print(result if isinstance(result, str) else json.dumps(result)[:400])
