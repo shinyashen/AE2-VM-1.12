@@ -15,11 +15,14 @@ import java.util.Map;
  * silently disables every mixin in the jar (regression found on a live
  * server: the mod loaded, but CraftingJobMixin never applied, so the VM never
  * engaged and rings fell back to plain out-of-ring ingredients).
+ *
+ * <p>Only vanilla/forge/AE2 targets belong here; configs targeting other
+ * mods' classes go to {@link AE2VMLateMixinLoader}.
  */
 public class AE2VMEarlyMixinLoader implements IFMLLoadingPlugin, IEarlyMixinLoader {
     @Override
     public List<String> getMixinConfigs() {
-        return Arrays.asList("mixins.ae2_vm_112.json", "mixins.ae2_vm_112.ae2ct.json");
+        return Arrays.asList("mixins.ae2_vm_112.json");
     }
 
     @Override
