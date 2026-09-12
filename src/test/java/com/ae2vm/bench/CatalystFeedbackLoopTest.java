@@ -346,11 +346,11 @@ class CatalystFeedbackLoopTest {
     void externalConsumerFloorFeedsRingSolve() {
         // A ring key drawn on by an OUTSIDE consumer (widget takes 2 I per
         // craft): the from-below solve must floor the member at the external
-        // demand — without the floor the solve stays idle (stock covers the
-        // ring's internal balance), the ring keys are stripped with an empty
-        // plan, and the widget's 20 I come back as a false missing.
-        // With the floor: makeIngot ×20 synthesizes exactly the widget's I
-        // demand from the stocked S; makeSpirit stays idle (stock covers).
+        // demand — without the floor the solve stays at zero, the ring keys
+        // are stripped with an idle plan, and the widget's 20 I come back as
+        // a false missing. With the floor the counts close at makeIngot ×20
+        // (the fold itself is declined — makeSpirit would idle and S would
+        // just drain — so the propagation schedules I and covers the demand).
         BenchPatternDetails makeIngot = pat("I", 1, "S", 4L);
         BenchPatternDetails makeSpirit = pat("S", 12, "I", 1L);
         BenchPatternDetails makeWidget = pat("W", 1, "I", 2L, "R", 1L);
@@ -363,6 +363,89 @@ class CatalystFeedbackLoopTest {
                 "external consumer demand must be floored into the ring solve, got " + dump(plan));
         assertEquals(20, timesOf(plan, "S"), "makeIngot (4S->I) turns floored at the widget demand");
         assertEquals(10, timesOf(plan, "I", "R"), "makeWidget (2I+R->W) turns");
+    }
+
+    // ---- phase 7d: rings routed THROUGH a byproduct-only intermediate key ----
+    // X exists only as makeIngotBy's byproduct (no pattern is primarily X):
+    // the resolver's T4 fallback hands the solver the intermediate, and the
+    // pattern-level variables count makeIngotBy ONCE per round (key-level
+    // variables would double-count it under B and X).
+
+    /** Byproduct-intermediate ring: 4A -> B+X, B+X -> 12A. */
+    private static BenchPatternDetails[] byproductIntermediateRing() {
+        BenchPatternDetails makeIngotBy = patEx(new String[]{"B", "X"}, new long[]{1, 1}, "A", 4L);
+        BenchPatternDetails recycler = patEx(new String[]{"A"}, new long[]{12}, "B", 1L, "X", 1L);
+        return new BenchPatternDetails[]{makeIngotBy, recycler};
+    }
+
+    @Test
+    void byproductIntermediateRingFeasible() {
+        BenchPatternDetails[] loop = byproductIntermediateRing();
+        for (BenchPatternDetails p : loop) {
+            Bench.register(p);
+        }
+        // Balance at the minimal fixed point: 962 rounds of both patterns —
+        // 2304 + 12×962 − 4×962 = 10000 delivered, B and X internally balanced.
+        BenchSimulationState sim = new BenchSimulationState().seed("A", 2304);
+        VMPlan plan = Bench.run(loop[1], 10000, sim);
+        assertTrue(feasible(plan),
+                "byproduct-intermediate ring must be feasible, got " + dump(plan));
+        assertEquals(962, timesOf(plan, "A"), "makeIngotBy (4A->B+X) turns");
+        assertEquals(962, timesOf(plan, "B", "X"), "recycler (B+X->12A) turns");
+    }
+
+    @Test
+    void byproductIntermediateRingUnseededReportsSeed() {
+        BenchPatternDetails[] loop = byproductIntermediateRing();
+        for (BenchPatternDetails p : loop) {
+            Bench.register(p);
+        }
+        BenchSimulationState sim = new BenchSimulationState();
+        VMPlan plan = Bench.run(loop[1], 10000, sim);
+        assertFalse(feasible(plan),
+                "unseeded byproduct-intermediate ring must be infeasible, got feasible");
+        // the cheapest priming order starts at the recycler: one B and one X
+        assertTrue(infeasibleMatches(plan, Map.of("B", 1L, "X", 1L)),
+                "unseeded byproduct-intermediate ring must report its startup seed, got " + dump(plan));
+    }
+
+    @Test
+    void byproductIntermediateRootDrivesRing() {
+        // Ordering the intermediate X directly: X is a ring MEMBER under T4,
+        // so the request is a member-root delivery — the solve closes at
+        // makeIngot ×7212 / recycler ×2212 (A stock fully spent: 2304 +
+        // 12×2212 − 4×7212 = 0) delivering exactly 5000 X.
+        BenchPatternDetails[] loop = byproductIntermediateRing();
+        for (BenchPatternDetails p : loop) {
+            Bench.register(p);
+        }
+        BenchSimulationState sim = new BenchSimulationState().seed("A", 2304);
+        VMPlan plan = Bench.run(loop[0], 5000, "X", sim);
+        assertTrue(feasible(plan),
+                "X-rooted request must drive the ring, got " + dump(plan));
+        assertEquals(7212, timesOf(plan, "A"), "makeIngotBy (4A->B+X) turns");
+        assertEquals(2212, timesOf(plan, "B", "X"), "recycler (B+X->12A) turns");
+    }
+
+    @Test
+    void byproductIntermediateAmbiguousProducerDegradesGracefully() {
+        // X produced by TWO patterns: the T4 index resolves to nothing (the
+        // multi-pattern choice domain), so X degrades to external-byproduct
+        // semantics — the ring solves without X as a member, and X being
+        // internally balanced (produced = consumed by the recycler) keeps the
+        // plan feasible at the same 962 turns. Deterministic, no crash.
+        BenchPatternDetails makeIngotBy = patEx(new String[]{"B", "X"}, new long[]{1, 1}, "A", 4L);
+        BenchPatternDetails makeIngotC = patEx(new String[]{"C", "X"}, new long[]{1, 1}, "A", 4L, "Q", 1L);
+        BenchPatternDetails recycler = patEx(new String[]{"A"}, new long[]{12}, "B", 1L, "X", 1L);
+        Bench.register(makeIngotBy);
+        Bench.register(makeIngotC);
+        Bench.register(recycler);
+        BenchSimulationState sim = new BenchSimulationState().seed("A", 2304).seed("Q", 50);
+        VMPlan plan = Bench.run(recycler, 10000, sim);
+        assertTrue(feasible(plan),
+                "ambiguous X producer must degrade gracefully, got " + dump(plan));
+        assertEquals(962, timesOf(plan, "A"), "makeIngotBy (4A->B+X) turns");
+        assertEquals(962, timesOf(plan, "B", "X"), "recycler (B+X->12A) turns");
     }
 
     // ---- amplifying loop: real-world gaia-spirit report (GAP-4) ----

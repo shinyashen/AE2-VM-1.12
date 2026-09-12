@@ -463,6 +463,12 @@ public final class AE2VMCrafting {
         } catch (Throwable ignored) {
         }
         // Not found: no cross-network matching; the caller records missing.
+        // NOTE (phase 7d): the byproduct-producer fallback is deliberately NOT
+        // part of the capture resolver — resolving byproduct keys at capture
+        // time re-shapes the catalyst/lossy reference scenarios (their
+        // catalyst keys are themselves byproducts). The fallback lives ONLY
+        // in the ring solver's recipeOf view, where the folded net bundle
+        // covers the byproduct's production and consumption itself.
         return null;
     }
 

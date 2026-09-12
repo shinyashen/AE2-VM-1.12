@@ -83,6 +83,10 @@ public class CraftingVM {
     private final Set<IAEItemStack> circularCache = new HashSet<>();
     /** GAP-4 phase 2: net-effect bundles produced by the ring solver, applied post-order. */
     private final List<Bundle> ringNetBundles = new ArrayList<>();
+    /** Stock reservations released when a ring fold supersedes the scheduled
+     * plans of its keys — re-inserted into the sandbox so the net bundle's
+     * extraction can draw them (phase 7d working-stock draws). */
+    private final Map<IAEItemStack, BigInteger> ringReleasedStock = new HashMap<>();
     private final Set<IAEItemStack> cyclicCraftKeys = new HashSet<>();
     private final Set<IAEItemStack> jitFailCache = new HashSet<>();
     /** Pattern-set version this VM's caches were built against (see invalidateCaches). */
@@ -393,6 +397,7 @@ public class CraftingVM {
         cyclicCraftKeys.clear();
         jitFailCache.clear();
         ringNetBundles.clear();
+        ringReleasedStock.clear();
         ICraftingPatternDetails[] pool = requestBytecode.getPatternPool();
         this.rootPattern = pool != null && pool.length > 0 ? pool[0] : null;
         this.executeStartStock = snapshotExecuteStartStock();
@@ -1062,6 +1067,12 @@ public class CraftingVM {
             correctRecursion(total, initialStock);
         }
         solveRings(total, itemDemand);
+        // the released stock reservations of stripped ring keys go back into
+        // the sandbox so the net bundles' extraction can draw them (counted
+        // as network consumption — the plan genuinely spends them)
+        for (var e : ringReleasedStock.entrySet()) {
+            simulation.insert(e.getKey(), e.getValue().longValue());
+        }
         for (Bundle net : ringNetBundles) {
             applyBundleDirect(net);
             // report the ring's net production in the plan (applyBundleDirect's
@@ -1071,6 +1082,7 @@ public class CraftingVM {
                 if (val > 0) emittedItems.add(e.getKey(), val);
             }
         }
+        ringReleasedStock.clear();
         Set<IAEItemStack> applied = new HashSet<>();
         for (IAEItemStack k : total.keySet()) applyOrdered(k, applied, total);
         Map<IAEItemStack, Long> loopMissing = computeFeedbackLoopMissing(total, initialStock);
@@ -2158,7 +2170,18 @@ public class CraftingVM {
         try {
         plans = RingSolver.solve(total, itemDemand, k -> {
             ICraftingPatternDetails d = patternResolver != null ? patternResolver.apply(k) : null;
+            if (d == null) {
+                // T4 byproduct fallback (phase 7d): SOLVER-VIEW ONLY. A key
+                // with no primary producer but exactly one any-slot producer
+                // joins the ring graph through that pattern — the folded net
+                // bundle then covers its production and consumption itself.
+                // Deliberately NOT in the capture resolver: capture-time
+                // resolution would re-shape the catalyst/lossy reference
+                // scenarios (their catalyst keys are byproducts too).
+                d = PatternCompiler.resolveAnyOutputProducer(k);
+            }
             if (d == null) return null;
+            final ICraftingPatternDetails pattern = d;
             Map<IAEItemStack, BigInteger> in = new HashMap<>();
             IAEItemStack[] ins = safeCondensedInputs(d);
             if (ins != null) {
@@ -2183,7 +2206,7 @@ public class CraftingVM {
             return new RingSolver.RecipeView() {
                 @Override
                 public ICraftingPatternDetails pattern() {
-                    return d;
+                    return pattern;
                 }
 
                 @Override
@@ -2202,6 +2225,14 @@ public class CraftingVM {
             // applyOrdered never replays a ring member on top of the solved plan
             for (IAEItemStack rk : plan.ringKeys) {
                 total.keySet().removeIf(k -> k.isSameType(rk));
+                // release the scheduling-phase stock reservation of the
+                // superseded plan — the net bundle re-draws what it needs
+                BigInteger reserved = getPool(stockFromNetwork, rk);
+                if (reserved != null && reserved.signum() > 0) {
+                    setPool(stockFromNetwork, rk, BigInteger.ZERO);
+                    ringReleasedStock.merge(rk, reserved, BigInteger::add);
+                    usedItems.add(rk, -reserved.longValue());
+                }
             }
             Bundle net = new Bundle();
             for (var e : plan.patterns.entrySet()) {
