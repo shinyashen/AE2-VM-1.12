@@ -197,21 +197,23 @@ jobs:
           ids = [v["id"] for v in versions if v.get("name") == "1.12.2"]
           if not ids:
               sys.exit(f"1.12.2 not in the version list (raw={str(versions)[:200]})")
-          # loader + java versions in the same payload (CF requires a loader
-          # entry per project class; the mod ships release-8 bytecode → Java 8)
-          forge = [v["id"] for v in versions if v.get("name") == "Forge"]
+          # CF treats Java versions as part of the "environment" group — the
+          # upload payload's gameVersions must include Java 8 alongside 1.12.2
+          # (the mod ships release-8 bytecode); loaders/environments are
+          # website-side concepts the Upload API does not take
           java8 = [v["id"] for v in versions if v.get("name") == "Java 8"]
-          print(f"1.12.2={ids[0]}, Forge={forge[0] if forge else 'NF'}, Java 8={java8[0] if java8 else 'NF'}")
+          if not java8:
+              sys.exit("Java 8 not found in the version list")
+          print(f"1.12.2={ids[0]}, Java 8={java8[0]}")
 
-          # metadata field names are SNAKE_CASE (mc-publish reference payload):
-          # game_versions/java_versions/loaders + environments ("Both")
-          meta = {"name": display_name,
-                  "version_type": "release",
-                  "changelog": changelog,
-                  "game_versions": ids,
-                  "loaders": forge[:1],
-                  "java_versions": java8[:1],
-                  "environments": ["Both"]}
+          # metadata shape per mc-publish's packCurseForgeVersionInit —
+          # camelCase: changelog/changelogType/displayName/gameVersions/releaseType
+          # (relations omitted — CF project defaults apply)
+          meta = {"changelog": changelog,
+                  "changelogType": "markdown",
+                  "displayName": display_name,
+                  "gameVersions": ids + java8,
+                  "releaseType": "release"}
           status, result = cf_upload(f"/projects/{project}/upload-file",
               data=meta,
               files=("file", (os.path.basename(jar), open(jar, "rb").read())))
