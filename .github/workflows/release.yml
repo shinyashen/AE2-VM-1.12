@@ -205,8 +205,12 @@ jobs:
           java8 = [v["id"] for v in versions if v.get("name") == "Java 8"]
           if not forge or not java8:
               sys.exit(f"Forge/Java 8 not found (forge={forge}, java8={java8})")
-          # diagnostic: save the full version list for offline inspection
-          open("build/cf-versions.json", "w").write(json.dumps(versions)[:200000])
+          # diagnostic: save the full version list + type table for offline inspection
+          open("build/cf-versions.json", "w").write(json.dumps(versions))
+          status_t, types = core_api("/game/version-types?cache=true")
+          print("version-types HTTP", status_t)
+          if status_t == 200:
+              open("build/cf-version-types.json", "w").write(json.dumps(types))
           javaish = [(v["id"], v.get("name")) for v in versions
                      if "java" in str(v.get("name", "")).lower() or v.get("name") in ("8", "11", "17", "21")]
           print("java-ish entries:", javaish)
@@ -231,12 +235,12 @@ jobs:
               print("::warning::CurseForge upload failed"); sys.exit(1)
           PY
 
-      - name: Upload diagnostics (cf-versions.json; temporary)
+      - name: Upload diagnostics (cf version tables; temporary)
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: cf-versions
-          path: build/cf-versions.json
+          name: cf-version-tables
+          path: build/cf-*.json
           if-no-files-found: ignore
 
       - name: Verify CurseForge token reachability (legacy probe; superseded by the upload step)
