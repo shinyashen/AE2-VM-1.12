@@ -197,14 +197,16 @@ jobs:
           ids = [v["id"] for v in versions if v.get("name") == "1.12.2"]
           if not ids:
               sys.exit(f"1.12.2 not in the version list (raw={str(versions)[:200]})")
-          # CF treats Java versions as part of the "environment" group — the
-          # upload payload's gameVersions must include Java 8 alongside 1.12.2
-          # (the mod ships release-8 bytecode); loaders/environments are
-          # website-side concepts the Upload API does not take
+          # The upload API validates gameVersions against ALL required groups at
+          # once (per mc-publish: game ids + loader id + environment id + java id):
+          # - Forge (the loader group)
+          # - Java 8 (the environment group — the mod ships release-8 bytecode)
+          forge = [v["id"] for v in versions if v.get("name") == "Forge"]
           java8 = [v["id"] for v in versions if v.get("name") == "Java 8"]
-          if not java8:
-              sys.exit("Java 8 not found in the version list")
-          print(f"1.12.2={ids[0]}, Java 8={java8[0]}")
+          if not forge or not java8:
+              sys.exit(f"Forge/Java 8 not found (forge={forge}, java8={java8})")
+          ids = ids + forge[:1] + java8[:1]
+          print(f"1.12.2={ids[0]}, Forge={forge[0]}, Java 8={java8[0]}")
 
           # metadata shape per mc-publish's packCurseForgeVersionInit —
           # camelCase: changelog/changelogType/displayName/gameVersions/releaseType
@@ -212,7 +214,7 @@ jobs:
           meta = {"changelog": changelog,
                   "changelogType": "markdown",
                   "displayName": display_name,
-                  "gameVersions": ids + java8,
+                  "gameVersions": ids,
                   "releaseType": "release"}
           status, result = cf_upload(f"/projects/{project}/upload-file",
               data=meta,
