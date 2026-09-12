@@ -197,7 +197,12 @@ jobs:
           ids = [v["id"] for v in versions if v.get("name") == "1.12.2"]
           if not ids:
               sys.exit(f"1.12.2 not in the version list (raw={str(versions)[:200]})")
-          print(f"1.12.2 game version id = {ids[0]}")
+          # CF requires an entry from the environment (Java) group as well;
+          # the mod ships release-8 bytecode → Java 8
+          java8 = [v["id"] for v in versions if v.get("name") == "Java 8"]
+          print(f"1.12.2 game version id = {ids[0]}, Java 8 id = {java8[0] if java8 else 'NOT FOUND'}")
+          if java8:
+              ids.append(java8[0])
 
           status, result = cf_upload(f"/projects/{project}/upload-file",
               data={"displayName": display_name, "releaseType": "release",
