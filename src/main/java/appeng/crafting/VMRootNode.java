@@ -57,6 +57,18 @@ public final class VMRootNode extends CraftingTreeNode {
         try {
             long start = System.nanoTime();
             plan = calculate(amount);
+            if (plan == null) {
+                // No root pattern: the native tree queries the same index and
+                // would not find one either. This is EXPECTED while the grid's
+                // pattern index is still rebuilding (e.g. seconds after server
+                // boot, before recalculateCraftingPatterns has run) and for
+                // keys with no pattern at all — fall back quietly instead of
+                // dressing a designed hand-off up as a failure.
+                nativeFallback = true;
+                AE2VM.LOGGER.debug("[AE2-VM] job {}: no root pattern for {}; native crafting handles it",
+                        debugTag, requestedOutput.getDefinition());
+                return super.request(inventory, amount, source);
+            }
             long us = (System.nanoTime() - start) / 1_000L;
             AE2VM.LOGGER.info("[AE2-VM] job {}: plan for {}x{} in {} us (missing={} patterns={})",
                     debugTag, amount, requestedOutput.getDefinition(),
@@ -100,12 +112,9 @@ public final class VMRootNode extends CraftingTreeNode {
                 .orElse(false);
     }
 
+    /** Null when no root pattern exists — the caller falls back natively. */
     private VMPlan calculate(long amount) {
-        VMPlan plan = AE2VMCrafting.calculate(grid, world, requestedOutput, amount);
-        if (plan == null) {
-            throw new IllegalStateException("No compilable pattern for " + requestedOutput.getDefinition());
-        }
-        return plan;
+        return AE2VMCrafting.calculate(grid, world, requestedOutput, amount);
     }
 
     @Override
