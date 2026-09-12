@@ -6,7 +6,7 @@
 
 ---
 
-AE2 VM 1.12 is an **unofficial fork** of Tao's [AE2-VM](https://github.com/TaoLe-si/AE2-VM) for modern Minecraft (NeoForge 1.21.1), ported to **Minecraft 1.12.2** with Cleanroom or Forge + MixinBooter, running on **AE2 Unofficial Extended Life**. Not affiliated with or endorsed by the upstream author — all credit for the original architecture goes to Tao; see Credits below.
+AE2 VM 1.12 is an **unofficial fork** of Tao's [AE2-VM](https://github.com/TaoLe-si/AE2-VM) for modern Minecraft (NeoForge 1.21.1), ported to **Minecraft 1.12.2** with Cleanroom or Forge + MixinBooter, running on **AE2 Unofficial Extended Life**. All credit for the original architecture goes to Tao; see Credits below.
 
 ## What it does
 
