@@ -1106,7 +1106,13 @@ public class CraftingVM {
         if (selfAdjacentKeys != null && !selfAdjacentKeys.isEmpty()) {
             correctRecursion(total, initialStock);
         }
-        solveRings(total, itemDemand);
+        // The ring family is feature-gated (hard-off while the live-server
+        // stalls are triaged): with the gate closed, ringNetBundles stays
+        // empty and every post-solve block below degrades to no-ops, so the
+        // plain propagation plan drives the whole aggregation.
+        if (com.ae2vm.config.AE2VMConfig.ringSolverEnabled) {
+            solveRings(total, itemDemand);
+        }
         // the released stock reservations of stripped ring keys go back into
         // the sandbox so the net bundles' extraction can draw them (the net
         // draw is closure-bounded to exactly this stock)

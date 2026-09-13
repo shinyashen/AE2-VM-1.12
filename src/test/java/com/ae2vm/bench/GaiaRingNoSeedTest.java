@@ -2,6 +2,8 @@ package com.ae2vm.bench;
 
 import com.ae2vm.compiler.PatternCompiler;
 import com.ae2vm.vm.VMPlan;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -16,6 +18,17 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * absent.
  */
 class GaiaRingNoSeedTest {
+    @BeforeAll
+    static void enableRingFamily() {
+        // The ring family is feature-gated off by default; these tests pin its behavior.
+        com.ae2vm.config.AE2VMConfig.ringSolverEnabled = true;
+    }
+
+    @AfterAll
+    static void restoreRingFamilyGate() {
+        com.ae2vm.config.AE2VMConfig.ringSolverEnabled = false;
+    }
+
     @Test
     void zeroSeedAmplificationRingFolds() throws Exception {
         net.minecraft.init.Bootstrap.register();

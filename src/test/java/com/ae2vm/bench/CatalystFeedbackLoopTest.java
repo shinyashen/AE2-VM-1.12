@@ -2,6 +2,7 @@ package com.ae2vm.bench;
 
 import com.ae2vm.vm.VMPlan;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -72,6 +73,17 @@ class CatalystFeedbackLoopTest {
     }
 
     // ---- raw-feedback-loop: balanced catalyst cycle, seed = 1 A ----
+
+    @BeforeAll
+    static void enableRingFamily() {
+        // The ring family is feature-gated off by default; these tests pin its behavior.
+        com.ae2vm.config.AE2VMConfig.ringSolverEnabled = true;
+    }
+
+    @AfterAll
+    static void restoreRingFamilyGate() {
+        com.ae2vm.config.AE2VMConfig.ringSolverEnabled = false;
+    }
 
     @Test
     void rawLoopMinimumFeasible() {

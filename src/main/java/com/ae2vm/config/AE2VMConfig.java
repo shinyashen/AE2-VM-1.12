@@ -15,6 +15,16 @@ public class AE2VMConfig {
     @Config.RequiresMcRestart
     public static boolean proxyEnabled = true;
 
+    /**
+     * Feature gate for the incremental ring family (ring folding + the
+     * out-of-ring deficit expansion + their net-bundle hand-off). Deliberately
+     * NOT a registered config entry: shipped hard-off while the live-server
+     * issues (downstream-item stalls) are triaged. Flip to true (by edit, or
+     * via a future config entry) to re-enable the family; ring tests set it
+     * themselves.
+     */
+    public static boolean ringSolverEnabled = false;
+
     @Mod.EventBusSubscriber(modid = "ae2_vm_112")
     private static class EventHandler {
         @SubscribeEvent
