@@ -125,3 +125,6 @@ __pycache__/
 CF-DESCRIPTION.md
 REWRITE-PLAN.md
 REWRITE-PLAN-SHA-MAP.txt
+
+# Local workspace: internal design docs, notes, diagnostics — never tracked
+local/
