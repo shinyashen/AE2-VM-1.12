@@ -14,6 +14,9 @@ import com.ae2vm.config.AE2VMConfig;
 import com.ae2vm.vm.VMPlan;
 import net.minecraft.world.World;
 
+import java.util.HashSet;
+import java.util.Set;
+
 
 /**
  * Root CraftingTreeNode replacement that runs the AE2-VM stack machine and
@@ -198,7 +201,29 @@ public final class VMRootNode extends CraftingTreeNode {
         for (var e : plan.getUsedItems().entrySet()) {
             addPlanStorage(planList, e.getKey(), e.getValue());
         }
+        // Keys the scheduled patterns already produce: the emitted section must
+        // not addRequestable them again — IItemList.addRequestable ACCUMULATES,
+        // so a ring's gross flow was reported twice (live gaia report: the
+        // recycler's ingot showed as 2500 = emitted 1250 + output 1250).
+        Set<IAEItemStack> scheduledOutputs = new HashSet<>();
+        for (var entry : plan.getPatternTimes().entrySet()) {
+            try {
+                IAEItemStack[] outputs = entry.getKey().getOutputs();
+                if (outputs == null) continue;
+                for (IAEItemStack output : outputs) {
+                    if (output == null || output.getStackSize() <= 0L) continue;
+                    IAEItemStack key = output.copy();
+                    key.reset();
+                    key.setStackSize(1L);
+                    scheduledOutputs.add(key);
+                }
+            } catch (Throwable ignored) {
+            }
+        }
         for (var e : plan.getEmittedItems().entrySet()) {
+            if (scheduledOutputs.contains(e.getKey())) {
+                continue;
+            }
             IAEItemStack requestable = e.getKey().copy();
             requestable.setStackSize(e.getValue());
             requestable.setCountRequestable(e.getValue());
