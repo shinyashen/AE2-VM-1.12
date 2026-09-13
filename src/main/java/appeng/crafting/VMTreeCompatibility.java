@@ -36,19 +36,26 @@ public final class VMTreeCompatibility {
     /** Returns an AE2CT LiteCraftTreeNode as Object (null when AE2CT is absent). */
     public static Object createLiteTree(final CraftingTreeNode root) {
         if (!(root instanceof VMRootNode)) {
+            AE2VM.LOGGER.debug("[AE2-VM] AE2CT tree: native node {} is not VM-backed",
+                    root == null ? "null" : root.getClass().getName());
             return null;
         }
         final VMRootNode vmRoot = (VMRootNode) root;
         if (vmRoot.isNativeFallback()) {
+            AE2VM.LOGGER.debug("[AE2-VM] AE2CT tree: job fell back to native crafting");
             return null;
         }
         final VMPlan plan = vmRoot.getVMPlan();
         if (plan == null) {
+            AE2VM.LOGGER.debug("[AE2-VM] AE2CT tree: VM plan is absent on the job's root");
             return null;
         }
         try {
             resolveConstructors();
-            return new Builder(plan).build();
+            final Object built = new Builder(plan).build();
+            AE2VM.LOGGER.debug("[AE2-VM] AE2CT tree: built the VM plan tree ({} patterns)",
+                    plan.getPatternTimes().size());
+            return built;
         } catch (final Throwable failure) {
             AE2VM.LOGGER.warn("[AE2-VM] Unable to build AE2CT tree from VM plan", failure);
             return null;

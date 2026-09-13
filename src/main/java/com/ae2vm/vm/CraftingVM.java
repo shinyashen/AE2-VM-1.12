@@ -83,6 +83,11 @@ public class CraftingVM {
     private final Set<IAEItemStack> circularCache = new HashSet<>();
     /** Net-effect bundles produced by the ring solver, applied post-order. */
     private final List<Bundle> ringNetBundles = new ArrayList<>();
+    /** Type-normalized members of every ring the solver folded this execute —
+     *  the authoritative membership for the E-case: a ring member's demand is
+     *  covered by the net bundle's internal flow and must never be re-scheduled
+     *  from its own (in-ring) producer. */
+    private Set<IAEItemStack> ringMemberKeys = null;
     /** Stock reservations released when a ring fold supersedes the scheduled
      * plans of its keys — re-inserted into the sandbox so the net bundle's
      * extraction can draw them (the ring fold's working-stock draws). */
@@ -1125,13 +1130,18 @@ public class CraftingVM {
             // flows down the DAG (the ingredient's own inputs become the
             // missing items). Simulate before the net extraction so the
             // deficit is measured against untouched stock; applyOrdered's
-            // replay below then picks the injected totals up.
+            // replay below then picks the injected totals up. Ring MEMBERS
+            // are excluded by the solver's membership: their demand is net
+            // flow (their own production feeds their consumption inside the
+            // bundle), and re-scheduling them would double-fire the pattern
+            // (the live gaia report showed the recycler at 2x its solution).
             List<IAEItemStack> rescheduled = null;
             for (var e : net.used.entrySet()) {
                 long demand = toLongSafe(e.getValue(), "ring-use");
-                ICraftingPatternDetails p = demand > 0 && patternResolver != null
+                if (demand <= 0 || containsRingMember(e.getKey())) continue;
+                ICraftingPatternDetails p = patternResolver != null
                         ? patternResolver.apply(e.getKey()) : null;
-                // Ring products are covered by the net bundle itself.
+                // Belt and braces: a key the bundle itself emits is ring flow.
                 if (p == null || net.emitted.containsKey(e.getKey())) continue;
                 long avail = simulation.extract(e.getKey(), demand, true);
                 long deficit = demand - avail;
@@ -1149,7 +1159,10 @@ public class CraftingVM {
                     }
                 } catch (Throwable ignored) {
                 }
-                total.put(e.getKey(), BigInteger.valueOf((deficit + perCraft - 1) / perCraft));
+                long crafts = (deficit + perCraft - 1) / perCraft;
+                AE2VM.LOGGER.info("[AE2-VM] ring E-case: {} deficit {} -> {} crafts of its own pattern",
+                        e.getKey().getDefinition(), deficit, crafts);
+                total.put(e.getKey(), BigInteger.valueOf(crafts));
                 if (rescheduled == null) rescheduled = new ArrayList<>();
                 rescheduled.add(e.getKey());
             }
@@ -1189,6 +1202,11 @@ public class CraftingVM {
             if (s.isSameType(key)) return true;
         }
         return false;
+    }
+
+    /** True when {@code key} is a member of a ring folded this execute. */
+    private boolean containsRingMember(IAEItemStack key) {
+        return ringMemberKeys != null && containsKey(ringMemberKeys, key);
     }
 
     /** Self-adjacent patterns: own output key also a NON-returned consumed input. */
@@ -2319,6 +2337,12 @@ public class CraftingVM {
                 long val = toLongSafe(e.getValue(), "ring-use");
                 if (val > 0) net.used.put(e.getKey(), BigInteger.valueOf(val));
             }
+            if (ringMemberKeys == null) {
+                ringMemberKeys = new HashSet<>();
+            }
+            for (IAEItemStack rk : plan.ringKeys) {
+                ringMemberKeys.add(rk.copy().setStackSize(1));
+            }
             // startup seed shortfall: timing capital the network must hold
             // before the ring's first output lands — honest missing; the
             // ring's own production pays it back within the first round
@@ -2345,6 +2369,15 @@ public class CraftingVM {
                 boolean hasPattern = patternResolver != null && patternResolver.apply(e.getKey()) != null;
                 sb.append(" ").append(e.getValue()).append("x").append(e.getKey().getDefinition())
                         .append(hasPattern ? "(PATTERN)" : "(leaf)");
+            }
+            AE2VM.LOGGER.info(sb.toString());
+        }
+        if (!patternTimes.isEmpty()) {
+            StringBuilder sb = new StringBuilder("[AE2-VM DIAG-PATS]");
+            for (var e : patternTimes.entrySet()) {
+                sb.append(" ").append(e.getValue()).append("x").append(
+                        com.ae2vm.compat.PatternCompat.getPrimaryOutput(e.getKey()) == null
+                                ? "?" : com.ae2vm.compat.PatternCompat.getPrimaryOutput(e.getKey()).getDefinition());
             }
             AE2VM.LOGGER.info(sb.toString());
         }
