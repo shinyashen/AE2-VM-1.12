@@ -328,6 +328,13 @@ public final class TraceRecorder {
                 "patterns", Integer.toString(plan.getPatternTimes().size())));
     }
 
+    /** Invariant checker verdicts (design doc §6.3), one event per violation. */
+    public void invariantViolations(java.util.List<String> violations) {
+        for (String v : violations) {
+            emit(TraceSegment.AUDIT, "INVARIANT_VIOLATION", Collections.singletonMap("rule", v));
+        }
+    }
+
     private static TreeMap<String, String> mapOf(String... kv) {
         TreeMap<String, String> m = new TreeMap<>();
         for (int i = 0; i + 1 < kv.length; i += 2) {

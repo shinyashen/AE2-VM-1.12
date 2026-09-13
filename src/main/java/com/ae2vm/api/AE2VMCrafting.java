@@ -254,6 +254,19 @@ public final class AE2VMCrafting {
         }
         VMPlan fixed = applyIgnoreFix(grid, what, plan);
         if (fixed != null) {
+            // Always-on plan assertions (design doc §6.3): violations log
+            // unconditionally and land as INVARIANT_VIOLATION events when
+            // recording. The plan is still served — invariants are evidence,
+            // not a veto.
+            java.util.List<String> violations =
+                    com.ae2vm.vm.PlanInvariants.check(fixed, what, amount, stockView.stockView());
+            if (!violations.isEmpty()) {
+                com.ae2vm.AE2VM.LOGGER.warn("[AE2-VM] plan invariant violations {}: {}",
+                        what.getDefinition(), violations);
+                if (rec != null) {
+                    rec.invariantViolations(violations);
+                }
+            }
             PLAN_CACHE.computeIfAbsent(grid, g -> new ConcurrentHashMap<>())
                     .put(what, new PlanEntry(amount, PatternCompiler.patternSetVersion(), fixed));
             if (rec != null) {
