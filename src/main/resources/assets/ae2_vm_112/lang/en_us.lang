@@ -1,0 +1,32 @@
+# AE2-VM trace command feedback (en_us) — server-side rendered literals
+aevm.trace.record.next=Recording armed: your NEXT order will be captured to logs/aevm/traces.
+aevm.trace.record.window=Recording window OPENED: every order is captured until /ae2vm trace record off.
+aevm.trace.record.off=Recording window closed.
+aevm.trace.record.busy=Already armed ({0}). Disarm first with /ae2vm trace record off.
+aevm.trace.record.nothing=Nothing was armed.
+aevm.trace.list.header={0} trace(s) of yours, page {1}/{2} — id, time, status, request
+aevm.trace.list.header-all={0} trace(s) on this server, page {1}/{2} — id, time, status, request, source
+aevm.trace.list.line=#{0} {1} {2} {3}
+aevm.trace.list.footer=All shown. Trace files live under logs/aevm/traces.
+aevm.trace.list.page=Use /ae2vm trace list {0} for the next page.
+aevm.trace.status.started=OK
+aevm.trace.status.fallback=FALLBACK
+aevm.trace.status.extract-failed=EXTRACT-FAIL
+aevm.trace.status.calculated=CALCULATED
+aevm.trace.status.abandoned=OPEN
+aevm.trace.status.server-stop=SERVER-STOP
+aevm.trace.show.header=Trace #{0}: {1} x{2}, engine {3}, {4} event(s)
+aevm.trace.show.plan=plan: patterns={0}, used={1}, missing={2}, emitted={3}, simulation={4}
+aevm.trace.show.missing=missing: {0}
+aevm.trace.show.nosuch=No such trace: {0}
+aevm.trace.show.file=File: {0}
+aevm.trace.op-only=This subcommand is operator-only.
+aevm.trace.usage=Usage: /ae2vm trace record|list|show|upload|download
+aevm.trace.upload.start=Uploading trace {0} to mclo.gs (public by URL)...
+aevm.trace.upload.done=Trace uploaded: {0}
+aevm.trace.upload.failed=Upload failed: {0}
+aevm.trace.upload.too-big=Trace exceeds the paste size limit; share the file itself instead.
+aevm.trace.download.start=Sending trace {0} to your client ({1} bytes)...
+aevm.trace.download.saved=Trace saved to .minecraft/aevm/traces/{0}
+aevm.trace.download.failed=Download failed: {0}
+aevm.trace.download.needs-mod=This download requires the AE2 VM mod on your client.

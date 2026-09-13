@@ -60,12 +60,19 @@ public final class TraceStore {
         return dir == null ? null : dir.resolve("trace-" + traceId + ".aevmtrace.json.gz");
     }
 
+    /** Lazy retention over the live server's trace dir (no-op outside a server). */
+    public static synchronized void enforceRetention() {
+        Path dir = tracesDir();
+        if (dir != null) {
+            enforceRetention(dir);
+        }
+    }
+
     /**
      * Lazy retention: oldest first by mtime until both the count and byte
      * caps hold. Missing dir / null config paths are no-ops.
      */
-    public static synchronized void enforceRetention() {
-        Path dir = tracesDir();
+    public static synchronized void enforceRetention(Path dir) {
         if (dir == null || !Files.isDirectory(dir)) {
             return;
         }
