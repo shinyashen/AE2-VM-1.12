@@ -1167,12 +1167,20 @@ public class CraftingVM {
                 rescheduled.add(e.getKey());
             }
             applyBundleDirect(net, true);
-            // Report the ring's NET production (gross emission minus the flow
-            // the ring consumes internally). The gross figures are sandbox
-            // traffic; native CPU semantics register only the surplus as
-            // emitable (howManyEmitted) — passing gross through made the CPU
-            // believe 1250 ingots / 15000 spirits were owed back, which is not
-            // a completable state (the reported stall).
+            // Report the ring's TRUE surplus: gross emission minus the flow the
+            // ring consumes internally AND minus the out-of-ring demand the
+            // downstream (non-ring) schedule draws from it. Both reductions
+            // matter:
+            //  - only the surplus is emitable in native CPU semantics
+            //    (howManyEmitted); passing gross made the CPU believe 1250
+            //    ingots / 15000 spirits were owed back — a state it cannot
+            //    complete (the reported stall);
+            //  - when the root is a DOWNSTREAM item, the ring's product is an
+            //    intermediate consumed by that item's recipe: without the
+            //    demand reduction it was reported as surplus, starving the
+            //    missing list of the material the downstream chain actually
+            //    needs. itemDemand carries out-of-ring demand only (the
+            //    propagation strips ring edges), so it is exactly the draw.
             for (var e : net.emitted.entrySet()) {
                 long gross = toLongSafe(e.getValue(), "ring-report");
                 if (gross <= 0) continue;
@@ -1183,7 +1191,14 @@ public class CraftingVM {
                         break;
                     }
                 }
-                long surplus = gross - consumed;
+                BigInteger outside = BigInteger.ZERO;
+                for (var d : itemDemand.entrySet()) {
+                    if (d.getKey().isSameType(e.getKey())) {
+                        outside = d.getValue();
+                        break;
+                    }
+                }
+                long surplus = gross - consumed - toLongSafe(outside, "ring-outside");
                 if (surplus > 0) emittedItems.add(e.getKey(), surplus);
             }
             if (rescheduled != null) {
