@@ -18,7 +18,19 @@ public final class TraceSegment {
     public final String phase;
     public final List<TraceEvent> events = new ArrayList<>();
 
+    /**
+     * O(1) ring eviction marker: events [0, headSkip) are logically
+     * dropped (memory stays bounded without ArrayList shifts). The
+     * writer skips them; they are never serialized.
+     */
+    public int headSkip;
+
     public TraceSegment(String phase) {
         this.phase = phase;
+    }
+
+    /** Logical (post-eviction) event count. */
+    public int liveCount() {
+        return events.size() - headSkip;
     }
 }

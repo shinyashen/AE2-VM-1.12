@@ -25,6 +25,21 @@ public class AE2VMConfig {
      */
     public static boolean ringSolverEnabled = false;
 
+    // ---- diagnostics traces (design doc §4.2/§5.5) ----
+
+    @Config.Comment({"Per-session event cap for armed trace recording.",
+            "Oldest events are dropped first and the trace is marked truncated."})
+    public static int traceSessionEventCap = 100000;
+
+    @Config.Comment("Maximum number of trace files kept under logs/aevm/traces (oldest deleted first).")
+    public static int traceRetentionCount = 20;
+
+    @Config.Comment("Maximum total size in bytes of trace files under logs/aevm/traces.")
+    public static long traceRetentionMaxBytes = 104857600L;
+
+    @Config.Comment({"Chat language for trace command feedback.", "en_us or zh_cn."})
+    public static String language = "en_us";
+
     @Mod.EventBusSubscriber(modid = "ae2_vm_112")
     private static class EventHandler {
         @SubscribeEvent

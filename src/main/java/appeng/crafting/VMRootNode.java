@@ -11,6 +11,9 @@ import com.ae2vm.AE2VM;
 import com.ae2vm.api.AE2VMCrafting;
 import com.ae2vm.api.AE2VMCraftingRegistry;
 import com.ae2vm.config.AE2VMConfig;
+import com.ae2vm.trace.TraceRecorder;
+import com.ae2vm.trace.TraceSegment;
+import com.ae2vm.trace.TraceSessions;
 import com.ae2vm.vm.VMPlan;
 import net.minecraft.world.World;
 
@@ -32,6 +35,8 @@ public final class VMRootNode extends CraftingTreeNode {
     private final String debugTag;
     private boolean nativeFallback;
     private VMPlan plan;
+    /** Armed-session recorder for this order; null when not recording. */
+    private TraceRecorder traceRecorder;
 
     public VMRootNode(ICraftingGrid craftingGrid,
                       CraftingJob craftingJob,
@@ -51,6 +56,11 @@ public final class VMRootNode extends CraftingTreeNode {
     @Override
     IAEItemStack request(MECraftingInventory inventory, long amount, IActionSource source)
             throws CraftBranchFailure, InterruptedException {
+        if ((traceRecorder == null || traceRecorder.isClosed())
+                && !nativeFallback && AE2VMConfig.proxyEnabled && !isThirdPartySource(source)) {
+            traceRecorder = TraceSessions.openFor(source, grid, requestedOutput, amount,
+                    craftingJob.isSimulation());
+        }
         if (nativeFallback || !AE2VMConfig.proxyEnabled || isThirdPartySource(source)) {
             return super.request(inventory, amount, source);
         }
@@ -66,6 +76,11 @@ public final class VMRootNode extends CraftingTreeNode {
                 // keys with no pattern at all — fall back quietly instead of
                 // dressing a designed hand-off up as a failure.
                 nativeFallback = true;
+                if (traceRecorder != null && !traceRecorder.isClosed()) {
+                    traceRecorder.fallback("no-root-pattern",
+                            "expected: native tree handles pattern-less keys");
+                    traceRecorder.finish("fallback");
+                }
                 AE2VM.LOGGER.debug("[AE2-VM] job {}: no root pattern for {}; native crafting handles it",
                         debugTag, requestedOutput.getDefinition());
                 return super.request(inventory, amount, source);
@@ -79,10 +94,16 @@ public final class VMRootNode extends CraftingTreeNode {
             }
             return requestedOutput.copy().setStackSize(amount);
         } catch (CraftBranchFailure failure) {
+            // simulate-retry re-enters request(): keep an open session alive
             throw failure;
         } catch (Throwable failure) {
             nativeFallback = true;
             plan = null;
+            if (traceRecorder != null && !traceRecorder.isClosed()) {
+                // free-text discipline: exception messages embed real item names
+                traceRecorder.fallback("vm-exception", failure.getClass().getName());
+                traceRecorder.finish("fallback");
+            }
             AE2VM.LOGGER.warn("[AE2-VM] VM calculation failed for {}, falling back to native crafting",
                     requestedOutput.getDefinition(), failure);
             return super.request(inventory, amount, source);
@@ -115,7 +136,8 @@ public final class VMRootNode extends CraftingTreeNode {
 
     /** Null when no root pattern exists — the caller falls back natively. */
     private VMPlan calculate(long amount) {
-        return AE2VMCrafting.calculate(grid, world, requestedOutput, amount);
+        TraceRecorder live = traceRecorder != null && !traceRecorder.isClosed() ? traceRecorder : null;
+        return AE2VMCrafting.calculate(grid, world, requestedOutput, amount, live);
     }
 
     @Override
@@ -157,6 +179,10 @@ public final class VMRootNode extends CraftingTreeNode {
             request.setCraftable(false);
             IAEItemStack extracted = storage.extractItems(request, Actionable.SIMULATE, source);
             if (extracted == null || extracted.getStackSize() != request.getStackSize()) {
+                if (traceRecorder != null && !traceRecorder.isClosed()) {
+                    traceRecorder.startExtract("simulate", false, e.getKey(), e.getValue());
+                    traceRecorder.finish("extract-failed");
+                }
                 throw new CraftBranchFailure(request, request.getStackSize());
             }
         }
@@ -181,6 +207,10 @@ public final class VMRootNode extends CraftingTreeNode {
         }
         for (var e : plan.getPatternTimes().entrySet()) {
             craftingCPUCluster.addCrafting(e.getKey(), e.getValue());
+        }
+        if (traceRecorder != null && !traceRecorder.isClosed()) {
+            traceRecorder.startSummary(plan);
+            traceRecorder.finish("started");
         }
         AE2VM.LOGGER.info("[AE2-VM DIAG-SETJOB] job {}: cpu got used={} emitted={} patterns={}",
                 debugTag, plan.getUsedItems().size(), plan.getEmittedItems().size(),

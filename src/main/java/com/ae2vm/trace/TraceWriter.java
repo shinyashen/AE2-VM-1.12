@@ -24,7 +24,10 @@ public final class TraceWriter {
     public static void stampChain(TraceFile file) {
         String prev = TraceChain.genesis(file.traceId == null ? "?" : file.traceId);
         for (TraceSegment s : file.segments) {
-            for (TraceEvent e : s.events) {
+            // ring-evicted head events are not serialized: the chain runs
+            // over the VISIBLE timeline only
+            for (int i = s.headSkip; i < s.events.size(); i++) {
+                TraceEvent e = s.events.get(i);
                 e.h = TraceChain.next(prev, TraceJson.canonical(e.canonical()));
                 prev = e.h;
             }

@@ -45,6 +45,11 @@ public final class NetworkCraftingSandbox implements SimulationState {
         this.stock = stock;
     }
 
+    /** The live stock list this sandbox was seeded with (trace snapshot source). */
+    public IItemList<IAEItemStack> stockView() {
+        return stock;
+    }
+
     /** Snapshots the live network inventory (items + AE2FC fluids as drops). */
     public static NetworkCraftingSandbox snapshot(IGrid grid) {
         IItemStorageChannel itemChannel =

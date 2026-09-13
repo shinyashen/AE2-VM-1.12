@@ -67,8 +67,8 @@ public final class TraceFile {
             JsonObject seg = new JsonObject();
             seg.addProperty("phase", s.phase);
             JsonArray evs = new JsonArray();
-            for (TraceEvent e : s.events) {
-                evs.add(e.toJson());
+            for (int i = s.headSkip; i < s.events.size(); i++) {
+                evs.add(s.events.get(i).toJson());
             }
             seg.add("events", evs);
             segs.add(seg);
@@ -97,8 +97,9 @@ public final class TraceFile {
 
     private String chainOrNull() {
         for (int s = segments.size() - 1; s >= 0; s--) {
-            List<TraceEvent> evs = segments.get(s).events;
-            for (int i = evs.size() - 1; i >= 0; i--) {
+            TraceSegment seg = segments.get(s);
+            List<TraceEvent> evs = seg.events;
+            for (int i = evs.size() - 1; i >= seg.headSkip; i--) {
                 if (evs.get(i).h != null) {
                     return evs.get(i).h;
                 }

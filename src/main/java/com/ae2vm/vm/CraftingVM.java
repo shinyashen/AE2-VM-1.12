@@ -475,10 +475,14 @@ public class CraftingVM {
                     // Processing-recipe default fuzzy: same-item NBT variants satisfy the slot.
                     if (got < needed && PatternCompiler.isProcessingInput(key)) {
                         long remaining = needed - got;
+                        com.ae2vm.trace.TraceRecorder _rec = com.ae2vm.trace.TraceRecorder.current();
                         for (IAEItemStack variant : nbtFamilyOf(key)) {
                             if (variant.isSameType(key)) continue;
                             long vgot = simulation.extract(variant, remaining, false);
                             if (vgot <= 0) continue;
+                            if (_rec != null) {
+                                _rec.fuzzySubstitute(key, variant, vgot, nbtFamilyOf(key).size());
+                            }
                             long vint = simInternal.get(variant);
                             long vfromInt = Math.min(vgot, vint);
                             if (vfromInt > 0) simInternal.add(variant, -vfromInt);
