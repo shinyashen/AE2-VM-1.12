@@ -172,8 +172,14 @@ public final class VMTreeCompatibility {
                 if (pattern == null) {
                     break;
                 }
-                final long wantedCrafts = divideCeil(remaining, pattern.outputAmount());
-                final long crafts = Math.min(pattern.remainingCrafts, wantedCrafts);
+                // SCHEDULE-DRIVEN: consume the plan's full craft count. For a
+                // plain DAG the schedule equals the demand-derived count, so
+                // this matches the old demand-driven replay exactly; for a
+                // ring the schedule is the balance-solution value (larger than
+                // what the root demand alone needs — the surplus feeds the
+                // recycling leg), and showing it keeps every number on the
+                // tree consistent with the plan screen.
+                final long crafts = pattern.remainingCrafts;
                 if (crafts <= 0L) {
                     break;
                 }
@@ -289,12 +295,6 @@ public final class VMTreeCompatibility {
         final IAEItemStack key = source.copy();
         key.reset();
         return key;
-    }
-
-    private static long divideCeil(final long value, final long divisor) {
-        if (value <= 0L) return 0L;
-        if (divisor <= 1L) return value;
-        return value / divisor + (value % divisor == 0L ? 0L : 1L);
     }
 
     private static long multiply(final long left, final long right) {
