@@ -1167,11 +1167,24 @@ public class CraftingVM {
                 rescheduled.add(e.getKey());
             }
             applyBundleDirect(net, true);
-            // report the ring's net production in the plan (applyBundleDirect's
-            // insert is internal traffic — the net output is what the player sees)
+            // Report the ring's NET production (gross emission minus the flow
+            // the ring consumes internally). The gross figures are sandbox
+            // traffic; native CPU semantics register only the surplus as
+            // emitable (howManyEmitted) — passing gross through made the CPU
+            // believe 1250 ingots / 15000 spirits were owed back, which is not
+            // a completable state (the reported stall).
             for (var e : net.emitted.entrySet()) {
-                long val = toLongSafe(e.getValue(), "ring-report");
-                if (val > 0) emittedItems.add(e.getKey(), val);
+                long gross = toLongSafe(e.getValue(), "ring-report");
+                if (gross <= 0) continue;
+                long consumed = 0;
+                for (var u : net.used.entrySet()) {
+                    if (u.getKey().isSameType(e.getKey())) {
+                        consumed = toLongSafe(u.getValue(), "ring-use");
+                        break;
+                    }
+                }
+                long surplus = gross - consumed;
+                if (surplus > 0) emittedItems.add(e.getKey(), surplus);
             }
             if (rescheduled != null) {
                 // the raw-ingredient shortfall is superseded by the injected
