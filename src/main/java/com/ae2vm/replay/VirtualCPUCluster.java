@@ -324,17 +324,38 @@ public final class VirtualCPUCluster {
         }
     }
 
-    /** canCraft :444 processing branch — exact SIMULATE extract of every condensed input. */
+    /**
+     * canCraft :444. Processing branch: exact SIMULATE extract of every
+     * condensed input. Craftable branch (:454-516): availability counts the
+     * slot's alternates — simplified to per-condensed-slot totals (the real
+     * code reserves per non-condensed slot to bound shared substitutes, which
+     * only matters when two slots share an alternate; no fixture does).
+     */
     private boolean canCraft(ICraftingPatternDetails d) {
         IAEItemStack[] inputs = d.getCondensedInputs();
         if (inputs == null) {
             return true;
         }
-        for (IAEItemStack in : inputs) {
+        boolean craftable;
+        try {
+            craftable = d.isCraftable();
+        } catch (Throwable t) {
+            craftable = false;
+        }
+        for (int slot = 0; slot < inputs.length; slot++) {
+            IAEItemStack in = inputs[slot];
             if (in == null || in.getStackSize() <= 0) {
                 continue;
             }
-            if (inventory.amountOf(in) < in.getStackSize()) {
+            long available = inventory.amountOf(in);
+            if (craftable && alternates != null) {
+                for (IAEItemStack alt : alternates.alternates(d, slot)) {
+                    if (alt != null) {
+                        available += inventory.amountOf(alt);
+                    }
+                }
+            }
+            if (available < in.getStackSize()) {
                 return false;
             }
         }
