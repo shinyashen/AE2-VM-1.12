@@ -5,6 +5,7 @@ import com.ae2vm.test.fakes.BenchPatternDetails;
 import com.ae2vm.test.fakes.BenchAEItemStack;
 
 import com.ae2vm.compiler.PatternCompiler;
+import com.ae2vm.test.harness.CpuLifecycleAssert;
 import com.ae2vm.vm.VMPlan;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -54,6 +55,10 @@ class GaiaRingLiveReproTest {
 
         BenchSimulationState sim = new BenchSimulationState().seed("S", 499);
         VMPlan plan = Bench.run(craft, 10000, sim);
+        // M5 bridge: the shortfall the plan discloses (2376 iron) is exactly
+        // where the virtual CPU stalls — S2, blocked on Fe
+        CpuLifecycleAssert.stalls(plan,
+                com.ae2vm.compat.PatternCompat.getPrimaryOutput(craft), 10000, "S2");
 
         assertEquals(Long.valueOf(1188L), plan.getPatternTimes().get(recycle),
                 "the recycling pattern balances at the ring solution");

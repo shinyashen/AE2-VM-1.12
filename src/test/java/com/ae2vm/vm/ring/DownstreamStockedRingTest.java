@@ -1,6 +1,7 @@
 package com.ae2vm.vm.ring;
 import com.ae2vm.test.harness.Bench;
 import com.ae2vm.test.fakes.BenchSimulationState;
+import com.ae2vm.test.harness.CpuLifecycleAssert;
 import com.ae2vm.test.fakes.BenchPatternDetails;
 
 import com.ae2vm.compiler.PatternCompiler;
@@ -35,6 +36,8 @@ class DownstreamStockedRingTest {
                 .seed("S", 1_000_000L)
                 .seed("Fe", 1_000_000L);
         VMPlan plan = Bench.run(x, 1000, sim);
+        // M5 bridge: an executable (non-simulation) plan must survive the CPU
+        CpuLifecycleAssert.complete(plan, com.ae2vm.compat.PatternCompat.getPrimaryOutput(x), 1000);
 
         StringBuilder sb = new StringBuilder("[downstream] sim=").append(plan.isSimulation());
         sb.append(" patterns:");
