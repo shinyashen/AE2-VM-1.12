@@ -1,4 +1,5 @@
 package com.ae2vm.vm;
+import com.ae2vm.test.harness.CpuLifecycleAssert;
 import com.ae2vm.test.harness.Bench;
 import com.ae2vm.test.fakes.BenchSimulationState;
 import com.ae2vm.test.fakes.BenchPatternDetails;
@@ -150,6 +151,7 @@ class ScaledUnwrapTest {
 
         CraftingBytecode request = PatternCompiler.compileRequest(wrapper, 3);
         VMPlan plan = vm.execute(request, sim);
+        CpuLifecycleAssert.auto(plan);
         assertTrue(plan.getMissingItems().isEmpty(),
                 "the wrapped request must complete, missing=" + plan.getMissingItems());
         assertEquals(1, plan.getPatternTimes().size(),

@@ -140,4 +140,10 @@ public final class BenchPatternDetails implements ICraftingPatternDetails {
     @Override
     public void setPriority(int priority) {
     }
+    /** Slot-substitute table for lifecycle-simulation hooks (slot → alternates). */
+    public Map<Integer, java.util.List<IAEItemStack>> getSlotSubstitutes() {
+        return slotSubs;
+    }
+
 }
+

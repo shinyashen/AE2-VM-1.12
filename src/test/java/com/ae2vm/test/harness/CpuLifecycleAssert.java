@@ -30,11 +30,43 @@ public final class CpuLifecycleAssert {
         return v;
     }
 
+    /**
+     * Zero-config bridge for Bench.run call sites. An executable plan
+     * (job would be accepted) must faithfully COMPLETE on the virtual CPU —
+     * a stall is a real engine defect, not a test expectation. Simulation
+     * plans are rejected by the terminal before any CPU exists, so their
+     * forced-run verdict is informational only (no assertion): the engine's
+     * missing margin may be conservative, and faithful execution may or may
+     * not deliver. Scenarios whose true executable expectation differs use
+     * the explicit {@code complete}/{@code stalls} forms with a comment
+     * citing the AE2UEL semantics that force the divergence.
+     */
+    public static VirtualCPUCluster.Verdict auto(VMPlan plan) {
+        // the plan itself carries the request: outputKey = requested identity,
+        // deliverAmount = requested amount (buildPlan semantics)
+        IAEItemStack what = plan.getOutputKey();
+        long amount = plan.getDeliverAmount();
+        if (plan.isSimulation()) {
+            return new VirtualCPUCluster(plan, what, amount).run(MAX_STEPS, 0);
+        }
+        return complete(plan, what, amount);
+    }
+
     public static VirtualCPUCluster.Verdict stalls(VMPlan plan, IAEItemStack what, long amount,
                                                    String stallClass) {
         VirtualCPUCluster.Verdict v = new VirtualCPUCluster(plan, what, amount).run(MAX_STEPS, 0);
         assertEquals(VirtualCPUCluster.Verdict.Status.STALL, v.status, v.toString());
         assertEquals(stallClass, v.stallClass, v.toString());
         return v;
+    }
+
+    /**
+     * Explicit stall bridge reading the request from the plan itself — for
+     * scenarios where the faithful CPU verdict diverges from the planner's
+     * feasibility (the call site carries a comment citing the AE2UEL
+     * semantics that force the divergence).
+     */
+    public static VirtualCPUCluster.Verdict stalls(VMPlan plan, String stallClass) {
+        return stalls(plan, plan.getOutputKey(), plan.getDeliverAmount(), stallClass);
     }
 }

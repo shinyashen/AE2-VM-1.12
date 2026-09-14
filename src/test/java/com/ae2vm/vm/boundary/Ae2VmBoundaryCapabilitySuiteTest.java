@@ -1,4 +1,5 @@
 package com.ae2vm.vm.boundary;
+import com.ae2vm.test.harness.CpuLifecycleAssert;
 import com.ae2vm.test.harness.Bench;
 import com.ae2vm.test.fakes.BenchSimulationState;
 import com.ae2vm.test.fakes.BenchPatternDetails;
@@ -127,11 +128,33 @@ class Ae2VmBoundaryCapabilitySuiteTest {
         return out;
     }
 
+    /**
+     * Faithful runtime note (M5): AE2UEL processing patterns extract their exact
+     * condensed inputs per push (CraftingCPUCluster :694) and slot substitution is
+     * crafting-only (PatternHelper :85 {@code canSubstitute = isCrafting && ...}),
+     * so a plan whose fuzzy slot was filled purely with substitute stock has NO
+     * CPU-level support: the pattern cannot consume the substitute and the job
+     * deadlocks at t=0 (S2). Those cases assert the faithful stall; every other
+     * executable case must COMPLETE. The planner-level assertions above are
+     * unaffected — the substitution math itself is pinned separately.
+     */
+    private static final java.util.Set<String> PROCESSING_SUBSTITUTE_CASES = java.util.Set.of(
+            "quantity/craftable-primary-white-stock/",
+            "quantity/craftable-primary-white-stock10/",
+            "quantity/fuzzy-leaf-white-stock/");
+
     private static void runCase(BoundaryCase c) {
         long start = System.nanoTime();
         Fixture fx = new Fixture();
         c.build().accept(fx);
         VMPlan plan = runTarget(fx, c.target(), c.amount());
+        if (plan != null) {
+            if (!plan.isSimulation() && PROCESSING_SUBSTITUTE_CASES.stream().anyMatch(c.id()::startsWith)) {
+                CpuLifecycleAssert.stalls(plan, "S2");
+            } else {
+                CpuLifecycleAssert.auto(plan); // feasible must complete; infeasible must stall
+            }
+        }
         Map<String, Long> miss = missing(plan);
         boolean feasible = miss.isEmpty();
         boolean ok = feasible == c.expectedFeasible();

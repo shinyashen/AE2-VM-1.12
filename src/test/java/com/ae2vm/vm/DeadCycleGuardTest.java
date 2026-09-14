@@ -1,4 +1,5 @@
 package com.ae2vm.vm;
+import com.ae2vm.test.harness.CpuLifecycleAssert;
 import com.ae2vm.test.harness.Bench;
 import com.ae2vm.test.fakes.BenchSimulationState;
 import com.ae2vm.test.fakes.BenchPatternDetails;
@@ -246,6 +247,7 @@ class DeadCycleGuardTest {
             return best;
         });
         VMPlan plan = vm.execute(request, sim);
+        CpuLifecycleAssert.auto(plan);
         assertTrue(plan.getMissingItems().isEmpty(),
                 "the request must complete through the healthy A←C path");
         assertEquals(0L, plan.getUsedItems().get(k("B")));

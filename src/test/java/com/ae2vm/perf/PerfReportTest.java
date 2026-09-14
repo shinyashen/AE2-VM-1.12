@@ -28,6 +28,7 @@ import java.util.function.Function;
 import static com.ae2vm.test.harness.Bench.k;
 import static com.ae2vm.test.harness.Bench.pat;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -208,6 +209,12 @@ class PerfReportTest {
         double coldMs = (System.nanoTime() - t0) / 1_000_000.0;
         assertTrue(cold.supported() && cold.missing().isEmpty(),
                 "the conversion-ring scenario must complete, missing=" + cold.missing());
+        // Faithful runtime divergence (ring-net): the conversion catalyst C is
+        // net-stripped from usedItems, but a real AE2UEL CPU needs 1 C in its
+        // local inventory to fire the first craft (extract per push, :694) —
+        // the plan deadlocks at t=0 until the solver charges catalyst seeds.
+        assertEquals("S2", planner.lastRuntimeVerdict.stallClass,
+                "conversion ring must faithfully stall: " + planner.lastRuntimeVerdict);
         List<Double> hot = new ArrayList<>();
         for (int round = 0; round < ROUNDS; round++) {
             for (int i = 0; i < 5; i++) {

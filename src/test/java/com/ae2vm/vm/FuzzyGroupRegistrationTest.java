@@ -1,4 +1,5 @@
 package com.ae2vm.vm;
+import com.ae2vm.test.harness.CpuLifecycleAssert;
 import com.ae2vm.test.harness.Bench;
 import com.ae2vm.test.fakes.BenchSimulationState;
 import com.ae2vm.test.fakes.BenchPatternDetails;
@@ -103,6 +104,7 @@ class FuzzyGroupRegistrationTest {
                 .seed("black_wool", 1000L);
 
         VMPlan plan = vm.execute(req, sim);
+        CpuLifecycleAssert.auto(plan);
         assertTrue(plan.getMissingItems().isEmpty(),
                 "craftable gray with partial stock must schedule sub-craft (no false missing), missing="
                         + missingDump(plan));

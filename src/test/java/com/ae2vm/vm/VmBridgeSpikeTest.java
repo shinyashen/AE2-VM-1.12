@@ -1,4 +1,5 @@
 package com.ae2vm.vm;
+import com.ae2vm.test.harness.CpuLifecycleAssert;
 import com.ae2vm.test.harness.Bench;
 import com.ae2vm.test.fakes.BenchSimulationState;
 import com.ae2vm.test.fakes.BenchPatternDetails;
@@ -52,6 +53,7 @@ class VmBridgeSpikeTest {
         CraftingBytecode req = PatternCompiler.compileRequest(a, 4);
         CraftingVM vm = new CraftingVM("spike", Bench.PATTERNS::get);
         VMPlan plan = vm.execute(req, sim);
+        CpuLifecycleAssert.auto(plan);
 
         assertFalse(plan.isSimulation(), "dispersed DAG must be feasible");
         assertEquals(4L, plan.getUsedItems().get(k("D")));

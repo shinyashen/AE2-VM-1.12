@@ -1,4 +1,5 @@
 package com.ae2vm.vm;
+import com.ae2vm.test.harness.CpuLifecycleAssert;
 import com.ae2vm.test.harness.Bench;
 import com.ae2vm.test.fakes.BenchSimulationState;
 import com.ae2vm.test.fakes.BenchPatternDetails;
@@ -232,8 +233,11 @@ class CrossRequestCacheTest {
         CraftingVM vm = new CraftingVM("grid", fx.byOutput::get);
 
         VMPlan plan1 = vm.execute(fx.request(4), fx.sim());
+        CpuLifecycleAssert.auto(plan1);
         VMPlan plan2 = vm.execute(fx.request(4), fx.sim());
+        CpuLifecycleAssert.auto(plan2);
         VMPlan plan3 = vm.execute(fx.request(4), fx.sim());
+        CpuLifecycleAssert.auto(plan3);
 
         dump("req1", plan1);
         dump("req2", plan2);
@@ -257,8 +261,11 @@ class CrossRequestCacheTest {
         CraftingVM vm = new CraftingVM("grid", fx.byOutput::get);
 
         VMPlan plan1 = vm.execute(fx.request(4), fx.sim());
+        CpuLifecycleAssert.auto(plan1);
         VMPlan plan2 = vm.execute(fx.request(4), fx.sim());
+        CpuLifecycleAssert.auto(plan2);
         VMPlan plan3 = vm.execute(fx.request(4), fx.sim());
+        CpuLifecycleAssert.auto(plan3);
 
         dump("req1", plan1);
         dump("req2", plan2);
@@ -281,6 +288,7 @@ class CrossRequestCacheTest {
         // Step 1: B=8 ≥ need 4 → all from stock, craft 0 B.
         fx.stockB(8);
         VMPlan p1 = vm.execute(fx.request(4), fx.sim());
+        CpuLifecycleAssert.auto(p1);
         dump("s1", p1);
         assertTrue(p1.getMissingItems().isEmpty(), "s1 feasible");
         assertEquals(4L, p1.getUsedItems().get(k("B")), "s1 used B 4");
@@ -289,6 +297,7 @@ class CrossRequestCacheTest {
         // Step 2: B=2 < need 4 → use 2 from stock, craft 2.
         fx.stockB(2);
         VMPlan p2 = vm.execute(fx.request(4), fx.sim());
+        CpuLifecycleAssert.auto(p2);
         dump("s2", p2);
         assertTrue(p2.getMissingItems().isEmpty(), "s2 feasible");
         assertEquals(2L, p2.getUsedItems().get(k("B")), "s2 used B 2");
@@ -297,6 +306,7 @@ class CrossRequestCacheTest {
         // Step 3: B=0 → all 4 crafted.
         fx.stockB(0);
         VMPlan p3 = vm.execute(fx.request(4), fx.sim());
+        CpuLifecycleAssert.auto(p3);
         dump("s3", p3);
         assertTrue(p3.getMissingItems().isEmpty(), "s3 feasible");
         assertEquals(0L, p3.getUsedItems().get(k("B")), "s3 used B 0");
@@ -313,11 +323,13 @@ class CrossRequestCacheTest {
         CraftingVM vm = new CraftingVM("grid", fx.byOutput::get);
 
         VMPlan p4 = vm.execute(fx.request(4), fx.sim());
+        CpuLifecycleAssert.auto(p4);
         dump("amt4", p4);
         assertTrue(p4.getMissingItems().isEmpty(), "4 A feasible");
         assertEquals(0L, p4.getPatternTimes().getOrDefault(fx.b, 0L), "4 A: craft 0 B");
 
         VMPlan p8 = vm.execute(fx.request(8), fx.sim());
+        CpuLifecycleAssert.auto(p8);
         dump("amt8", p8);
         assertTrue(p8.getMissingItems().isEmpty(), "8 A feasible");
         assertEquals(4L, p8.getUsedItems().get(k("B")), "8 A: used 4 B from stock");
@@ -331,7 +343,9 @@ class CrossRequestCacheTest {
         CraftingVM vm = new CraftingVM("grid", fx.byOutput::get);
 
         VMPlan plan1 = vm.execute(fx.request(4), fx.sim());
+        CpuLifecycleAssert.auto(plan1);
         VMPlan plan2 = vm.execute(fx.request(4), fx.sim());
+        CpuLifecycleAssert.auto(plan2);
         dump("deep1", plan1);
         dump("deep2", plan2);
         assertTrue(plan1.getMissingItems().isEmpty(), "deep req1 feasible");
@@ -346,7 +360,9 @@ class CrossRequestCacheTest {
         CraftingVM vm = new CraftingVM("grid", fx.byOutput::get);
 
         VMPlan plan1 = vm.execute(fx.request(4), fx.sim());
+        CpuLifecycleAssert.auto(plan1);
         VMPlan plan2 = vm.execute(fx.request(4), fx.sim());
+        CpuLifecycleAssert.auto(plan2);
         dump("dia1", plan1);
         dump("dia2", plan2);
         assertTrue(plan1.getMissingItems().isEmpty(), "diamond req1 feasible");
@@ -372,9 +388,13 @@ class CrossRequestCacheTest {
 
         // Run them interleaved to prove no cross-VM state bleed.
         VMPlan v1p1 = vm1.execute(fx1.request(4), fx1.sim());
+        CpuLifecycleAssert.auto(v1p1);
         VMPlan v2p1 = vm2.execute(fx2.request(4), fx2.sim());
+        CpuLifecycleAssert.auto(v2p1);
         VMPlan v1p2 = vm1.execute(fx1.request(4), fx1.sim());
+        CpuLifecycleAssert.auto(v1p2);
         VMPlan v2p2 = vm2.execute(fx2.request(4), fx2.sim());
+        CpuLifecycleAssert.auto(v2p2);
 
         dump("v1p1", v1p1);
         dump("v1p2", v1p2);
@@ -405,12 +425,14 @@ class CrossRequestCacheTest {
         StockedMidFixture fxCold = new StockedMidFixture().stockB(2);
         CraftingVM coldVm = new CraftingVM("gridCold", fxCold.byOutput::get);
         VMPlan coldPlan = coldVm.execute(fxCold.request(4), fxCold.sim());
+        CpuLifecycleAssert.auto(coldPlan);
 
         // Warm VM: same fixture, but run twice (second run reuses bundleCache).
         StockedMidFixture fxWarm = new StockedMidFixture().stockB(2);
         CraftingVM warmVm = new CraftingVM("gridWarm", fxWarm.byOutput::get);
         warmVm.execute(fxWarm.request(4), fxWarm.sim());
         VMPlan warmSecond = warmVm.execute(fxWarm.request(4), fxWarm.sim());
+        CpuLifecycleAssert.auto(warmSecond);
 
         dump("cold", coldPlan);
         dump("warm2", warmSecond);
@@ -434,8 +456,11 @@ class CrossRequestCacheTest {
         CraftingVM vm = new CraftingVM("grid", fx.byOutput::get);
 
         VMPlan plan1 = vm.execute(fx.request(4), fx.sim());
+        CpuLifecycleAssert.auto(plan1);
         VMPlan plan2 = vm.execute(fx.request(4), fx.sim());
+        CpuLifecycleAssert.auto(plan2);
         VMPlan plan3 = vm.execute(fx.request(4), fx.sim());
+        CpuLifecycleAssert.auto(plan3);
 
         dump("empty1", plan1);
         dump("empty2", plan2);
@@ -461,8 +486,11 @@ class CrossRequestCacheTest {
         CraftingVM vm = new CraftingVM("grid", fx.byOutput::get);
 
         VMPlan plan1 = vm.execute(fx.request(8), fx.sim());
+        CpuLifecycleAssert.auto(plan1);
         VMPlan plan2 = vm.execute(fx.request(8), fx.sim());
+        CpuLifecycleAssert.auto(plan2);
         VMPlan plan3 = vm.execute(fx.request(8), fx.sim());
+        CpuLifecycleAssert.auto(plan3);
 
         dump("fib1", plan1);
         dump("fib2", plan2);
@@ -489,7 +517,9 @@ class CrossRequestCacheTest {
         CraftingVM vm = new CraftingVM("grid", fx.byOutput::get);
 
         VMPlan plan1 = vm.execute(fx.request(1_000_000_000L), fx.sim());
+        CpuLifecycleAssert.auto(plan1);
         VMPlan plan2 = vm.execute(fx.request(1_000_000_000L), fx.sim());
+        CpuLifecycleAssert.auto(plan2);
 
         dump("deep24-1", plan1);
         dump("deep24-2", plan2);

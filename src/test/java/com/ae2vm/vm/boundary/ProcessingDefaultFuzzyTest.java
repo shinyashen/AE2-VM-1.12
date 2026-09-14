@@ -1,4 +1,5 @@
 package com.ae2vm.vm.boundary;
+import com.ae2vm.test.harness.CpuLifecycleAssert;
 import com.ae2vm.test.harness.Bench;
 import com.ae2vm.test.fakes.BenchSimulationState;
 import com.ae2vm.test.fakes.BenchPatternDetails;
@@ -127,6 +128,7 @@ class ProcessingDefaultFuzzyTest {
         BenchSimulationState sim = new BenchSimulationState().seedKey(wrongDamage, 50);
 
         VMPlan plan = vm.execute(req, sim);
+        CpuLifecycleAssert.auto(plan);
         assertEquals(5L, plan.getMissingItems().get(encoded),
                 "a different-damage item must never satisfy the slot, missing=" + missing(plan));
         assertEquals(0L, plan.getUsedItems().get(wrongDamage),

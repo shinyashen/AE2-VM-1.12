@@ -54,6 +54,10 @@ import java.util.Set;
  */
 public final class Ae2VmReferencePlanner implements ReferencePlanner {
 
+    /** Faithful CPU verdict for the most recent plan (informational probe). */
+    public com.ae2vm.replay.VirtualCPUCluster.Verdict lastRuntimeVerdict;
+
+
     /** Replay budget for the multi-pattern choice repair (see PatternChoiceRepair). */
     private static final int REPAIR_EXTRA_PASSES = 32;
 
@@ -221,6 +225,15 @@ public final class Ae2VmReferencePlanner implements ReferencePlanner {
             return new PatternChoiceRepair.PassResult(p, passChoices, stockView);
         };
         com.ae2vm.vm.VMPlan plan = PatternChoiceRepair.repair(pass, REPAIR_EXTRA_PASSES);
+        // Faithful runtime probe on the FINAL plan only — the repair loop's
+        // intermediate passes produce throwaway plans whose cluster verdict is
+        // meaningless (and repair passes intentionally over-order). The verdict
+        // is EXPOSED, not asserted: ring-net / substitute-fill / root-feedback
+        // shapes faithfully STALL on a real AE2UEL CPU (see the annotated test
+        // sites); expectations belong to each scenario's test.
+        lastRuntimeVerdict = plan == null ? null
+                : new com.ae2vm.replay.VirtualCPUCluster(plan, plan.getOutputKey(),
+                        plan.getDeliverAmount()).run(10_000, 0);
 
         // 6) Map the VM plan back to the Thunderbolt CraftPlan<String>.
         Map<String, Long> used = new HashMap<>();

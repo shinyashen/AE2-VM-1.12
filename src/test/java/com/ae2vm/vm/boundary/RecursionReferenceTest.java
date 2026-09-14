@@ -1,4 +1,5 @@
 package com.ae2vm.vm.boundary;
+import com.ae2vm.test.harness.CpuLifecycleAssert;
 import com.ae2vm.test.harness.Bench;
 import com.ae2vm.test.fakes.BenchSimulationState;
 import com.ae2vm.test.fakes.BenchPatternDetails;
@@ -38,6 +39,14 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * Fixture scale and the three material modes (MISSING / MINIMUM / UNBOUNDED at
  * 10^12) replicate ThunderboltReferenceScenarios#addRecursionAmplifier and
  * #addRecursionEssenceCatalyst exactly.
+ *
+ * <p><b>Planner vs runtime (M5 finding).</b> The amplifier's net-growth key A is
+ * ALSO the requested output: a real AE2UEL CPU delivers finalOutput returns
+ * (CraftingCPUCluster :265) instead of circulating them into inventory, so after
+ * the pre-extracted seed is spent the amplifier starves — a faithful S2 the
+ * engine's own execution model (network-as-circulation-space) cannot see. The
+ * essence-catalyst shape has no such conflict (its circulating key A is a
+ * byproduct, never the final output) and faithfully COMPLETES.
  */
 class RecursionReferenceTest {
 
@@ -78,6 +87,9 @@ class RecursionReferenceTest {
         Bench.register(amp);
         BenchSimulationState sim = new BenchSimulationState().seed("A", 1).seed("B", 7);
         VMPlan plan = Bench.run(amp, 8, sim);
+        // Faithful runtime divergence: A is finalOutput AND self-consumed —
+        // delivered units never circulate (AE2UEL :265; see class note)
+        CpuLifecycleAssert.stalls(plan, "S2");
         assertTrue(feasible(plan),
                 "amplifier with A=1 seed + B=n-1 must be feasible, got " + dump(plan));
     }
@@ -89,6 +101,11 @@ class RecursionReferenceTest {
         BenchSimulationState sim = new BenchSimulationState()
                 .seed("A", UNBOUNDED_STOCK).seed("B", UNBOUNDED_STOCK);
         VMPlan plan = Bench.run(amp, 8, sim);
+        // Faithful runtime divergence (idle-plan shape): unbounded stock closes
+        // the solve at zero crafts — the plan pre-extracts the 8 A but nothing
+        // is scheduled to push a finalOutput return, so a real CPU sits on the
+        // stock forever (S4; see class note)
+        CpuLifecycleAssert.stalls(plan, "S4");
         assertTrue(feasible(plan),
                 "amplifier with unbounded A/B must be feasible, got " + dump(plan));
     }
@@ -100,6 +117,7 @@ class RecursionReferenceTest {
         Bench.register(amp);
         BenchSimulationState sim = new BenchSimulationState().seed("B", 7);
         VMPlan plan = Bench.run(amp, 8, sim);
+        CpuLifecycleAssert.auto(plan);
         assertFalse(feasible(plan), "starved amplifier must be infeasible, got missing=" + dump(plan));
         assertTrue(infeasibleMatches(plan, Map.of("A", 1L)),
                 "starved amplifier must report A>=1 missing, got " + dump(plan));
@@ -115,6 +133,7 @@ class RecursionReferenceTest {
         Bench.register(ess);
         BenchSimulationState sim = new BenchSimulationState().seed("A", 1).seed("B", 8);
         VMPlan plan = Bench.run(ess, 8, sim);
+        CpuLifecycleAssert.auto(plan);
         assertTrue(feasible(plan),
                 "essence catalyst with A=1 seed + B=n must be feasible, got " + dump(plan));
     }
@@ -126,6 +145,7 @@ class RecursionReferenceTest {
         BenchSimulationState sim = new BenchSimulationState()
                 .seed("A", UNBOUNDED_STOCK).seed("B", UNBOUNDED_STOCK);
         VMPlan plan = Bench.run(ess, 8, sim);
+        CpuLifecycleAssert.auto(plan);
         assertTrue(feasible(plan),
                 "essence catalyst with unbounded A/B must be feasible, got " + dump(plan));
     }
@@ -137,6 +157,7 @@ class RecursionReferenceTest {
         Bench.register(ess);
         BenchSimulationState sim = new BenchSimulationState().seed("B", 8);
         VMPlan plan = Bench.run(ess, 8, sim);
+        CpuLifecycleAssert.auto(plan);
         assertFalse(feasible(plan), "starved essence catalyst must be infeasible, got missing=" + dump(plan));
         assertTrue(infeasibleMatches(plan, Map.of("A", 1L)),
                 "starved essence catalyst must report A>=1 missing, got " + dump(plan));

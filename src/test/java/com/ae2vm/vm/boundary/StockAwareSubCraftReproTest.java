@@ -1,4 +1,5 @@
 package com.ae2vm.vm.boundary;
+import com.ae2vm.test.harness.CpuLifecycleAssert;
 import com.ae2vm.test.harness.Bench;
 import com.ae2vm.test.fakes.BenchSimulationState;
 import com.ae2vm.test.fakes.BenchPatternDetails;
@@ -82,6 +83,7 @@ class StockAwareSubCraftReproTest {
         CraftingBytecode req = PatternCompiler.compileRequest(blank, n);
         CraftingVM vm = new CraftingVM("stock-repro", Bench.PATTERNS::get);
         VMPlan plan = vm.execute(req, sim);
+        CpuLifecycleAssert.auto(plan);
 
         long blankTimes = plan.getPatternTimes().getOrDefault(blank, 0L);
         long boardTimes = plan.getPatternTimes().getOrDefault(board, 0L);

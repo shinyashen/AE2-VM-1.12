@@ -10,28 +10,50 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Offline replica of AE2UEL's crafting-CPU state machine (design doc
- * §7.1) — the four fields that define a live CPU: {@code tasks} (per
- * pattern remaining pushes), {@code inventory} (the stock setJob handed
- * over), {@code waitingFor} (expected returns + emitable), and
- * {@code finalOutput}. Patterns are pushed to VIRTUAL providers:
- * {@code instant} returns outputs within the same step, {@code lag=k}
- * returns them k steps later (IO-rhythm checking).
+ * Offline replica of AE2UEL's crafting-CPU state machine (design doc §7.1),
+ * built operation-by-operation against the live source
+ * ({@code CraftingCPUCluster} in /tmp/ae2uel-src, commit of 2026-09):
  *
- * <p>Verdict semantics mirror the live cluster: the job is COMPLETE when
- * the requested amount has been delivered — a CPU whose {@code waitingFor}
- * never drains stays busy FOREVER even with delivery done (AE2 has no
- * stall detection; {@code waiting} resets every tick). Stalls are
- * classified per design doc §7.2:
+ * <ul>
+ *   <li><b>Inputs are charged per push, exactly.</b> There is no input-class
+ *       ledger: {@code executeCrafting} :614 calls {@code canCraft} and then
+ *       :694 extracts each condensed input from {@code inventory} with
+ *       {@code extractItems} — full per-craft amount, exact key. The fuzzy
+ *       paths (:656 canSubstitute / :672 damageable fallback) live in the
+ *       <em>craftable</em> branch only; processing patterns never substitute
+ *       at the CPU.</li>
+ *   <li><b>injectItems is waitingFor-gated.</b> :218 finds the entry
+ *       precisely; an item the CPU is not waiting for is REFUSED whole
+ *       (:253 falls through to {@code return input}). Items matching
+ *       {@code finalOutput} are delivered (:265 dec finalOutput) and never
+ *       enter {@code inventory}; everything else awaited goes to inventory
+ *       (:284/:314). Amounts beyond the waitingFor entry are rejected.</li>
+ *   <li><b>Consequence (the M5 finding):</b> a plan whose final output is
+ *       also an intermediate its own schedule re-consumes cannot execute —
+ *       the produced units are delivered, not circulated, so the consumer
+ *       starves on inventory once the pre-extracted seed runs dry. The same
+ *       holds for plans whose ring keys were net-stripped without a startup
+ *       seed in usedItems (t=0 deadlock) and for idle-ring plans (nothing
+ *       scheduled, nothing arrives — S4). These are faithful predictions of
+ *       live behaviour, not simulator bugs.</li>
+ * </ul>
+ *
+ * <p>Patterns are pushed to VIRTUAL providers: {@code instant} returns
+ * outputs the step after the push (real providers never answer within the
+ * same tick), {@code lag=k} k steps later (IO-rhythm checking).
+ *
+ * <p>Verdict semantics (design doc §7.2): COMPLETE when the requested
+ * amount has been delivered (a CPU whose waitingFor never drains stays busy
+ * FOREVER — AE2 has no stall detection, {@code waiting} resets every tick);
+ * stalls classified:
  *
  * <ul>
  *   <li><b>S1</b> — waitingFor holds emitable entries nothing will ever
- *       return (the gross-emitable bug shape: delivery done, CPU busy
- *       indefinitely);</li>
- *   <li><b>S2</b> — a scheduled pattern's input has no stock, no producer
- *       and no pending return (silent scheduling starvation);</li>
- *   <li><b>S4</b> — tasks exhausted / nothing pushable while delivery is
- *       short (expected returns that cannot exist).</li>
+ *       return (delivery done or impossible, CPU busy indefinitely);</li>
+ *   <li><b>S2</b> — a scheduled pattern's input lacks inventory and no
+ *       pending return will cover it (silent scheduling starvation);</li>
+ *   <li><b>S4</b> — no task can run and no awaited return is outstanding
+ *       while delivery is short.</li>
  * </ul>
  * (S3, the extraction gap, is a START-phase check — see
  * {@link #extractionGap(VMPlan, Stock)}.)
@@ -67,7 +89,7 @@ public final class VirtualCPUCluster {
             return s;
         }
 
-        /** Returns how much was actually taken. */
+        /** Returns how much was actually taken (exact key only). */
         public long extract(IAEItemStack k, long n) {
             long taken = 0;
             for (int i = 0; i < keys.size() && taken < n; i++) {
@@ -137,6 +159,18 @@ public final class VirtualCPUCluster {
         }
     }
 
+    /**
+     * Slot-alternate hook — the offline counterpart of AE2's craftable-branch
+     * slot filling (:656 {@code getSubstituteInputs} + :664 {@code findFuzzy}
+     * + :681 {@code isValidItemForSlot}). Only consulted for
+     * {@code details.isCraftable()} patterns; processing patterns extract
+     * their exact condensed keys (:694) and never substitute. Null hook =
+     * exact keys only.
+     */
+    public interface SlotAlternates {
+        java.util.Collection<IAEItemStack> alternates(ICraftingPatternDetails d, int slot);
+    }
+
     private final Map<ICraftingPatternDetails, Long> tasks = new LinkedHashMap<>();
     private final Stock inventory = new Stock();
     private final Stock waitingFor = new Stock();
@@ -144,19 +178,31 @@ public final class VirtualCPUCluster {
     private final List<IAEItemStack> pendingKeys = new ArrayList<>();
     private final List<Long> pendingAmounts = new ArrayList<>();
     private final List<Integer> pendingDue = new ArrayList<>();
+    private final SlotAlternates alternates;
     private final IAEItemStack finalOutputKey;
     private final long finalAmount;
     private long delivered;
+    /** Returns refused because waitingFor held no entry (or the job completed). */
+    private long refused;
     private long changeStamp;
+    private boolean jobComplete;
 
     public VirtualCPUCluster(VMPlan plan, IAEItemStack what, long amount) {
-        tasks.putAll(plan.getPatternTimes());
+        this(plan, what, amount, null);
+    }
+
+    public VirtualCPUCluster(VMPlan plan, IAEItemStack what, long amount, SlotAlternates alternates) {
+        this.alternates = alternates;
+        for (Map.Entry<ICraftingPatternDetails, Long> e : plan.getPatternTimes().entrySet()) {
+            if (e.getValue() != null && e.getValue() > 0) {
+                tasks.put(e.getKey(), e.getValue()); // addCrafting
+            }
+        }
         for (Map.Entry<IAEItemStack, Long> e : plan.getUsedItems().entrySet()) {
-            inventory.add(e.getKey(), e.getValue());
+            inventory.add(e.getKey(), e.getValue()); // setJob phase-2: extract + addStorage
         }
         for (Map.Entry<IAEItemStack, Long> e : plan.getEmittedItems().entrySet()) {
-            // addEmitable: the emitable sits in waitingFor and nothing will
-            // ever inject it back
+            // addEmitable :995 — expected free arrivals, registered in waitingFor
             emitable.add(e.getKey(), e.getValue());
             waitingFor.add(e.getKey(), e.getValue());
         }
@@ -176,16 +222,49 @@ public final class VirtualCPUCluster {
         return gaps;
     }
 
-    /** Runs the cluster to completion, stall, or the step budget. */
+    /** When true, run() prints a per-step state snapshot (diagnostics only). */
+    public static boolean TRACE;
+    private int traceLines;
+
+    private void trace(int step, String tag) {
+        if (!TRACE || traceLines > 40) {
+            return;
+        }
+        traceLines++;
+        StringBuilder sb = new StringBuilder("  step ").append(step).append(' ').append(tag)
+                .append(" delivered=").append(delivered).append(" tasks={");
+        for (Map.Entry<ICraftingPatternDetails, Long> e : tasks.entrySet()) {
+            if (e.getValue() != null && e.getValue() > 0) {
+                sb.append(outputsOf(e.getKey())).append('x').append(e.getValue()).append(',');
+            }
+        }
+        sb.append("} inv={");
+        for (int i = 0; i < inventory.keys().size(); i++) {
+            if (inventory.amountAt(i) > 0) {
+                sb.append(inventory.keys().get(i)).append('x').append(inventory.amountAt(i)).append(',');
+            }
+        }
+        sb.append("} waiting={");
+        for (int i = 0; i < waitingFor.keys().size(); i++) {
+            if (waitingFor.amountAt(i) > 0) {
+                sb.append(waitingFor.keys().get(i)).append('x').append(waitingFor.amountAt(i)).append(',');
+            }
+        }
+        sb.append("} pending=").append(pendingKeys.size()).append(" refused=").append(refused);
+        System.out.println(sb);
+    }
+
     public Verdict run(int maxSteps, int providerLag) {
         int stallAfter = 2;
         int noProgress = 0;
         int step = 0;
         for (; step < maxSteps; step++) {
             if (delivered >= finalAmount) {
+                trace(step, "complete?");
                 return classifyCompletion(step);
             }
             long before = changeStamp;
+            trace(step, "pre");
             stepOnce(providerLag, step);
             if (changeStamp != before) {
                 noProgress = 0;
@@ -216,41 +295,42 @@ public final class VirtualCPUCluster {
             inject(dueKeys.get(i), dueAmounts.get(i));
         }
 
-        // push loop: AE2 iterates tasks and pushes what it can
+        // push loop: executeCrafting :602 iterates tasks; canCraft :614;
+        // extraction :694 (processing, exact, full per-craft amount);
+        // pushPattern :726; waitingFor registration :730-734
         boolean instantThisStep = lag == 0;
         for (Map.Entry<ICraftingPatternDetails, Long> e : new LinkedHashMap<>(tasks).entrySet()) {
             long remaining = e.getValue();
             if (remaining <= 0) {
-                continue;
+                continue; // :607 TaskProgress <= 0 → removed
             }
             ICraftingPatternDetails d = e.getKey();
             if (!canCraft(d)) {
                 continue;
             }
-            for (IAEItemStack in : d.getCondensedInputs()) {
-                if (in != null && in.getStackSize() > 0) {
-                    inventory.extract(in, in.getStackSize());
-                }
-            }
+            extractInputs(d);
             tasks.put(d, remaining - 1);
             changeStamp++;
             int due = instantThisStep ? step + 1 : step + Math.max(1, lag);
             for (IAEItemStack out : outputsOf(d)) {
-                // AE2 accounting: a successful push records the EXPECTED
-                // outputs in waitingFor before they return
+                // :730 — a successful push records EXPECTED outputs in waitingFor
                 waitingFor.add(out, out.getStackSize());
                 scheduleReturn(out, due);
             }
         }
 
-        // account pending returns arriving later as "progress" only when they land
         if (delivered >= finalAmount) {
             changeStamp++;
         }
     }
 
+    /** canCraft :444 processing branch — exact SIMULATE extract of every condensed input. */
     private boolean canCraft(ICraftingPatternDetails d) {
-        for (IAEItemStack in : d.getCondensedInputs()) {
+        IAEItemStack[] inputs = d.getCondensedInputs();
+        if (inputs == null) {
+            return true;
+        }
+        for (IAEItemStack in : inputs) {
             if (in == null || in.getStackSize() <= 0) {
                 continue;
             }
@@ -259,6 +339,38 @@ public final class VirtualCPUCluster {
             }
         }
         return true;
+    }
+
+    /** Extracts this craft's inputs: exact keys; alternates only for craftable patterns. */
+    private void extractInputs(ICraftingPatternDetails d) {
+        IAEItemStack[] inputs = d.getCondensedInputs();
+        if (inputs == null) {
+            return;
+        }
+        boolean craftable;
+        try {
+            craftable = d.isCraftable();
+        } catch (Throwable t) {
+            craftable = false;
+        }
+        for (int slot = 0; slot < inputs.length; slot++) {
+            IAEItemStack in = inputs[slot];
+            if (in == null || in.getStackSize() <= 0) {
+                continue;
+            }
+            long left = in.getStackSize();
+            left -= inventory.extract(in, left);
+            if (left > 0 && craftable && alternates != null) {
+                // craftable branch :656-692: findFuzzy over the slot's
+                // substitutes, each validated by isValidItemForSlot
+                for (IAEItemStack alt : alternates.alternates(d, slot)) {
+                    if (alt == null || left <= 0) {
+                        continue;
+                    }
+                    left -= inventory.extract(alt, left);
+                }
+            }
+        }
     }
 
     private List<IAEItemStack> outputsOf(ICraftingPatternDetails d) {
@@ -281,22 +393,38 @@ public final class VirtualCPUCluster {
         pendingDue.add(due);
     }
 
-    /** AE2 injectItems semantics: waitingFor first, then finalOutput, rest to inventory. */
+    /**
+     * injectItems :210. waitingFor-gated: an entry is found precisely
+     * (:218); nothing awaited is refused whole (:253). The awaited part is
+     * delivered when it matches finalOutput (:265 — final output NEVER
+     * enters inventory), otherwise it circulates in inventory (:314).
+     * Amounts beyond the waitingFor entry are rejected (:287-317 return
+     * the excess to the injector).
+     */
     private void inject(IAEItemStack r, long n) {
-        long matched = waitingFor.extract(r, n);
-        if (matched < n) {
-            // overproduction beyond anything awaited: lands in inventory anyway
-            changeStamp++;
+        if (jobComplete) {
+            refused += n; // :213 — completed CPUs refuse re-insertions
+            return;
         }
-        long incoming = matched;
+        long awaited = waitingFor.amountOf(r);
+        if (awaited <= 0) {
+            refused += n;
+            return;
+        }
+        long take = Math.min(n, awaited);
+        waitingFor.extract(r, take);
+        if (take < n) {
+            refused += n - take;
+        }
         if (finalOutputKey != null && finalOutputKey.isSameType(r)) {
-            long take = Math.min(incoming, Math.max(0, finalAmount - delivered));
-            delivered += take;
-            changeStamp++;
+            delivered += Math.min(take, Math.max(0, finalAmount - delivered));
+            if (delivered >= finalAmount) {
+                jobComplete = true; // completeJob :275
+            }
+        } else {
+            inventory.add(r, take); // :314 — intermediates circulate
         }
-        if (incoming > 0) {
-            inventory.add(r, incoming); // intermediate products feed other patterns
-        }
+        changeStamp++;
     }
 
     private Verdict classifyCompletion(int step) {
@@ -319,6 +447,9 @@ public final class VirtualCPUCluster {
                 notes.add("note: delivery complete with non-emitable waitingFor residue");
             }
         }
+        if (refused > 0) {
+            notes.add("refused=" + refused + " (returns the CPU was not waiting for)");
+        }
         return Verdict.complete(delivered, step, notes);
     }
 
@@ -328,7 +459,11 @@ public final class VirtualCPUCluster {
         for (Map.Entry<ICraftingPatternDetails, Long> e : tasks.entrySet()) {
             if (e.getValue() != null && e.getValue() > 0) {
                 tasksRemain = true;
-                for (IAEItemStack in : e.getKey().getCondensedInputs()) {
+                IAEItemStack[] inputs = e.getKey().getCondensedInputs();
+                if (inputs == null) {
+                    continue;
+                }
+                for (IAEItemStack in : inputs) {
                     if (in == null || in.getStackSize() <= 0) {
                         continue;
                     }
@@ -340,7 +475,10 @@ public final class VirtualCPUCluster {
                 }
             }
         }
-        if (tasksRemain && !evidence.isEmpty()) {
+        if (refused > 0) {
+            evidence.add("refused=" + refused);
+        }
+        if (tasksRemain && !evidence.isEmpty() && anyBlocked(evidence)) {
             return Verdict.stall("S2", evidence, delivered, step);
         }
         // nothing pushable: what does waitingFor hold?
@@ -366,6 +504,16 @@ public final class VirtualCPUCluster {
         return Verdict.stall("S4", evidence, delivered, step);
     }
 
+    /** True when the evidence list actually contains a blocked-input line. */
+    private static boolean anyBlocked(List<String> evidence) {
+        for (String s : evidence) {
+            if (s.startsWith("S2 blocked input:")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private long pendingAmountOf(IAEItemStack k) {
         long s = 0;
         for (int i = 0; i < pendingKeys.size(); i++) {
@@ -374,10 +522,5 @@ public final class VirtualCPUCluster {
             }
         }
         return s;
-    }
-
-    private static long satAdd(long a, long b) {
-        long r = a + b;
-        return r < 0 ? Long.MAX_VALUE : r;
     }
 }

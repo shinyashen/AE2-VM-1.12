@@ -1,4 +1,5 @@
 package com.ae2vm.vm.ring;
+import com.ae2vm.test.harness.CpuLifecycleAssert;
 import com.ae2vm.test.harness.Bench;
 import com.ae2vm.test.fakes.BenchSimulationState;
 import com.ae2vm.test.fakes.BenchPatternDetails;
@@ -40,6 +41,20 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * </ul>
  * The VM previously reported the byproduct as a false missing leaf; these tests pin the
  * correct feasibility + missing domain/amount for all three material modes.
+ *
+ * <p><b>Planner vs runtime (M5 finding).</b> The planner assertions pin the solver's
+ * material-closure math; the CPU bridge additionally records the faithful runtime
+ * verdict, which DIVERGES for the net-solver shapes. A real AE2UEL CPU executes
+ * purely from its local inventory (CraftingCPUCluster :694 extracts each condensed
+ * input per push) and DELIVERS finalOutput returns instead of circulating them
+ * (:265), while the ring solver strips ring-member keys from usedItems (net
+ * closure) — so net-balanced ring plans carry no startup inventory and deadlock at
+ * t=0 (S2) or starve mid-run when the seed runs dry, and idle-ring plans hang
+ * forever (S4). These stalls are the documented reason the ring family stays
+ * feature-gated off: re-enabling requires the solver to charge ring-member startup
+ * seeds into usedItems. The closed-form scenarios (rawLoop/lossyLoop) DO charge
+ * their seeds and faithfully COMPLETE — planner accounting and CPU execution agree
+ * there.
  */
 class CatalystFeedbackLoopTest {
 
@@ -98,6 +113,7 @@ class CatalystFeedbackLoopTest {
         }
         BenchSimulationState sim = new BenchSimulationState().seed("A", 1).seed("C", 8);
         VMPlan plan = Bench.run(loop[1], 8, sim);
+        CpuLifecycleAssert.auto(plan);
         assertTrue(feasible(plan),
                 "balanced catalyst cycle with A=1 seed must be feasible, got " + dump(plan));
     }
@@ -111,6 +127,7 @@ class CatalystFeedbackLoopTest {
         BenchSimulationState sim = new BenchSimulationState()
                 .seed("A", UNBOUNDED_STOCK).seed("C", UNBOUNDED_STOCK);
         VMPlan plan = Bench.run(loop[1], 8, sim);
+        CpuLifecycleAssert.auto(plan);
         assertTrue(feasible(plan),
                 "balanced catalyst cycle with unbounded A must be feasible, got " + dump(plan));
     }
@@ -124,6 +141,7 @@ class CatalystFeedbackLoopTest {
         }
         BenchSimulationState sim = new BenchSimulationState().seed("C", 8);
         VMPlan plan = Bench.run(loop[1], 8, sim);
+        CpuLifecycleAssert.auto(plan);
         assertFalse(feasible(plan), "starved balanced cycle must be infeasible, got missing=" + dump(plan));
         assertTrue(infeasibleMatches(plan, Map.of("A", 1L)),
                 "starved balanced cycle must report A>=1 missing, got " + dump(plan));
@@ -172,6 +190,7 @@ class CatalystFeedbackLoopTest {
         }
         BenchSimulationState sim = new BenchSimulationState().seed("A", 10);
         VMPlan plan = Bench.run(loop[1], 8, sim);
+        CpuLifecycleAssert.auto(plan);
         assertTrue(feasible(plan),
                 "lossy cycle with A=amount+2 must be feasible, got " + dump(plan));
     }
@@ -184,6 +203,7 @@ class CatalystFeedbackLoopTest {
         }
         BenchSimulationState sim = new BenchSimulationState().seed("A", UNBOUNDED_STOCK);
         VMPlan plan = Bench.run(loop[1], 8, sim);
+        CpuLifecycleAssert.auto(plan);
         assertTrue(feasible(plan),
                 "lossy cycle with unbounded A must be feasible, got " + dump(plan));
     }
@@ -197,6 +217,7 @@ class CatalystFeedbackLoopTest {
         }
         BenchSimulationState sim = new BenchSimulationState().seed("A", 8);
         VMPlan plan = Bench.run(loop[1], 8, sim);
+        CpuLifecycleAssert.auto(plan);
         assertFalse(feasible(plan), "starved lossy cycle must be infeasible, got missing=" + dump(plan));
         assertTrue(infeasibleMatches(plan, Map.of("A", 2L)),
                 "starved lossy cycle must report A>=2 missing, got " + dump(plan));
@@ -228,6 +249,9 @@ class CatalystFeedbackLoopTest {
         // 2304 stocked covers the 962-turn plan exactly: 2304 + 12x962 - 4x962 = 10000
         BenchSimulationState sim = new BenchSimulationState().seed("A", 2304);
         VMPlan plan = Bench.run(loop[1], 10000, sim);
+        // Faithful runtime divergence (net-stripped ring: no startup seed) — see the class note on
+        // planner-vs-runtime; AE2UEL CraftingCPUCluster :694/:265.
+        CpuLifecycleAssert.stalls(plan, "S2");
         StringBuilder pt = new StringBuilder();
         for (var e : plan.getPatternTimes().entrySet()) {
             pt.append(e.getValue()).append("x[");
@@ -251,6 +275,7 @@ class CatalystFeedbackLoopTest {
         }
         BenchSimulationState sim = new BenchSimulationState();
         VMPlan plan = Bench.run(loop[1], 10000, sim);
+        CpuLifecycleAssert.auto(plan);
         assertFalse(feasible(plan),
                 "unseeded byproduct ring must be infeasible, got feasible");
         // the fallback's honest shortfall: one B — the next layer's timing seed
@@ -271,6 +296,9 @@ class CatalystFeedbackLoopTest {
         // A request unaffected by stocked C (under the passive 962 output)
         BenchSimulationState sim = new BenchSimulationState().seed("A", 2304);
         VMPlan under = Bench.run(loop[1], 10000, sim);
+        // Faithful runtime divergence (net-stripped ring: no startup seed) — see the class note on
+        // planner-vs-runtime; AE2UEL CraftingCPUCluster :694/:265.
+        CpuLifecycleAssert.stalls(under, "S2");
         assertTrue(feasible(under), "under-request must stay feasible, got " + dump(under));
         long cEmittedUnder = 0;
         for (var k : under.getEmittedItems().keys()) {
@@ -279,6 +307,9 @@ class CatalystFeedbackLoopTest {
         // ... and with C stocked beyond the passive output
         sim = new BenchSimulationState().seed("A", 2304).seed("C", 5000);
         VMPlan over = Bench.run(loop[1], 10000, sim);
+        // Faithful runtime divergence (net-stripped ring: no startup seed) — see the class note on
+        // planner-vs-runtime; AE2UEL CraftingCPUCluster :694/:265.
+        CpuLifecycleAssert.stalls(over, "S2");
         assertTrue(feasible(over), "over-request must stay feasible, got " + dump(over));
         System.out.println("[RING-VARIANT] C external: under-request C-emitted=" + cEmittedUnder
                 + " over-request missing=" + dump(over));
@@ -300,6 +331,9 @@ class CatalystFeedbackLoopTest {
         }
         BenchSimulationState sim = new BenchSimulationState().seed("A", 2304).seed("C", 5000);
         VMPlan plan = Bench.run(loop[2], 10000, sim);
+        // Faithful runtime divergence (net-stripped ring: no startup seed) — see the class note on
+        // planner-vs-runtime; AE2UEL CraftingCPUCluster :694/:265.
+        CpuLifecycleAssert.stalls(plan, "S2");
         assertTrue(feasible(plan),
                 "shared-intermediate ring with sufficient C must be feasible, got " + dump(plan));
         assertEquals(1924, timesOf(plan, "D", "B"), "recycler (D+B->12A) rounds");
@@ -315,6 +349,7 @@ class CatalystFeedbackLoopTest {
         }
         BenchSimulationState sim = new BenchSimulationState().seed("A", 2304).seed("C", 1000);
         VMPlan plan = Bench.run(loop[2], 10000, sim);
+        CpuLifecycleAssert.auto(plan);
         // C is the ring's external fuel: the solve is material-honest — the
         // balanced plan consumes 1924 C, the network holds 1000, so the
         // extraction shortfall must surface as missing C (never a false
@@ -338,6 +373,9 @@ class CatalystFeedbackLoopTest {
         }
         BenchSimulationState sim = new BenchSimulationState().seed("A", 2304);
         VMPlan plan = Bench.run(loop[1], 5000, "C", sim);
+        // Faithful runtime divergence (net-stripped ring: no startup seed) — see the class note on
+        // planner-vs-runtime; AE2UEL CraftingCPUCluster :694/:265.
+        CpuLifecycleAssert.stalls(plan, "S2");
         assertTrue(feasible(plan),
                 "C-rooted request must drive the ring, got " + dump(plan));
         assertEquals(5000, timesOf(plan, "B"), "recycler (B->12A+C+D) turns");
@@ -352,6 +390,7 @@ class CatalystFeedbackLoopTest {
         }
         BenchSimulationState sim = new BenchSimulationState();
         VMPlan plan = Bench.run(loop[1], 5000, "C", sim);
+        CpuLifecycleAssert.auto(plan);
         assertFalse(feasible(plan),
                 "unseeded C-rooted request must be infeasible, got feasible");
         assertTrue(infeasibleMatches(plan, Map.of("B", 1L)),
@@ -375,6 +414,7 @@ class CatalystFeedbackLoopTest {
         Bench.register(makeWidget);
         BenchSimulationState sim = new BenchSimulationState().seed("S", 100).seed("R", 100);
         VMPlan plan = Bench.run(makeWidget, 10, sim);
+        CpuLifecycleAssert.auto(plan);
         assertTrue(feasible(plan),
                 "external consumer demand must be floored into the ring solve, got " + dump(plan));
         assertEquals(20, timesOf(plan, "S"), "makeIngot (4S->I) turns floored at the widget demand");
@@ -404,6 +444,9 @@ class CatalystFeedbackLoopTest {
         // 2304 + 12×962 − 4×962 = 10000 delivered, B and X internally balanced.
         BenchSimulationState sim = new BenchSimulationState().seed("A", 2304);
         VMPlan plan = Bench.run(loop[1], 10000, sim);
+        // Faithful runtime divergence (net-stripped ring: no startup seed) — see the class note on
+        // planner-vs-runtime; AE2UEL CraftingCPUCluster :694/:265.
+        CpuLifecycleAssert.stalls(plan, "S2");
         assertTrue(feasible(plan),
                 "byproduct-intermediate ring must be feasible, got " + dump(plan));
         assertEquals(962, timesOf(plan, "A"), "makeIngotBy (4A->B+X) turns");
@@ -418,6 +461,7 @@ class CatalystFeedbackLoopTest {
         }
         BenchSimulationState sim = new BenchSimulationState();
         VMPlan plan = Bench.run(loop[1], 10000, sim);
+        CpuLifecycleAssert.auto(plan);
         assertFalse(feasible(plan),
                 "unseeded byproduct-intermediate ring must be infeasible, got feasible");
         // the cheapest priming order starts at the recycler: one B and one X
@@ -437,6 +481,9 @@ class CatalystFeedbackLoopTest {
         }
         BenchSimulationState sim = new BenchSimulationState().seed("A", 2304);
         VMPlan plan = Bench.run(loop[0], 5000, "X", sim);
+        // Faithful runtime divergence (root-output feedback: delivered X never circulates) — see the class note on
+        // planner-vs-runtime; AE2UEL CraftingCPUCluster :694/:265.
+        CpuLifecycleAssert.stalls(plan, "S2");
         assertTrue(feasible(plan),
                 "X-rooted request must drive the ring, got " + dump(plan));
         assertEquals(7212, timesOf(plan, "A"), "makeIngotBy (4A->B+X) turns");
@@ -458,6 +505,9 @@ class CatalystFeedbackLoopTest {
         Bench.register(recycler);
         BenchSimulationState sim = new BenchSimulationState().seed("A", 2304).seed("Q", 50);
         VMPlan plan = Bench.run(recycler, 10000, sim);
+        // Faithful runtime divergence (net-stripped ring: no startup seed) — see the class note on
+        // planner-vs-runtime; AE2UEL CraftingCPUCluster :694/:265.
+        CpuLifecycleAssert.stalls(plan, "S2");
         assertTrue(feasible(plan),
                 "ambiguous X producer must degrade gracefully, got " + dump(plan));
         assertEquals(962, timesOf(plan, "A"), "makeIngotBy (4A->B+X) turns");
@@ -484,6 +534,9 @@ class CatalystFeedbackLoopTest {
         Bench.register(makeF);
         BenchSimulationState sim = new BenchSimulationState().seed("A", 2304).seed("F", 2);
         VMPlan plan = Bench.run(recycler, 10000, sim);
+        // Faithful runtime divergence (net-stripped ring: no startup seed) — see the class note on
+        // planner-vs-runtime; AE2UEL CraftingCPUCluster :694/:265.
+        CpuLifecycleAssert.stalls(plan, "S2");
         assertTrue(feasible(plan),
                 "coupled rings must close on the amplified demand, got " + dump(plan));
         assertEquals(962, timesOf(plan, "A"), "makeIngot (4A->B) turns");
@@ -508,6 +561,9 @@ class CatalystFeedbackLoopTest {
         }
         BenchSimulationState sim = new BenchSimulationState().seed("S", 3400);
         VMPlan plan = Bench.run(loop[1], 10000, sim);
+        // Faithful runtime divergence (net-stripped ring: no startup seed) — see the class note on
+        // planner-vs-runtime; AE2UEL CraftingCPUCluster :694/:265.
+        CpuLifecycleAssert.stalls(plan, "S2");
         assertTrue(feasible(plan),
                 "amplifying ring with sufficient spirits must be feasible, got " + dump(plan));
         assertTrue(schedulesPatternWithInput(plan, "S"),
@@ -531,6 +587,9 @@ class CatalystFeedbackLoopTest {
         }
         BenchSimulationState sim = new BenchSimulationState().seed("S", 2303);
         VMPlan plan = Bench.run(loop[1], 10000, sim);
+        // Faithful runtime divergence (net-stripped ring: no startup seed) — see the class note on
+        // planner-vs-runtime; AE2UEL CraftingCPUCluster :694/:265.
+        CpuLifecycleAssert.stalls(plan, "S2");
         assertTrue(schedulesPatternWithInput(plan, "S"),
                 "plan must schedule the ingot-synthesis pattern ");
         // solved balance turns: ceil((10000-2303)/8) = 963 — and ONLY the
@@ -548,6 +607,9 @@ class CatalystFeedbackLoopTest {
         }
         BenchSimulationState sim = new BenchSimulationState().seed("S", UNBOUNDED_STOCK);
         VMPlan plan = Bench.run(loop[1], 10000, sim);
+        // Faithful runtime divergence (idle ring: nothing scheduled, nothing arrives) — see the class note on
+        // planner-vs-runtime; AE2UEL CraftingCPUCluster :694/:265.
+        CpuLifecycleAssert.stalls(plan, "S4");
         assertTrue(feasible(plan),
                 "unbounded-stock amplifying ring must be feasible, got " + dump(plan));
         // the from-below solve stays at zero when stock covers the whole

@@ -1,4 +1,5 @@
 package com.ae2vm.vm.boundary;
+import com.ae2vm.test.harness.CpuLifecycleAssert;
 import com.ae2vm.test.harness.Bench;
 import com.ae2vm.test.fakes.BenchSimulationState;
 import com.ae2vm.test.fakes.BenchPatternDetails;
@@ -78,6 +79,7 @@ class PartialStockChainTest {
         sim.seed("leaf", 100);
 
         VMPlan plan = vm.execute(PatternCompiler.compileRequest(top, 2), sim);
+        CpuLifecycleAssert.auto(plan);
         // top×2 → A×10 → B×50 → leaf×250; stock 100 → shortfall 150.
         assertOnlyLeafMissing(plan, 150);
         assertEquals(100L, plan.getUsedItems().get(k("leaf")));
@@ -102,9 +104,11 @@ class PartialStockChainTest {
         BenchSimulationState s1 = new BenchSimulationState();
         s1.seed("leaf", 100);
         VMPlan p1 = vm.execute(request, s1);
+        CpuLifecycleAssert.auto(p1);
         BenchSimulationState s2 = new BenchSimulationState();
         s2.seed("leaf", 100);
         VMPlan p2 = vm.execute(request, s2);
+        CpuLifecycleAssert.auto(p2);
 
         assertEquals(p1.getMissingItems().get(k("leaf")), p2.getMissingItems().get(k("leaf")),
                 "same stock must produce the same shortfall");
@@ -132,6 +136,7 @@ class PartialStockChainTest {
         sim.seed("leaf", 3);
 
         VMPlan plan = vm.execute(PatternCompiler.compileRequest(top, 2), sim);
+        CpuLifecycleAssert.auto(plan);
         // top×2 → … → C×2 → leaf×10; stock 3 → shortfall 7.
         assertTrue(hasMissing(plan, "leaf"), "leaf shortfall must be reported");
         assertEquals(7L, plan.getMissingItems().get(k("leaf")));

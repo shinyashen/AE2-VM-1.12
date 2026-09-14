@@ -1,4 +1,5 @@
 package com.ae2vm.vm.ring;
+import com.ae2vm.test.harness.CpuLifecycleAssert;
 import com.ae2vm.test.harness.Bench;
 import com.ae2vm.test.fakes.BenchSimulationState;
 import com.ae2vm.test.fakes.BenchPatternDetails;
@@ -42,6 +43,7 @@ class GaiaRingNoSeedTest {
         Bench.register(makeIngot);
         for (var p : Bench.PATTERNS.values()) PatternCompiler.compileIfAbsent(p);
         VMPlan plan = Bench.run(makeSpirit, 10000, new BenchSimulationState());
+        CpuLifecycleAssert.auto(plan);
 
         Long ingotCrafts = plan.getPatternTimes().get(makeIngot);
         Long spiritCrafts = plan.getPatternTimes().get(makeSpirit);

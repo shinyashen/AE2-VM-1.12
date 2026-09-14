@@ -1,4 +1,5 @@
 package com.ae2vm.vm;
+import com.ae2vm.test.harness.CpuLifecycleAssert;
 import com.ae2vm.test.harness.Bench;
 import com.ae2vm.test.fakes.BenchSimulationState;
 import com.ae2vm.test.fakes.BenchPatternDetails;
@@ -86,6 +87,7 @@ class JitReuseTest {
 
         for (int i = 0; i < 5; i++) {
             VMPlan plan = vm.execute(fx.request(4), fx.sim());
+        CpuLifecycleAssert.auto(plan);
             assertTrue(plan.getMissingItems().isEmpty(), "no missing on request " + i);
             assertEquals(4L, plan.getUsedItems().get(k("D")));
             assertEquals(4L, plan.getUsedItems().get(k("E")));
@@ -106,11 +108,13 @@ class JitReuseTest {
 
         // First request: full stock → clean capture of every sub-pattern.
         VMPlan ok = vm.execute(fx.request(4), fx.sim());
+        CpuLifecycleAssert.auto(ok);
         assertTrue(ok.getMissingItems().isEmpty(), "first request should be feasible");
 
         // Second request: stock now only covers 2 A worth (D,E=2 ; F,G=2).
         fx.stockAll(2);
         VMPlan shortPlan = vm.execute(fx.request(4), fx.sim());
+        CpuLifecycleAssert.auto(shortPlan);
         // With reused bundles, the deficit-aware apply must report the shortfall:
         // need 4 D, only 2 in stock → used 2, missing 2.
         assertTrue(shortPlan.isSimulation(), "short request should be simulation (missing)");
@@ -135,6 +139,7 @@ class JitReuseTest {
 
         // Request 1: full stock → clean capture; realStockCache snapshot = 4.
         VMPlan ok = vm.execute(fx.request(4), fx.sim());
+        CpuLifecycleAssert.auto(ok);
         assertTrue(ok.getMissingItems().isEmpty(), "first request should be feasible");
         assertEquals(4L, ok.getUsedItems().get(k("D")));
 
@@ -143,6 +148,7 @@ class JitReuseTest {
 
         // Request 2 on the SAME VM: must re-snapshot (realStockOf returns 2, not 4).
         VMPlan plan2 = vm.execute(fx.request(4), fx.sim());
+        CpuLifecycleAssert.auto(plan2);
         assertEquals(2L, plan2.getUsedItems().get(k("D")),
                 "used[D] must reflect the refreshed stock (2), not the stale 4");
         assertTrue(plan2.isSimulation(), "req2 must be a simulation (missing)");
@@ -171,6 +177,7 @@ class JitReuseTest {
 
         // Request #1: 4 A. B is fully in stock → take B from stock (usedB=4), craft 0 B.
         VMPlan plan1 = vm.execute(fx.request(4), fx.simWith("B", 100));
+        CpuLifecycleAssert.auto(plan1);
         assertTrue(plan1.getMissingItems().isEmpty(), "req1 feasible");
         assertEquals(4L, plan1.getUsedItems().get(k("B")), "req1: B taken from stock");
         assertEquals(0L, plan1.getPatternTimes().getOrDefault(fx.b, 0L),
@@ -179,6 +186,7 @@ class JitReuseTest {
         // Request #2 on the SAME VM, network B now down to 2: realStockOf(B) must
         // return 2, not the stale 100. Correct: take 2 from stock + craft 2 B.
         VMPlan plan2 = vm.execute(fx.request(4), fx.simWith("B", 2));
+        CpuLifecycleAssert.auto(plan2);
         assertEquals(2L, plan2.getUsedItems().get(k("B")),
                 "req2: used[B] must be the refreshed stock (2), not the stale 100");
         assertEquals(2L, plan2.getPatternTimes().getOrDefault(fx.b, 0L),

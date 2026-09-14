@@ -1,4 +1,5 @@
 package com.ae2vm.vm;
+import com.ae2vm.test.harness.CpuLifecycleAssert;
 import com.ae2vm.test.harness.Bench;
 import com.ae2vm.test.fakes.BenchSimulationState;
 import com.ae2vm.test.fakes.BenchPatternDetails;
@@ -59,6 +60,8 @@ class VmSemanticsTest {
                 .seed("A", 1)   // X seed (id 0)
                 .seed("B", 10); // ingredient A (id 1)
         VMPlan plan = Bench.run(marker, 5, sim);
+        com.ae2vm.replay.VirtualCPUCluster.TRACE = true;
+        CpuLifecycleAssert.auto(plan);
         assertFalse(plan.isSimulation(), "marker order must be feasible with 1 seed: missing=" + dump(plan));
         assertEquals(5L, plan.getPatternTimes().get(marker));
         assertEquals(5L, plan.getUsedItems().get(key(1)));
@@ -74,6 +77,11 @@ class VmSemanticsTest {
                 .seed("A", 1)
                 .seed("B", 3);
         VMPlan plan = Bench.run(amp, 4, sim);
+        com.ae2vm.replay.VirtualCPUCluster.TRACE = true;
+        // Faithful runtime divergence: A is finalOutput AND self-consumed — a real
+        // CPU delivers finalOutput returns (CraftingCPUCluster :265) instead of
+        // circulating them, so the run starves once the seed is spent
+        CpuLifecycleAssert.stalls(plan, "S2");
         assertFalse(plan.isSimulation(), "amplifier must be feasible: missing=" + dump(plan));
         // request 4, stocked seed 1, net gain 1 per craft -> 3 crafts
         assertEquals(3L, plan.getPatternTimes().get(amp));
@@ -82,6 +90,7 @@ class VmSemanticsTest {
         // (the original RecursionReferenceTest "恰报缺 1 种子" semantics)
         BenchSimulationState starved = new BenchSimulationState().seed("B", 3);
         VMPlan starvedPlan = Bench.run(amp, 4, starved);
+        CpuLifecycleAssert.auto(starvedPlan);
         assertTrue(starvedPlan.isSimulation(), "starved amplifier must report its seed");
         assertEquals(1L, starvedPlan.getMissingItems().get(key(0)));
     }
@@ -100,12 +109,14 @@ class VmSemanticsTest {
         // (original CatalystFeedbackLoopTest "starved" semantics).
         BenchSimulationState starved = new BenchSimulationState().seed("C", 1);
         VMPlan starvedPlan = Bench.run(p2, 1, starved);
+        CpuLifecycleAssert.auto(starvedPlan);
         assertTrue(starvedPlan.isSimulation(), "starved loop must report its seed");
         assertEquals(1L, starvedPlan.getMissingItems().get(key(0)));
 
         // With A and C stocked the loop must close completely.
         BenchSimulationState seeded = new BenchSimulationState().seed("A", 1).seed("C", 1);
         VMPlan okPlan = Bench.run(p2, 1, seeded);
+        CpuLifecycleAssert.auto(okPlan);
         assertTrue(okPlan.getMissingItems().isEmpty(), "seeded loop must close: missing=" + dump(okPlan));
         assertEquals(1L, okPlan.getPatternTimes().get(p2));
         // one craft of A -> 2B exactly covers the 2B that p2 consumes
@@ -127,6 +138,12 @@ class VmSemanticsTest {
                 .seedVariant("T", 0, 10, 1)
                 .seed("B", 3);
         VMPlan plan = Bench.run(p, 3, sim);
+        com.ae2vm.replay.VirtualCPUCluster.TRACE = true;
+        // Faithful runtime divergence: the closed form amortizes the tool across
+        // `uses` firings via damage-fuzzy re-consumption, but AE2UEL's processing
+        // extraction is exact (CraftingCPUCluster :694) and the damage-fuzzy
+        // fallback is craftable-only (:672) — each firing burns one FRESH tool
+        CpuLifecycleAssert.stalls(plan, "S2");
         assertFalse(plan.isSimulation(), "tool reuse must cover 3 firings: missing=" + dump(plan));
         assertEquals(3L, plan.getPatternTimes().get(p));
         // exactly ONE tool demanded from the network for 3 firings of a 10-use tool
@@ -135,6 +152,7 @@ class VmSemanticsTest {
         // starved: no tool stocked -> the closed form reports the 1 missing tool
         BenchSimulationState starved = new BenchSimulationState().seed("B", 3);
         VMPlan starvedPlan = Bench.run(p, 3, starved);
+        CpuLifecycleAssert.auto(starvedPlan);
         assertTrue(starvedPlan.isSimulation(), "tool-less batch must be infeasible");
         assertEquals(1L, starvedPlan.getMissingItems().get(toolIn),
                 "missing exactly the one ceil(3/10) tool");
@@ -158,6 +176,8 @@ class VmSemanticsTest {
                 .seed("B", 12)   // raw input A
                 .seed("B", 2);    // producer raw input Y (id 1) - exactly the 2 crafts needed
         VMPlan plan = Bench.run(consumer, 12, sim);
+        com.ae2vm.replay.VirtualCPUCluster.TRACE = true;
+        CpuLifecycleAssert.auto(plan);
         assertFalse(plan.isSimulation(), "stock-aware: missing=" + dump(plan));
         // demand 12 X, 6 stocked -> deficit 6 -> 2 crafts of 4
         assertEquals(2L, plan.getPatternTimes().get(producer));
@@ -172,6 +192,8 @@ class VmSemanticsTest {
         Bench.register(toB);
         BenchSimulationState sim = new BenchSimulationState();
         VMPlan plan = Bench.run(toB, 9, sim);
+        com.ae2vm.replay.VirtualCPUCluster.TRACE = true;
+        CpuLifecycleAssert.auto(plan);
         assertTrue(plan.isSimulation(), "seedless value-conserving ring must report missing");
     }
 
@@ -187,6 +209,8 @@ class VmSemanticsTest {
         Bench.register(producer);
         BenchSimulationState sim = new BenchSimulationState();
         VMPlan plan = Bench.run(producer, 8, sim);
+        com.ae2vm.replay.VirtualCPUCluster.TRACE = true;
+        CpuLifecycleAssert.auto(plan);
         assertTrue(plan.isSimulation());
         // 8 output needed -> 2 crafts (ceil(8/4)) -> 2 of input B (id 1) missing
         assertEquals(2L, plan.getMissingItems().get(key(1)));

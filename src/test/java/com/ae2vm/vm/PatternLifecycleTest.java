@@ -1,4 +1,5 @@
 package com.ae2vm.vm;
+import com.ae2vm.test.harness.CpuLifecycleAssert;
 import com.ae2vm.test.harness.Bench;
 import com.ae2vm.test.fakes.BenchSimulationState;
 import com.ae2vm.test.fakes.BenchPatternDetails;
@@ -74,6 +75,7 @@ class PatternLifecycleTest {
         BenchSimulationState stocked = new BenchSimulationState();
         stocked.seed("leaf", 100);
         VMPlan p1 = vm.execute(PatternCompiler.compileRequest(top, 1), stocked);
+        CpuLifecycleAssert.auto(p1);
         assertTrue(hasMissing(p1, "inter"), "p1 must miss inter, missing=" + p1.getMissingItems());
         assertEquals(0L, p1.getUsedItems().get(k("leaf")));
 
@@ -83,6 +85,7 @@ class PatternLifecycleTest {
         PatternCompiler.compileIfAbsent(inter);
 
         VMPlan p2 = vm.execute(PatternCompiler.compileRequest(top, 1), stocked);
+        CpuLifecycleAssert.auto(p2);
         assertTrue(p2.getMissingItems().isEmpty(),
                 "after inter's pattern is added the chain must complete, missing="
                         + p2.getMissingItems());
@@ -104,6 +107,7 @@ class PatternLifecycleTest {
         // Request inter directly while it has no pattern → missing.
         BenchPatternDetails inter = pat("inter", 1, "inter2", 1L);
         VMPlan p1 = vm.execute(PatternCompiler.compileRequest(inter, 1), stocked);
+        CpuLifecycleAssert.auto(p1);
         assertTrue(hasMissing(p1, "inter2"), "p1 must miss inter2, missing=" + p1.getMissingItems());
 
         // Write the rest of the chain, then re-request inter on the SAME VM.
@@ -114,6 +118,7 @@ class PatternLifecycleTest {
         PatternCompiler.compileIfAbsent(inter2);
 
         VMPlan p2 = vm.execute(PatternCompiler.compileRequest(inter, 1), stocked);
+        CpuLifecycleAssert.auto(p2);
         assertTrue(p2.getMissingItems().isEmpty(),
                 "inter must be craftable once its chain exists, missing=" + p2.getMissingItems());
         assertEquals(1L, p2.getUsedItems().get(k("leaf")));
@@ -137,6 +142,7 @@ class PatternLifecycleTest {
         BenchSimulationState noB = new BenchSimulationState(); // b not stocked
 
         VMPlan p1 = vm.execute(PatternCompiler.compileRequest(top, 1), noB);
+        CpuLifecycleAssert.auto(p1);
         assertTrue(hasMissing(p1, "b"), "p1 must miss b, missing=" + p1.getMissingItems());
 
         // Replace A's pattern with an input-C variant (C is stocked).
@@ -147,6 +153,7 @@ class PatternLifecycleTest {
         stockedC.seed("c", 5);
 
         VMPlan p2 = vm.execute(PatternCompiler.compileRequest(top, 1), stockedC);
+        CpuLifecycleAssert.auto(p2);
         assertTrue(p2.getMissingItems().isEmpty(),
                 "the replacement pattern must complete the request, missing=" + p2.getMissingItems());
         assertEquals(1L, p2.getUsedItems().get(k("c")), "must consume the NEW pattern's input c");
@@ -185,6 +192,7 @@ class PatternLifecycleTest {
         stocked.seed("ore", 10);
 
         VMPlan topPlan = vm.execute(PatternCompiler.compileRequest(top, 1), stocked);
+        CpuLifecycleAssert.auto(topPlan);
         assertTrue(topPlan.getMissingItems().isEmpty(),
                 "top chain must complete, missing=" + topPlan.getMissingItems());
         assertEquals(1L, topPlan.getUsedItems().get(k("ore")));
@@ -195,6 +203,7 @@ class PatternLifecycleTest {
         BenchSimulationState fresh = new BenchSimulationState();
         fresh.seed("ore", 10);
         VMPlan widgetPlan = vm.execute(PatternCompiler.compileRequest(widget, 1), fresh);
+        CpuLifecycleAssert.auto(widgetPlan);
         assertTrue(widgetPlan.getMissingItems().isEmpty(),
                 "widget (via scrap) must complete, missing=" + widgetPlan.getMissingItems());
         assertEquals(1L, widgetPlan.getUsedItems().get(k("ore")),

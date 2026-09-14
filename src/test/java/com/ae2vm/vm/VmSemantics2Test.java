@@ -1,4 +1,5 @@
 package com.ae2vm.vm;
+import com.ae2vm.test.harness.CpuLifecycleAssert;
 import com.ae2vm.test.harness.Bench;
 import com.ae2vm.test.fakes.BenchSimulationState;
 import com.ae2vm.test.fakes.BenchPatternDetails;
@@ -95,6 +96,7 @@ class VmSemantics2Test {
         // leaves are ids "0" and "1": request 1xF11 needs 55x"0" + 89x"1"
         BenchSimulationState sim = new BenchSimulationState().seed("0", 55).seed("1", 89);
         VMPlan plan = vm.execute(req, sim);
+        CpuLifecycleAssert.auto(plan);
         assertFalse(plan.isSimulation(), "fibonacci chain must be feasible: missing=" + dump(plan));
         assertEquals(1L, plan.getPatternTimes().get(pats.get("F11")));
         assertEquals(1L, plan.getPatternTimes().get(pats.get("F10")));
@@ -108,10 +110,12 @@ class VmSemantics2Test {
         CraftingVM vm = new CraftingVM("bench", Bench.PATTERNS::get);
         BenchSimulationState s1 = new BenchSimulationState().seed("B", 100);
         VMPlan p1 = vm.execute(PatternCompiler.compileRequest(producer, 4), s1);
+        CpuLifecycleAssert.auto(p1);
         assertFalse(p1.isSimulation());
         assertEquals(1L, p1.getPatternTimes().get(producer));
         BenchSimulationState s2 = new BenchSimulationState().seed("B", 100);
         VMPlan p2 = vm.execute(PatternCompiler.compileRequest(producer, 40), s2);
+        CpuLifecycleAssert.auto(p2);
         assertFalse(p2.isSimulation());
         assertEquals(10L, p2.getPatternTimes().get(producer));
     }
@@ -176,6 +180,7 @@ class VmSemantics2Test {
                 .seed("B", 10)          // pattern encodes B(damage 0); stock is a damaged variant
                 .seedVariant("B", 5, 10, 10);
         VMPlan plan = Bench.run(p, 10, sim);
+        CpuLifecycleAssert.auto(plan);
         assertFalse(plan.isSimulation(), "processing default fuzzy: missing=" + dump(plan));
         assertEquals(10L, plan.getPatternTimes().get(p));
     }

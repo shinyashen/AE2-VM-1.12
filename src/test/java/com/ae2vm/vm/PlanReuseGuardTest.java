@@ -1,4 +1,5 @@
 package com.ae2vm.vm;
+import com.ae2vm.test.harness.CpuLifecycleAssert;
 import com.ae2vm.test.harness.Bench;
 import com.ae2vm.test.fakes.BenchSimulationState;
 import com.ae2vm.test.fakes.BenchPatternDetails;
@@ -95,6 +96,7 @@ class PlanReuseGuardTest {
         stocked.seed("b", 5);
 
         VMPlan p1 = vm.execute(PatternCompiler.compileRequest(top, 1), stocked);
+        CpuLifecycleAssert.auto(p1);
         assertTrue(p1.getMissingItems().isEmpty(), "p1 must complete, missing=" + p1.getMissingItems());
 
         // The player breaks the A pattern: the pattern set changes, the version
@@ -111,6 +113,7 @@ class PlanReuseGuardTest {
         BenchSimulationState restocked = new BenchSimulationState();
         restocked.seed("b", 5);
         VMPlan p2 = vm.execute(PatternCompiler.compileRequest(top, 1), restocked);
+        CpuLifecycleAssert.auto(p2);
         boolean missedA = false;
         for (IAEItemStack key : p2.getMissingItems().keys()) {
             if (((BenchAEItemStack) key).id.equals("a")) {

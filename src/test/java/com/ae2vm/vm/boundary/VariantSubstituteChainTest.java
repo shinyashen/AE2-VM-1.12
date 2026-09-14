@@ -1,4 +1,5 @@
 package com.ae2vm.vm.boundary;
+import com.ae2vm.test.harness.CpuLifecycleAssert;
 import com.ae2vm.test.harness.Bench;
 import com.ae2vm.test.fakes.BenchSimulationState;
 import com.ae2vm.test.fakes.BenchPatternDetails;
@@ -30,6 +31,13 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * changing underneath — a craftable intermediate must NEVER be reported as
  * missing ("有概率把已经有样板的物品报成缺少"), and a fuzzy-slot substitute that
  * has no stock but IS craftable must be scheduled instead of stalling the plan.
+ *
+ * <p><b>Planner vs runtime (M5 finding).</b> The planner assertions pin the
+ * substitute-fill math; the CPU bridge records the faithful runtime verdict, which
+ * DIVERGES for substitute-only fills: AE2UEL processing patterns extract their exact
+ * condensed inputs per push (CraftingCPUCluster :694) and slot substitution is
+ * crafting-only (PatternHelper :85), so a substitute-filled slot can never be
+ * consumed by the pattern and the job deadlocks at t=0 (S2).
  */
 class VariantSubstituteChainTest {
 
@@ -87,6 +95,8 @@ class VariantSubstituteChainTest {
         stocked.seed("raw", 5);
 
         VMPlan plan = vm.execute(PatternCompiler.compileRequest(comp, 1), stocked);
+        // Faithful runtime divergence (substitute-only fill; see class note)
+        CpuLifecycleAssert.stalls(plan, "S2");
         assertTrue(plan.getMissingItems().isEmpty(),
                 "the craftable white substitute must satisfy the fuzzy slot, missing="
                         + plan.getMissingItems());
@@ -135,12 +145,15 @@ class VariantSubstituteChainTest {
         full.seed("leaf2", 10);
         full.seed("r2", 10);
         VMPlan p1 = vm.execute(request, full);
+        // Faithful runtime divergence (substitute-only fill; see class note)
+        CpuLifecycleAssert.stalls(p1, "S2");
         assertTrue(p1.getMissingItems().isEmpty(), "p1 must complete, missing=" + p1.getMissingItems());
 
         // Request 2: stock drained → ONLY leaves (and the unstocked exact r1
         // slot input) may be missing; every craftable intermediate must appear
         // in patternTimes instead.
         VMPlan p2 = vm.execute(request, new BenchSimulationState());
+        CpuLifecycleAssert.auto(p2);
         for (IAEItemStack key : p2.getMissingItems().keys()) {
             String id = ((BenchAEItemStack) key).id;
             assertFalse(id.equals("top") || id.startsWith("m"),
@@ -158,6 +171,8 @@ class VariantSubstituteChainTest {
         restored.seed("leaf2", 10);
         restored.seed("r2", 10);
         VMPlan p3 = vm.execute(request, restored);
+        // Faithful runtime divergence (substitute-only fill; see class note)
+        CpuLifecycleAssert.stalls(p3, "S2");
         assertTrue(p3.getMissingItems().isEmpty(), "p3 must complete, missing=" + p3.getMissingItems());
         assertEquals(2L, p3.getUsedItems().get(k("leaf1")), "leaf1 consumed for 2 crafts");
     }

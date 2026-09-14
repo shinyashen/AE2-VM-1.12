@@ -1,4 +1,5 @@
 package com.ae2vm.vm.boundary;
+import com.ae2vm.test.harness.CpuLifecycleAssert;
 import com.ae2vm.test.harness.Bench;
 import com.ae2vm.test.fakes.BenchSimulationState;
 import com.ae2vm.test.fakes.BenchPatternDetails;
@@ -67,6 +68,7 @@ class CraftableFluidStockReproTest {
                 CraftingBytecode req = PatternCompiler.compileRequest(blank, n);
                 CraftingVM vm = new CraftingVM("cfluid-repro", Bench.PATTERNS::get);
                 VMPlan plan = vm.execute(req, sim);
+        CpuLifecycleAssert.auto(plan);
 
                 long blankTimes = plan.getPatternTimes().getOrDefault(blank, 0L);
                 long fluidCraft = plan.getPatternTimes().getOrDefault(fluid, 0L);
