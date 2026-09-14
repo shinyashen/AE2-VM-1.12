@@ -1,4 +1,4 @@
-package com.ae2vm.bench;
+package com.ae2vm.test.fakes;
 
 import appeng.api.networking.crafting.ICraftingPatternDetails;
 import appeng.api.storage.data.IAEItemStack;

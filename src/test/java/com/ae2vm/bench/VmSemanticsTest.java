@@ -1,4 +1,8 @@
 package com.ae2vm.bench;
+import com.ae2vm.test.harness.Bench;
+import com.ae2vm.test.fakes.BenchSimulationState;
+import com.ae2vm.test.fakes.BenchPatternDetails;
+import com.ae2vm.test.fakes.BenchAEItemStack;
 
 import appeng.api.storage.data.IAEItemStack;
 import com.ae2vm.vm.VMPlan;
@@ -6,9 +10,9 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import static com.ae2vm.bench.BenchPatternDetails.custom;
-import static com.ae2vm.bench.BenchPatternDetails.key;
-import static com.ae2vm.bench.BenchPatternDetails.processing;
+import static com.ae2vm.test.fakes.BenchPatternDetails.custom;
+import static com.ae2vm.test.fakes.BenchPatternDetails.key;
+import static com.ae2vm.test.fakes.BenchPatternDetails.processing;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;

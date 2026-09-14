@@ -1,4 +1,8 @@
 package com.ae2vm.bench;
+import com.ae2vm.test.harness.Bench;
+import com.ae2vm.test.fakes.BenchSimulationState;
+import com.ae2vm.test.fakes.BenchPatternDetails;
+import com.ae2vm.test.fakes.BenchAEItemStack;
 
 import com.ae2vm.vm.VMPlan;
 import org.junit.jupiter.api.BeforeAll;
@@ -11,11 +15,11 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 
-import static com.ae2vm.bench.Bench.UNBOUNDED_STOCK;
-import static com.ae2vm.bench.Bench.feasible;
-import static com.ae2vm.bench.Bench.infeasibleMatches;
-import static com.ae2vm.bench.Bench.pat;
-import static com.ae2vm.bench.Bench.patEx;
+import static com.ae2vm.test.harness.Bench.UNBOUNDED_STOCK;
+import static com.ae2vm.test.harness.Bench.feasible;
+import static com.ae2vm.test.harness.Bench.infeasibleMatches;
+import static com.ae2vm.test.harness.Bench.pat;
+import static com.ae2vm.test.harness.Bench.patEx;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;

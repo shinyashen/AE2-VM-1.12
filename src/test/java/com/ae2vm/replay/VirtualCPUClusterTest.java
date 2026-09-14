@@ -1,8 +1,9 @@
 package com.ae2vm.replay;
+import com.ae2vm.test.fakes.BenchAEItemStack;
 
 import appeng.api.networking.crafting.ICraftingPatternDetails;
 import appeng.api.storage.data.IAEItemStack;
-import com.ae2vm.bench.BenchAEItemStack;
+import com.ae2vm.test.fakes.BenchAEItemStack;
 import com.ae2vm.trace.VirtualPatternDetails;
 import com.ae2vm.vm.VMCounter;
 import com.ae2vm.vm.VMPlan;

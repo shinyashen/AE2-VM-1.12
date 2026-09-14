@@ -1,4 +1,4 @@
-package com.ae2vm.bench;
+package com.ae2vm.test.fakes;
 
 import appeng.api.networking.crafting.ICraftingPatternDetails;
 import appeng.api.storage.data.IAEItemStack;
@@ -46,7 +46,7 @@ public final class BenchSimulationState implements SimulationState {
     }
 
     /** Package-visible so the reference-suite translation can seed profiled keys. */
-    BenchSimulationState seedKey(BenchAEItemStack key, long amount) {
+    public BenchSimulationState seedKey(BenchAEItemStack key, long amount) {
         stock.merge(key, amount, Long::sum);
         return this;
     }

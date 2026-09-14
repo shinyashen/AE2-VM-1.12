@@ -1,4 +1,8 @@
 package com.ae2vm.bench;
+import com.ae2vm.test.harness.Bench;
+import com.ae2vm.test.fakes.BenchSimulationState;
+import com.ae2vm.test.fakes.BenchPatternDetails;
+import com.ae2vm.test.fakes.BenchAEItemStack;
 
 import com.ae2vm.compiler.PatternCompiler;
 import com.ae2vm.vm.CraftingBytecode;
@@ -18,8 +22,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Stream;
 
-import static com.ae2vm.bench.Bench.pat;
-import static com.ae2vm.bench.BenchPatternDetails.withSlotSubstitute;
+import static com.ae2vm.test.harness.Bench.pat;
+import static com.ae2vm.test.fakes.BenchPatternDetails.withSlotSubstitute;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /**

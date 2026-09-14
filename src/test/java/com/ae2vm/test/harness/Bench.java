@@ -1,4 +1,4 @@
-package com.ae2vm.bench;
+package com.ae2vm.test.harness;
 
 import appeng.api.networking.crafting.ICraftingPatternDetails;
 import appeng.api.storage.data.IAEItemStack;
@@ -6,6 +6,9 @@ import com.ae2vm.vm.CraftingBytecode;
 import com.ae2vm.vm.CraftingVM;
 import com.ae2vm.vm.VMPlan;
 import com.ae2vm.compiler.PatternCompiler;
+import com.ae2vm.test.fakes.BenchPatternDetails;
+import com.ae2vm.test.fakes.BenchSimulationState;
+import com.ae2vm.test.fakes.BenchAEItemStack;
 
 import java.util.LinkedHashMap;
 import java.util.Map;

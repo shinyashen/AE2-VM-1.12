@@ -1,4 +1,8 @@
 package com.ae2vm.bench;
+import com.ae2vm.test.harness.Bench;
+import com.ae2vm.test.fakes.BenchSimulationState;
+import com.ae2vm.test.fakes.BenchPatternDetails;
+import com.ae2vm.test.fakes.BenchAEItemStack;
 
 import com.ae2vm.vm.CraftingBytecode;
 import com.ae2vm.vm.CraftingVM;
@@ -11,9 +15,9 @@ import org.junit.jupiter.api.Test;
 import java.util.Map;
 import java.util.TreeMap;
 
-import static com.ae2vm.bench.Bench.k;
-import static com.ae2vm.bench.Bench.pat;
-import static com.ae2vm.bench.BenchPatternDetails.withSlotSubstitute;
+import static com.ae2vm.test.harness.Bench.k;
+import static com.ae2vm.test.harness.Bench.pat;
+import static com.ae2vm.test.fakes.BenchPatternDetails.withSlotSubstitute;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /**

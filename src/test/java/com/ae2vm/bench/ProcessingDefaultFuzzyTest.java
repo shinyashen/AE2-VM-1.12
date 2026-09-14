@@ -1,4 +1,8 @@
 package com.ae2vm.bench;
+import com.ae2vm.test.harness.Bench;
+import com.ae2vm.test.fakes.BenchSimulationState;
+import com.ae2vm.test.fakes.BenchPatternDetails;
+import com.ae2vm.test.fakes.BenchAEItemStack;
 
 import appeng.api.storage.data.IAEItemStack;
 import com.ae2vm.vm.CraftingBytecode;
@@ -12,7 +16,7 @@ import org.junit.jupiter.api.Test;
 import java.util.Map;
 import java.util.TreeMap;
 
-import static com.ae2vm.bench.BenchPatternDetails.custom;
+import static com.ae2vm.test.fakes.BenchPatternDetails.custom;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 

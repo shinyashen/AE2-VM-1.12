@@ -1,4 +1,4 @@
-package com.ae2vm.bench;
+package com.ae2vm.test.fakes;
 
 import appeng.api.config.FuzzyMode;
 import appeng.api.storage.data.IAEItemStack;

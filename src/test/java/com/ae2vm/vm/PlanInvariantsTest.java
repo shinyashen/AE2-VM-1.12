@@ -1,10 +1,11 @@
 package com.ae2vm.vm;
+import com.ae2vm.test.fakes.BenchAEItemStack;
 
 import appeng.api.networking.crafting.ICraftingPatternDetails;
 import appeng.api.storage.data.IAEItemStack;
 import appeng.api.storage.data.IItemList;
 import appeng.api.config.FuzzyMode;
-import com.ae2vm.bench.BenchAEItemStack;
+import com.ae2vm.test.fakes.BenchAEItemStack;
 import com.ae2vm.trace.VirtualPatternDetails;
 import org.junit.jupiter.api.Test;
 
