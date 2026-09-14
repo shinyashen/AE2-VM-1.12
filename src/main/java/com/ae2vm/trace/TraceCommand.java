@@ -10,7 +10,12 @@ import net.minecraft.command.WrongUsageException;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.text.event.ClickEvent;
+import net.minecraft.util.text.event.HoverEvent;
+import net.minecraft.util.text.ITextComponent;
+import net.minecraft.util.text.Style;
 import net.minecraft.util.text.TextComponentString;
+import net.minecraft.util.text.TextFormatting;
 
 import javax.annotation.Nullable;
 import java.io.IOException;
@@ -155,7 +160,7 @@ public final class TraceCommand extends CommandBase {
         String selfToken = TraceSessions.vault().tokenForPlayer(self, "");
 
         List<Path> files = traceFiles();
-        List<String> lines = new ArrayList<>();
+        List<ITextComponent> lines = new ArrayList<>();
         for (Path p : files) {
             TraceLoader.Result r = loadQuiet(p);
             if (r == null) {
@@ -184,7 +189,7 @@ public final class TraceCommand extends CommandBase {
         }
     }
 
-    private String renderLine(Path p, TraceFile f, boolean withSource, String ownerToken) {
+    private ITextComponent renderLine(Path p, TraceFile f, boolean withSource, String ownerToken) {
         String id = traceIdOf(p);
         String time = id.length() > 9 ? id.substring(0, 9) : id; // yyyyMMdd-HHmmss-xxxx → compact
         String statusKey = "aevm.trace.status." + lastStatus(f);
@@ -195,7 +200,32 @@ public final class TraceCommand extends CommandBase {
         if (withSource) {
             sb.append(' ').append(sourceLabel(f, ownerToken));
         }
-        return sb.toString();
+        // main line: click pre-fills the summary command
+        TextComponentString root = new TextComponentString(sb.toString() + "  ");
+        Style main = root.getStyle();
+        main.setClickEvent(new ClickEvent(ClickEvent.Action.SUGGEST_COMMAND,
+                "/ae2vm trace show " + id));
+        main.setHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT,
+                new TextComponentString(TraceLang.format("aevm.trace.btn.show-hover"))));
+        // direct-execution action buttons (permissions enforced server-side)
+        TextComponentString up = new TextComponentString(TraceLang.format("aevm.trace.btn.upload"));
+        Style upStyle = up.getStyle();
+        upStyle.setColor(TextFormatting.GOLD);
+        upStyle.setClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND,
+                "/ae2vm trace upload " + id));
+        upStyle.setHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT,
+                new TextComponentString(TraceLang.format("aevm.trace.btn.upload-hover"))));
+        root.appendSibling(up);
+        root.appendSibling(new TextComponentString(" "));
+        TextComponentString dl = new TextComponentString(TraceLang.format("aevm.trace.btn.download"));
+        Style dlStyle = dl.getStyle();
+        dlStyle.setColor(TextFormatting.GREEN);
+        dlStyle.setClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND,
+                "/ae2vm trace download " + id));
+        dlStyle.setHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT,
+                new TextComponentString(TraceLang.format("aevm.trace.btn.download-hover"))));
+        root.appendSibling(dl);
+        return root;
     }
 
     private String requestSummary(TraceFile f) {
@@ -339,6 +369,10 @@ public final class TraceCommand extends CommandBase {
 
     private static void send(ICommandSender sender, String line) {
         sender.sendMessage(new TextComponentString(line));
+    }
+
+    private static void send(ICommandSender sender, ITextComponent line) {
+        sender.sendMessage(line);
     }
 
     private static int countEvents(TraceFile f) {
