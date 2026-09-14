@@ -21,9 +21,12 @@ public final class ReplayMain {
     public static void main(String[] args) {
         String tracePath = null;
         boolean diff = true;
+        boolean simulate = true;
         for (String a : args) {
             if ("--no-diff".equals(a)) {
                 diff = false;
+            } else if ("--no-simulate".equals(a)) {
+                simulate = false;
             } else if (a.startsWith("--")) {
                 System.err.println("unknown flag: " + a);
             } else {
@@ -53,12 +56,24 @@ public final class ReplayMain {
                         + ", replaying with " + Tags.VERSION
                         + " — differences are evidence, not verdicts (design doc §6.4).");
             }
-            ReplayCore.Report report = ReplayCore.replay(f);
+            ReplayCore.Report report = ReplayCore.replay(f, simulate);
             System.out.println("replay: patterns=" + report.replayedPlan.getPatternTimes().size()
                     + " used=" + report.replayedPlan.getUsedItems().size()
                     + " missing=" + report.replayedPlan.getMissingItems().size()
                     + " emitted=" + report.replayedPlan.getEmittedItems().size()
                     + " simulation=" + report.replayedPlan.isSimulation());
+            if (report.verdict != null) {
+                System.out.println("simulate: " + report.verdict.status
+                        + (report.verdict.stallClass == null ? "" : " " + report.verdict.stallClass)
+                        + " delivered=" + report.verdict.delivered + "/" + "requested, steps="
+                        + report.verdict.steps);
+                for (String ev : report.verdict.evidence) {
+                    System.out.println("  ! " + ev);
+                }
+                if (report.verdict.status == VirtualCPUCluster.Verdict.Status.STALL) {
+                    System.exit(3);
+                }
+            }
             if (!diff) {
                 System.exit(0);
             }

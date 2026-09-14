@@ -44,16 +44,24 @@ public final class ReplayCore {
         /** Per-key comparison lines; empty when the plans are identical. */
         public final List<String> differences;
         public final boolean identical;
+        /** CPU lifecycle simulation verdict (design doc §7.2); null with --no-simulate. */
+        public final VirtualCPUCluster.Verdict verdict;
 
-        Report(VMPlan replayedPlan, List<String> differences) {
+        Report(VMPlan replayedPlan, List<String> differences, VirtualCPUCluster.Verdict verdict) {
             this.replayedPlan = replayedPlan;
             this.differences = differences;
             this.identical = differences.isEmpty();
+            this.verdict = verdict;
         }
     }
 
     /** Rebuilds and re-executes the trace's order with the current engine. */
     public static Report replay(TraceFile trace) {
+        return replay(trace, true);
+    }
+
+    /** Same, with the CPU-lifecycle simulation skippable. */
+    public static Report replay(TraceFile trace, boolean simulate) {
         if (trace.bytecode == null) {
             throw new IllegalArgumentException("trace has no embedded bytecode (recorded before M4?)");
         }
@@ -77,7 +85,29 @@ public final class ReplayCore {
         CraftingVM vm = new CraftingVM(new Object(), key -> null); // CALL_BY_KEY (fluid packets): no offline resolver yet
         VMPlan plan = vm.execute(root, sandbox);
 
-        return new Report(plan, diff(trace.plan, plan, factory, patternIndices));
+        List<String> differences = diff(trace.plan, plan, factory, patternIndices);
+
+        // CPU lifecycle simulation (design doc §7.2, instant tier): the
+        // snapshot stock PRE-execution is the S3 reference
+        VirtualCPUCluster.Verdict verdict = null;
+        if (simulate && trace.plan != null && trace.snapshot != null) {
+            HeadlessItemList snapshotStock = new HeadlessItemList();
+            for (StackEntry e : trace.snapshot.items) {
+                snapshotStock.add(factory.stack(e.spec, Long.parseLong(e.count)));
+            }
+            IAEItemStack what = requestIdentity(trace.bytecode, factory);
+            long amount = requestAmount(trace.bytecode);
+            if (what != null && amount > 0) {
+                VirtualCPUCluster cluster = new VirtualCPUCluster(plan, what, amount);
+                List<String> gaps = VirtualCPUCluster.extractionGap(plan,
+                        toSnapshotStock(snapshotStock));
+                verdict = cluster.run(10_000, 0);
+                for (String gap : gaps) {
+                    verdict.evidence.add(gap);
+                }
+            }
+        }
+        return new Report(plan, differences, verdict);
     }
 
     /** Recursive rebuild; records each rebuilt pattern's trace index for the diff. */
@@ -111,6 +141,30 @@ public final class ReplayCore {
                 Base64.getDecoder().decode(t.code),
                 t.outputIndex,
                 Long.parseLong(t.perCraft));
+    }
+
+    private static VirtualCPUCluster.Stock toSnapshotStock(HeadlessItemList list) {
+        VirtualCPUCluster.Stock s = new VirtualCPUCluster.Stock();
+        for (IAEItemStack st : list) {
+            s.add(st, st.getStackSize());
+        }
+        return s;
+    }
+
+    /**
+     * The requested identity, materialized (size 1): compileRequest semantics
+     * make the ROOT bytecode's output entry + perCraft the request itself.
+     */
+    static IAEItemStack requestIdentity(TraceBytecode tb, HeadlessStackFactory factory) {
+        if (tb.outputIndex < 0 || tb.outputIndex >= tb.pool.size()) {
+            return null;
+        }
+        StackEntry out = tb.pool.get(tb.outputIndex);
+        return factory.stack(out.spec, 1);
+    }
+
+    static long requestAmount(TraceBytecode tb) {
+        return Long.parseLong(tb.perCraft);
     }
 
     private static IAEItemStack[] stacks(List<StackEntry> entries, HeadlessStackFactory factory) {
