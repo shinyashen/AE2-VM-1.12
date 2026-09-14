@@ -307,13 +307,25 @@ public final class TraceCommand extends CommandBase {
     // upload / download (M2)
 
     private void upload(MinecraftServer server, ICommandSender sender, String idPart)
-            throws CommandException {
-        requireOp(sender);
-        if (!"ALL".equalsIgnoreCase(AE2VMConfig.traceUploadPermission)
-                && !isOp(sender)) {
-            throw new CommandException(TraceLang.format("aevm.trace.op-only"));
+            throws CommandException, PlayerNotFoundException {
+        if (!AE2VMConfig.traceUploadEnabled) {
+            throw new CommandException(TraceLang.format("aevm.trace.upload.disabled"));
         }
-        TraceUpload.start(server, sender, resolveExisting(sender, idPart));
+        Path p = findFile(idPart);
+        if (p == null) {
+            throw new CommandException(TraceLang.format("aevm.trace.show.nosuch", idPart));
+        }
+        // players upload only their OWN traces; ops upload anything
+        if (!isOp(sender)) {
+            UUID self = getCommandSenderAsPlayer(sender).getUniqueID();
+            TraceLoader.Result r = loadQuiet(p);
+            String owner = r == null ? null : requestPlayerToken(r.file);
+            String selfToken = TraceSessions.vault().tokenForPlayer(self, "");
+            if (owner == null || !owner.equals(selfToken)) {
+                throw new CommandException(TraceLang.format("aevm.trace.upload.not-yours"));
+            }
+        }
+        TraceUpload.start(server, sender, p);
     }
 
     private void download(MinecraftServer server, ICommandSender sender, String idPart)
@@ -383,14 +395,6 @@ public final class TraceCommand extends CommandBase {
             if (owner == null || !owner.equals(selfToken)) {
                 throw new CommandException(TraceLang.format("aevm.trace.show.nosuch", idPart));
             }
-        }
-        return p;
-    }
-
-    private Path resolveExisting(ICommandSender sender, String idPart) throws CommandException {
-        Path p = findFile(idPart);
-        if (p == null) {
-            throw new CommandException(TraceLang.format("aevm.trace.show.nosuch", idPart));
         }
         return p;
     }

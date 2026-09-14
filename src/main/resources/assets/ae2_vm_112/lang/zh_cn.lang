@@ -30,3 +30,5 @@ aevm.trace.download.start=正在把轨迹 {0}（{1} 字节）发送到你的客�
 aevm.trace.download.saved=已保存到 .minecraft/aevm/traces/{0}
 aevm.trace.download.failed=下行失败：{0}
 aevm.trace.download.needs-mod=该下载需要客户端安装 AE2 VM 模组。
+aevm.trace.upload.not-yours=该轨迹属于其他玩家——只能上传自己的轨迹（管理员可上传任意轨迹）。
+aevm.trace.upload.disabled=本服务器已停用轨迹上传。

@@ -30,3 +30,5 @@ aevm.trace.download.start=Sending trace {0} to your client ({1} bytes)...
 aevm.trace.download.saved=Trace saved to .minecraft/aevm/traces/{0}
 aevm.trace.download.failed=Download failed: {0}
 aevm.trace.download.needs-mod=This download requires the AE2 VM mod on your client.
+aevm.trace.upload.not-yours=That trace belongs to another player — you can upload only your own traces (ops may upload any).
+aevm.trace.upload.disabled=Trace upload is disabled on this server.

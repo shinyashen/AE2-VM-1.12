@@ -40,9 +40,9 @@ public class AE2VMConfig {
     @Config.Comment({"Chat language for trace command feedback.", "en_us or zh_cn."})
     public static String language = "en_us";
 
-    @Config.Comment({"Who may upload traces to mclo.gs (public by URL).",
-            "OP or ALL. The trace content is pseudonymous (tokenized names)."})
-    public static String traceUploadPermission = "OP";
+    @Config.Comment({"Master switch for mclo.gs uploads (public by URL).",
+            "Players may upload only their OWN traces; ops may upload any."})
+    public static boolean traceUploadEnabled = true;
 
     @Mod.EventBusSubscriber(modid = "ae2_vm_112")
     private static class EventHandler {
