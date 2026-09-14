@@ -139,7 +139,13 @@ public final class PatternCompiler {
 
     private static boolean contains(Set<IAEItemStack> set, IAEItemStack key) {
         for (IAEItemStack s : set) {
-            if (s.isSameType(key)) return true;
+            try {
+                if (s.isSameType(key)) return true;
+            } catch (ClassCastException crossImplementation) {
+                // isSameType implementations may cast their argument to their
+                // own class; mixed live/fake keys (tests, headless replay)
+                // then read as not-same instead of poisoning the caller
+            }
         }
         return false;
     }
