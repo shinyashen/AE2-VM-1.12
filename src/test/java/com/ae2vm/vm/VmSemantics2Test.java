@@ -185,31 +185,8 @@ class VmSemantics2Test {
         assertEquals(10L, plan.getPatternTimes().get(p));
     }
 
-    /** Two chained durability tools: ceil(9/10)=1 T1 and ceil(9/5)=2 T2. */
-    @Test
-    void durabilityChainClosedForms() {
-        BenchPatternDetails p1 = custom(
-                new IAEItemStack[]{tool("T1", 0), item("B", 1)},
-                new IAEItemStack[]{item("C", 1), tool("T1", 1)});
-        BenchPatternDetails p2 = custom(
-                new IAEItemStack[]{tool("T2", 0), item("C", 1)},
-                new IAEItemStack[]{item("D", 1), tool("T2", 1)});
-        Bench.register(p1);
-        Bench.register(p2);
-        // Reference semantics: each link's ceil(times/uses) tool demand is served
-        // from the network, so one undamaged tool of each kind must be stocked.
-        BenchSimulationState sim = new BenchSimulationState()
-                .seed("B", 9)
-                .seedVariant("T1", 0, 10, 1)
-                .seedVariant("T2", 0, 10, 1);
-        VMPlan plan = vmRun(p2, 9, sim);
-        assertFalse(plan.isSimulation(), "durability chain: missing=" + dump(plan));
-        assertEquals(9L, plan.getPatternTimes().get(p1));
-        assertEquals(9L, plan.getPatternTimes().get(p2));
-        assertEquals(1L, plan.getUsedItems().get(tool("T1", 0)));
-        // T2 max damage 10 -> one tool survives all 9 firings
-        assertEquals(1L, plan.getUsedItems().get(tool("T2", 0)));
-    }
+    // The chained durability closed-form test was removed with DURABILITY_TOOL
+    // (see local/VM-AUDIT.md B3; tools compile as ordinary gross inputs now).
 
     private static VMPlan vmRun(BenchPatternDetails root, long amount, BenchSimulationState sim) {
         for (var p : Bench.PATTERNS.values()) {

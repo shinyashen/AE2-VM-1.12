@@ -22,7 +22,10 @@ import java.util.concurrent.ConcurrentHashMap;
  * - replacement groups: canSubstitute() + getSubstituteInputs(slot) → FUZZY_SLOT
  * - catalyst: a condensed output that returns the input (same key, amount ≥ the
  *   per-craft consumption) — the 1.12 analogue of IInput.getRemainingKey()==input
- * - durability: a same-item different-damage output transition (tool wear)
+ * - durability: same-item different-damage output transitions compile as an
+ *   ordinary gross input (the worn output is a plain byproduct) — the upstream
+ *   ceil(times/uses) amortization is unusable on the AE2UEL CPU (exact
+ *   processing extraction; see local/VM-AUDIT.md B3)
  * - processing-recipe default fuzzy: every input of a !isCraftable() pattern
  */
 public final class PatternCompiler {
@@ -507,17 +510,21 @@ public final class PatternCompiler {
                 } catch (Throwable ignored) {
                 }
 
-                // Catalyst / durability (returned input) — one-time seed or tool rate.
+                // Returned (catalyst) input — one-time per-batch seed demand.
+                // A DEGRADING tool (same item, damage increased in the outputs)
+                // deliberately gets NO special opcode on 1.12: AE2UEL's CPU
+                // extracts processing inputs by exact key (CraftingCPUCluster
+                // :694) and cannot re-consume the worn return, so the upstream
+                // amt×ceil(times/uses) amortization produced plans the CPU
+                // stalls on. Compile the tool as an ordinary gross input; the
+                // worn output rides along as an inert byproduct (deliberate
+                // deviation from the 1.21 upstream, where the CPU's fuzzy
+                // extraction makes the amortization self-consistent).
                 long[] returned = detectReturnedInput(pattern, normalizedInput);
-                if (returned != null) {
+                if (returned != null && returned[1] == Long.MAX_VALUE) {
                     int seedIdx = builder.addConstant(inputKey);
                     builder.emitPushLong(perCraft);
-                    if (returned[1] == Long.MAX_VALUE) {
-                        builder.emit(Opcode.CATALYST_SEED);
-                    } else {
-                        builder.emitPushLong(returned[1]);
-                        builder.emit(Opcode.DURABILITY_TOOL);
-                    }
+                    builder.emit(Opcode.CATALYST_SEED);
                     builder.emitShort(seedIdx);
                     continue;
                 }

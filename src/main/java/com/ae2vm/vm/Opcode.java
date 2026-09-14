@@ -157,19 +157,6 @@ public enum Opcode {
      */
     CATALYST_SEED(0x12),
 
-    /**
-     * DURABILITY_TOOL <constantPoolIndex:short>
-     * Stack: (..., amount, uses) -> (...)
-     * Records a FINITE-USE tool demand for constantPool[idx]: `amount` units are
-     * consumed per firing, and one full amount-sized unit survives `uses` firings
-     * (a degrading tool like {@code 1·A(n) + 1·B → 1·C + A(n-1)}). Unlike a catalyst
-     * seed (one per batch) or a normal input (amount × times), a batch of `times`
-     * firings needs {@code amount × ceil(times / uses)} tools — the "成环差分"
-     * reduction. Stored in the bundle's `durability` map (rate, NOT scaled), applied
-     * at aggregation time from stock with shortfall → missing.
-     */
-    DURABILITY_TOOL(0x13),
-    
     /**     * FUZZY_SLOT
      * Stack: (...) -> (...)
      * Marks the IMMEDIATELY following CALL_BY_KEY as coming from a pattern input slot

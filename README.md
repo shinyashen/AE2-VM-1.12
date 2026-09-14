@@ -17,9 +17,9 @@ Crafting requests that stall the vanilla planner for minutes — deeply nested, 
 
 - **O(patterns + edges) demand propagation** over the pattern graph instead of node-by-node expansion; JIT bundles capture each pattern once and replay it scaled in O(1)
 - **BigInteger stack** — 10^9-scale chains, amount-1 boundaries, no overflow, no recursion
-- **Stock-aware planning** — inventory is consumed first, shortfalls crafted; catalyst feedback loops, durability tools and conversion rings get exact semantics
+- **Stock-aware planning** — inventory is consumed first, shortfalls crafted; catalyst feedback loops and conversion rings get exact semantics
 - **Amplifying crafting rings** — circular recipes that net-grow per round (a self-feeding loop whose outputs outweigh its inputs) are detected, solved to the material-minimal counts and folded into one bundle; byproduct intermediates, external inputs, byproduct-rooted orders and coupled ring chains are all covered, and startup working capital is reported exactly
-  **Currently disabled** — the ring family ships switched off in 1.1.1: on some modpacks, ordering an item whose recipe path contains a ring product could stall the crafting CPU. It will return behind a config toggle once the cause is fixed; all other planning (stock-aware propagation, byproduct routing, catalyst loops, durability tools) is unaffected.
+  **Currently disabled** — the ring family ships switched off in 1.1.1: on some modpacks, ordering an item whose recipe path contains a ring product could stall the crafting CPU. It will return behind a config toggle once the cause is fixed; all other planning (stock-aware propagation, byproduct routing, catalyst loops) is unaffected.
 - **Guards everywhere** — dead-cycle pre-pruning, composite-key JIT cache against stale patterns, plan memoization re-verified against live stock, and a solver confirmation gate that can never make a plan worse
 - **Multi-pattern assignment solver** — when one output has several patterns, mixed splits (5 crafts = 4×A + 1×B) are solved algebraically and encoded as a virtual pattern; this closed upstream's only remaining false-positive (carried since v1.9.6)
 - **Compatibility** — AE2FC fluid patterns, AE2CT display trees, third-party scaled-pattern wrappers, with automatic fallback to the vanilla tree if the VM can't handle a request

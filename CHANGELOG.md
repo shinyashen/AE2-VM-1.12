@@ -1,3 +1,13 @@
+# 1.1.1 (unreleased, pending live validation)
+
+## Diagnostics: trace, out-of-game replay and CPU simulation
+
+- **Diagnostic tracing** (`/ae2vm trace record|list|show|upload|download`, server-side commands usable from vanilla clients): opt-in job tracing with armed sessions, token-pseudonymized item identities (the vault never leaves the server), hash-chained+payload-sealed gzipped traces under `logs/aevm/traces/`, mclo.gs upload for vanilla-client players, client download channel for modded ones, retention caps and en_us/zh_cn messages
+- **Out-of-game replay**: the mod jar doubles as the replay CLI (`java -cp ae2_vm_112-x.y.z.jar com.ae2vm.replay.ReplayLauncher trace.json --deps <jar>...`); sub-pattern bytecode is embedded in traces (schema v2) so CALLs replay offline with zero compilation; plan diff reports identical/diverged
+- **Faithful CPU simulation** (`--simulate`, on by default): the offline VirtualCPUCluster mirrors AE2UEL's CraftingCPUCluster operation-by-operation (exact processing extraction, waitingFor-gated injection, final-output delivery) and classifies non-completing plans as S1/S2/S4 stalls
+- **Amplifying ring family ships disabled** (`ringSolverEnabled=false`): the faithful simulator proved the net-form ring plans lack the startup inventory a real CPU requires (t=0 deadlock) — the solver returns once it charges ring-member startup seeds; all ring tests now pin the faithful stall verdicts
+- **Durability-tool amortization removed**: the upstream `ceil(times/uses)` tool accounting assumed the CPU re-consumes worn returns, which AE2UEL's exact processing extraction does not do (it burns one fresh tool per firing). Degrading tools now compile as ordinary gross inputs — plans demand the full tool count and complete honestly instead of stalling mid-job. Deliberate deviation from the 1.21 upstream, whose modern-AE2 runtime supports the amortization
+
 # 1.1.0
 
 ## Ring solver: net-amplifying crafting rings

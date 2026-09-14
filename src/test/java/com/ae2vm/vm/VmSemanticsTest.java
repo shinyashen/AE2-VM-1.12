@@ -123,40 +123,11 @@ class VmSemanticsTest {
         assertEquals(1L, okPlan.getPatternTimes().get(p1));
     }
 
-    /** Durability tool T(0) + B -> C + T(1): one 10-use tool covers 3 firings. */
-    @Test
-    void durabilityToolClosedForm() {
-        BenchAEItemStack toolIn = new BenchAEItemStack("T", 0, 10, 1);
-        BenchAEItemStack toolOut = new BenchAEItemStack("T", 1, 10, 1);
-        BenchPatternDetails p = custom(
-                new IAEItemStack[]{toolIn, new BenchAEItemStack("B", 1)},
-                new IAEItemStack[]{new BenchAEItemStack("C", 1), toolOut});
-        Bench.register(p);
-        // Reference semantics: the ceil(times/uses) tool demand is served from the
-        // NETWORK — one stocked tool covers 3 firings, zero tools is infeasible.
-        BenchSimulationState sim = new BenchSimulationState()
-                .seedVariant("T", 0, 10, 1)
-                .seed("B", 3);
-        VMPlan plan = Bench.run(p, 3, sim);
-        com.ae2vm.replay.VirtualCPUCluster.TRACE = true;
-        // Faithful runtime divergence: the closed form amortizes the tool across
-        // `uses` firings via damage-fuzzy re-consumption, but AE2UEL's processing
-        // extraction is exact (CraftingCPUCluster :694) and the damage-fuzzy
-        // fallback is craftable-only (:672) — each firing burns one FRESH tool
-        CpuLifecycleAssert.stalls(plan, "S2");
-        assertFalse(plan.isSimulation(), "tool reuse must cover 3 firings: missing=" + dump(plan));
-        assertEquals(3L, plan.getPatternTimes().get(p));
-        // exactly ONE tool demanded from the network for 3 firings of a 10-use tool
-        assertEquals(1L, plan.getUsedItems().get(toolIn));
-
-        // starved: no tool stocked -> the closed form reports the 1 missing tool
-        BenchSimulationState starved = new BenchSimulationState().seed("B", 3);
-        VMPlan starvedPlan = Bench.run(p, 3, starved);
-        CpuLifecycleAssert.auto(starvedPlan);
-        assertTrue(starvedPlan.isSimulation(), "tool-less batch must be infeasible");
-        assertEquals(1L, starvedPlan.getMissingItems().get(toolIn),
-                "missing exactly the one ceil(3/10) tool");
-    }
+    // The durability-tool closed-form test was removed with the DURABILITY_TOOL
+    // feature (2026-09-14): the amortization's premise — damage-fuzzy re-consumption
+    // of the worn return — does not hold on the AE2UEL CPU (exact processing
+    // extraction, CraftingCPUCluster :694). Degrading tools now compile as
+    // ordinary gross inputs; see local/VM-AUDIT.md B3.
 
     /**
      * Stock-aware SUB-craft: a stocked child item is consumed from the network

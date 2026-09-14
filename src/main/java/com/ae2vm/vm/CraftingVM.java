@@ -33,9 +33,10 @@ import java.util.function.Function;
  * 2) Bundles are memoized in {@code bundleCache}; cts>1 calls apply
  *    {@code bundle[0].scale(cts)} in O(1), recursive chains collapse to
  *    O(patterns) demand propagation in applyAggregation.
- * 3) Recursion (A+B→2A), catalyst feedback loops, pure conversion rings,
- *    durability tools and fuzzy substitution groups receive closed-form
- *    corrections identical to the original v1.10.x semantics.
+ * 3) Recursion (A+B→2A), catalyst feedback loops, pure conversion rings and
+ *    fuzzy substitution groups receive closed-form corrections identical to
+ *    the original v1.10.x semantics (the upstream durability-tool amortization
+ *    is NOT ported: the AE2UEL CPU cannot re-consume worn returns).
  *
  * 1.12 port notes: AEKey → IAEItemStack (type-equality keys), KeyCounter →
  * VMCounter, CraftingSimulationState → SimulationState, ICraftingPlan → VMPlan.
@@ -70,7 +71,6 @@ public class CraftingVM {
     private VMCounter emittedItems;
     private VMCounter simInternal;
     private VMCounter catalystSeedItems;
-    private Map<IAEItemStack, long[]> durabilityItems;
     private Map<ICraftingPatternDetails, Long> patternTimes;
     private SimulationState simulation;
     private IAEItemStack outputKey;
@@ -250,8 +250,6 @@ public class CraftingVM {
          *  permanently spends its inputs (capture accounting symmetry).
          *  Replay ignores this map: claims are capture-time bookkeeping. */
         final Map<IAEItemStack, BigInteger> claimed = new ConcurrentHashMap<>();
-        // Finite-use tool rates (key → [amount, uses]) — NOT scaled.
-        final Map<IAEItemStack, long[]> durability = new ConcurrentHashMap<>();
         // The pattern each direct sub-call was resolved to at capture time.
         // A replay may only reuse the bundle while the CURRENT resolver picks
         // the same pattern for every sub-call (the multi-pattern repair loop
@@ -281,14 +279,13 @@ public class CraftingVM {
             itemNeeds.forEach((k, v) -> b.itemNeeds.put(k, v.multiply(factor)));
             fuzzyItemNeeds.forEach((k, v) -> b.fuzzyItemNeeds.put(k, v.multiply(factor)));
             seeds.forEach((k, v) -> b.seeds.put(k, v));
-            durability.forEach(b.durability::put);
             return b;
         }
 
         boolean isEmpty() {
             return bytes.signum() == 0 && used.isEmpty() && emitted.isEmpty() && missing.isEmpty()
                 && internal.isEmpty() && patterns.isEmpty() && needs.isEmpty() && itemNeeds.isEmpty()
-                && fuzzyItemNeeds.isEmpty() && seeds.isEmpty() && durability.isEmpty();
+                && fuzzyItemNeeds.isEmpty() && seeds.isEmpty();
         }
     }
 
@@ -396,7 +393,6 @@ public class CraftingVM {
         this.emittedItems = new VMCounter();
         this.simInternal = new VMCounter();
         this.catalystSeedItems = new VMCounter();
-        this.durabilityItems = new HashMap<>();
         this.patternTimes = new HashMap<>();
         this.simulation = simulation;
         this.nodeCount = 1;
@@ -830,12 +826,6 @@ public class CraftingVM {
                     int idx = readShort(); long amt = popL();
                     if (amt > 0 && constantPool[idx] != null) {
                         catalystSeedItems.add(constantPool[idx], amt);
-                    }
-                }
-                case 19 -> { // DURABILITY_TOOL
-                    int idx = readShort(); long uses = popL(); long amt = popL();
-                    if (amt > 0 && uses > 0 && constantPool[idx] != null) {
-                        durabilityItems.put(constantPool[idx], new long[]{amt, uses});
                     }
                 }
                 case 255 -> { // HALT
@@ -2064,27 +2054,6 @@ public class CraftingVM {
         }
         subtractStockFromNetwork(scaled);
         applyBundleDirect(scaled);
-        // Finite-use (durability) tool demand: amount × ceil(t/uses) tools.
-        for (var d : arr[0].durability.entrySet()) {
-            IAEItemStack toolKey = d.getKey();
-            long amount = d.getValue()[0];
-            long uses = d.getValue()[1];
-            if (amount <= 0 || uses <= 0) continue;
-            BigInteger units = t.add(BigInteger.valueOf(uses - 1)).divide(BigInteger.valueOf(uses));
-            long demand = toLongSafe(units.multiply(BigInteger.valueOf(amount)), "dur");
-            if (demand <= 0) continue;
-            simulation.addBytes(demand); nodeCount++;
-            long got = simulation.extract(toolKey, demand, false);
-            if (got > 0) {
-                long internal = simInternal.get(toolKey);
-                long fromInternal = Math.min(got, internal);
-                if (fromInternal > 0) simInternal.add(toolKey, -fromInternal);
-                long fromNetwork = got - fromInternal;
-                if (fromNetwork > 0) usedItems.add(toolKey, fromNetwork);
-            }
-            long shortfall = demand - got;
-            if (shortfall > 0) missingItems.add(toolKey, shortfall);
-        }
     }
 
     /** Remove the already-consumed network-stock pool from a bundle's used demand. */
@@ -2205,9 +2174,6 @@ public class CraftingVM {
             catalystSeedItems.add(e.getKey(), -val);
             if (catalystSeedItems.get(e.getKey()) == 0) catalystSeedItems.remove(e.getKey());
         }
-        for (var e : b.durability.entrySet()) {
-            durabilityItems.remove(e.getKey());
-        }
     }
 
     private Bundle captureDelta() {
@@ -2219,7 +2185,6 @@ public class CraftingVM {
         for (var e : missingItems.entrySet()) { if (e.getValue() != 0) b.missing.put(e.getKey(), BigInteger.valueOf(e.getValue())); }
         for (var e : simInternal.entrySet()) { if (e.getValue() != 0) b.internal.put(e.getKey(), BigInteger.valueOf(e.getValue())); }
         for (var e : catalystSeedItems.entrySet()) { if (e.getValue() != 0) b.seeds.put(e.getKey(), BigInteger.valueOf(e.getValue())); }
-        for (var en : durabilityItems.entrySet()) b.durability.put(en.getKey(), en.getValue());
         for (var k : patternTimes.keySet()) { long v = patternTimes.get(k); if (v != 0) b.patterns.put(k, BigInteger.valueOf(v)); }
         return b;
     }
@@ -2262,13 +2227,6 @@ public class CraftingVM {
             if (bv == null) bv = BigInteger.ZERO;
             BigInteger d = e.getValue().subtract(bv);
             if (d.signum() > 0) b.seeds.put(e.getKey(), d);
-        }
-        for (var e : after.durability.entrySet()) {
-            boolean had = false;
-            for (var be : before.durability.keySet()) {
-                if (be.isSameType(e.getKey())) { had = true; break; }
-            }
-            if (!had) b.durability.put(e.getKey(), e.getValue());
         }
         for (var e : after.patterns.entrySet()) {
             BigInteger bv = before.patterns.get(e.getKey());
