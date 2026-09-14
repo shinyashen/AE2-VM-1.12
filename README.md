@@ -66,6 +66,29 @@ The [wiki](https://github.com/shinyashen/AE2-VM-1.12/wiki/Home-en) carries the f
 
 Requires a JDK 25 build JVM (RetroFuturaGradle 2.x requirement; the JDK 17 compile toolchain is provisioned automatically). Runtime is Cleanroom (JDK 21+) or Forge (Java 8 + MixinBooter). Dependencies resolve through CurseMaven (AE2UEL, AE2FC-Rework, AE2CT, Baubles).
 
+## Offline trace replay (diagnostics)
+
+Crafting orders can be recorded as self-contained, pseudonymous traces
+(`/ae2vm trace record`, then place the order; `trace list` lines carry
+clickable upload/download actions). A trace rebuilds the whole order
+offline — the mod jar itself is the replay tool:
+
+```
+java -cp ae2_vm_112-x.y.z.jar com.ae2vm.replay.ReplayLauncher ^
+     --deps gson.jar --deps deobf-mc-1.12.2.jar ... trace-xxx.aevmtrace.json.gz
+```
+
+- `--deps` (repeatable, comma-separated) provides the runtime classes the
+  replay needs: gson, guava 21, log4j api/core, commons-lang3, commons-io,
+  netty-all, fastutil, launchwrapper, an AE2UEL **dev-mapped** jar and a
+  deobfuscated Minecraft 1.12.2 jar. Generate the latter two locally with
+  the same gradle toolchain — never distribute Minecraft jars (EULA), and
+  note that **SRG-reobf release jars do not bind** (methods are `func_*`).
+- Exit code 0 = the current engine reproduces the recorded plan exactly;
+  1 = a token-exact diff is printed (differences are evidence, not
+  verdicts); 2 = failure. Same trace + same jar always produces identical
+  output.
+
 ## License & Credits
 
 This project is a fork of [AE2-VM](https://github.com/TaoLe-si/AE2-VM) — the crafting-VM architecture, instruction semantics and test baselines all originate there.
