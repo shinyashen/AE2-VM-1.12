@@ -21,6 +21,13 @@ public final class TracePattern {
     public final boolean substitute;
     public int priority;
 
+    /**
+     * Schema v2 (design doc §6.1): this pattern's own compiled bytecode,
+     * embedded so offline CALL execution never needs the live compiler.
+     * Null for patterns that were never CALLed during recording.
+     */
+    public TraceBytecode compiled;
+
     public TracePattern(boolean crafting, boolean substitute, int priority) {
         this.crafting = crafting;
         this.substitute = substitute;
@@ -42,6 +49,9 @@ public final class TracePattern {
         o.addProperty("crafting", crafting);
         o.addProperty("sub", substitute);
         o.addProperty("prio", priority);
+        if (compiled != null) {
+            o.add("compiled", compiled.toJson());
+        }
         return o;
     }
 
@@ -70,6 +80,7 @@ public final class TracePattern {
                 }
             }
         }
+        p.compiled = TraceBytecode.fromJson(o.get("compiled"));
         return p;
     }
 }

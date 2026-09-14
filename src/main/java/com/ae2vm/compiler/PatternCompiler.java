@@ -197,6 +197,16 @@ public final class PatternCompiler {
         return COMPILED_PATTERNS.get(pattern);
     }
 
+    /**
+     * Replay support (trace design doc §6.1): pre-populate the compiled
+     * cache from a trace's embedded sub-pattern bytecodes, so offline CALL
+     * execution is served entirely from the cache and never touches the
+     * live compiler (no PatternHelper, recipes or World).
+     */
+    public static void seedCompiled(Map<ICraftingPatternDetails, CraftingBytecode> compiled) {
+        COMPILED_PATTERNS.putAll(compiled);
+    }
+
     public static CraftingBytecode compileRequest(ICraftingPatternDetails pattern, long requestedAmount) {
         return compileRequest(pattern, requestedAmount, null);
     }

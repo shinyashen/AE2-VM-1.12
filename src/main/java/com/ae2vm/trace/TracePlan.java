@@ -21,6 +21,9 @@ public final class TracePlan {
     public final List<PatternTime> patternTimes = new ArrayList<>();
     public boolean simulation;
 
+    /** Delivered amount of the requested key (decimal string). */
+    public String deliver;
+
     public JsonObject toJson() {
         JsonObject o = new JsonObject();
         o.add("used", entries(used));
@@ -35,6 +38,9 @@ public final class TracePlan {
         }
         o.add("pt", pt);
         o.addProperty("sim", simulation);
+        if (deliver != null) {
+            o.addProperty("deliver", deliver);
+        }
         return o;
     }
 
@@ -66,6 +72,7 @@ public final class TracePlan {
             }
         }
         p.simulation = o.has("sim") && o.get("sim").getAsBoolean();
+        p.deliver = o.has("deliver") ? o.get("deliver").getAsString() : null;
         return p;
     }
 

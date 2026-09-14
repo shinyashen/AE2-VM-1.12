@@ -39,6 +39,7 @@ public final class TraceRecorder {
     private final int cap;
     private final long startNanos = System.nanoTime();
     private final IdentityHashMap<Object, Integer> patternIndices = new IdentityHashMap<>();
+    private CraftingBytecode rootBytecode;
     private final Path baseDir; // test injection; null = server trace dir
     private Path target;
     private boolean closed;
@@ -219,6 +220,7 @@ public final class TraceRecorder {
     }
 
     public void stampBytecode(CraftingBytecode bc) {
+        rootBytecode = bc;
         file.bytecode = BytecodeTraceCodec.toTrace(bc, codec);
         patternIndices.clear();
         Object[] pool = bc.getPatternPool();
@@ -267,6 +269,9 @@ public final class TraceRecorder {
     }
 
     public void planResult(VMPlan plan) {
+        if (rootBytecode != null) {
+            stampSubBytecodes(rootBytecode); // schema v2: embed every compiled sub-pattern
+        }
         TracePlan p = new TracePlan();
         fill(p.used, plan.getUsedItems());
         fill(p.missing, plan.getMissingItems());
@@ -278,6 +283,7 @@ public final class TraceRecorder {
                     Long.toString(e.getValue())));
         }
         p.simulation = plan.isSimulation();
+        p.deliver = Long.toString(plan.getDeliverAmount());
         file.plan = p;
         emit(TraceSegment.CALC, "PLAN_RESULT", mapOf(
                 "used", Integer.toString(p.used.size()),
@@ -285,6 +291,48 @@ public final class TraceRecorder {
                 "emitted", Integer.toString(p.emitted.size()),
                 "patterns", Integer.toString(p.patternTimes.size()),
                 "simulation", Boolean.toString(p.simulation)));
+    }
+
+    /**
+     * Schema v2 (design doc §6.1): walk the root pattern pool and embed each
+     * pattern's compiled bytecode (harvested from the compiler cache — every
+     * CALLed pattern is compiled by execution time), recursively. Uncalled
+     * patterns have no bytecode and stay null: the VM never CALLs them, so
+     * replay never needs them either.
+     */
+    private void stampSubBytecodes(CraftingBytecode bc) {
+        stampOne(file.bytecode, bc);
+    }
+
+    private void stampOne(TraceBytecode t, CraftingBytecode bc) {
+        Object[] pool = bc.getPatternPool();
+        for (int i = 0; i < pool.length && i < t.patterns.size(); i++) {
+            CraftingBytecode sub = com.ae2vm.compiler.PatternCompiler.getCompiled(
+                    (appeng.api.networking.crafting.ICraftingPatternDetails) pool[i]);
+            if (sub == null) {
+                continue;
+            }
+            TracePattern tp = t.patterns.get(i);
+            TraceBytecode nested = new TraceBytecode();
+            nested.code = java.util.Base64.getEncoder().encodeToString(sub.getCode());
+            for (IAEItemStack s : sub.getConstantPool()) {
+                nested.pool.add(BytecodeTraceCodec.entryOf(s, codec));
+            }
+            nested.outputIndex = sub.getOutputIndex();
+            nested.perCraft = Long.toString(sub.getOutputAmountPerCraft());
+            for (appeng.api.networking.crafting.ICraftingPatternDetails d : sub.getPatternPool()) {
+                TracePattern ntp = new TracePattern(d.isCraftable(), d.canSubstitute(), d.getPriority());
+                for (IAEItemStack s : d.getCondensedInputs()) {
+                    ntp.condensedInputs.add(BytecodeTraceCodec.entryOf(s, codec));
+                }
+                for (IAEItemStack s : d.getCondensedOutputs()) {
+                    ntp.condensedOutputs.add(BytecodeTraceCodec.entryOf(s, codec));
+                }
+                nested.patterns.add(ntp);
+            }
+            tp.compiled = nested;
+            stampOne(nested, sub);
+        }
     }
 
     private void fill(java.util.List<StackEntry> into, com.ae2vm.vm.VMCounter counter) {

@@ -24,24 +24,25 @@ public final class BytecodeTraceCodec {
         TraceBytecode t = new TraceBytecode();
         t.code = Base64.getEncoder().encodeToString(bc.getCode());
         for (IAEItemStack s : bc.getConstantPool()) {
-            t.pool.add(entry(s, codec));
+            t.pool.add(entryOf(s, codec));
         }
         t.outputIndex = bc.getOutputIndex();
         t.perCraft = Long.toString(bc.getOutputAmountPerCraft());
         for (ICraftingPatternDetails d : bc.getPatternPool()) {
             TracePattern tp = new TracePattern(d.isCraftable(), d.canSubstitute(), d.getPriority());
             for (IAEItemStack s : d.getCondensedInputs()) {
-                tp.condensedInputs.add(entry(s, codec));
+                tp.condensedInputs.add(entryOf(s, codec));
             }
             for (IAEItemStack s : d.getCondensedOutputs()) {
-                tp.condensedOutputs.add(entry(s, codec));
+                tp.condensedOutputs.add(entryOf(s, codec));
             }
             t.patterns.add(tp);
         }
         return t;
     }
 
-    private static StackEntry entry(IAEItemStack s, StackCodec codec) {
+    /** Pool-entry conversion shared with the recorder's sub-bytecode harvest. */
+    public static StackEntry entryOf(IAEItemStack s, StackCodec codec) {
         StackSpec spec = codec.toSpec(McStackAdapter.identityOf(s));
         return new StackEntry(spec, Long.toString(s.getStackSize()), false);
     }

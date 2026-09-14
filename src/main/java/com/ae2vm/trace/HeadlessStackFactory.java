@@ -21,6 +21,7 @@ public final class HeadlessStackFactory {
 
     private final Map<String, Item> items = new HashMap<>();
     private final Map<String, NBTTagCompound> nbtTags = new HashMap<>();
+    private final Map<IAEItemStack, StackSpec> issued = new java.util.IdentityHashMap<>();
 
     public IAEItemStack stack(StackSpec spec, long count) {
         Item item = items.get(spec.token);
@@ -43,6 +44,12 @@ public final class HeadlessStackFactory {
             throw new IllegalStateException("headless factory cannot materialize " + spec);
         }
         ae.setStackSize(count);
+        issued.put(ae, spec);
         return ae;
+    }
+
+    /** Reverse lookup for diff reporting; null for stacks this factory did not issue. */
+    public StackSpec specOf(IAEItemStack stack) {
+        return issued.get(stack);
     }
 }

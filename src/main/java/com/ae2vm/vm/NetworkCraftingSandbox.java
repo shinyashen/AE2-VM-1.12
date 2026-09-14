@@ -50,6 +50,11 @@ public final class NetworkCraftingSandbox implements SimulationState {
         return stock;
     }
 
+    /** Offline rebuild entry (trace replay): wrap an already-materialized stock list. */
+    public static NetworkCraftingSandbox raw(IItemList<IAEItemStack> stock) {
+        return new NetworkCraftingSandbox(stock);
+    }
+
     /** Snapshots the live network inventory (items + AE2FC fluids as drops). */
     public static NetworkCraftingSandbox snapshot(IGrid grid) {
         IItemStorageChannel itemChannel =
