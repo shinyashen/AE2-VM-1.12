@@ -42,6 +42,15 @@ body:
         are essential for diagnosis. /
         请将 `latest.log`(或崩溃报告)上传到 mclo.gs 并贴出链接——VM 会输出
         计划细节([AE2-VM DIAG-MISS]、calc time),对定位问题至关重要。
+        If the issue is about a crafting order, please also attach a
+        diagnostic trace: `/ae2vm trace record next` → place the order again →
+        `/ae2vm trace list` → click [Upload] and paste the link (or [Download]
+        and attach the file). Traces are automatically pseudonymized — no
+        modpack item names are included. /
+        若问题与合成订单相关,强烈建议附一条诊断轨迹:`/ae2vm trace record next`
+        → 重新下单 → `/ae2vm trace list` → 点 [上传] 贴短链(或 [下载] 后附
+        文件)。轨迹已自动脱敏,不含整合包明文名称。Guide / 详细步骤:
+        wiki《Diagnostics-Report》。
       placeholder: https://mclo.gs/...
     validations:
       required: true

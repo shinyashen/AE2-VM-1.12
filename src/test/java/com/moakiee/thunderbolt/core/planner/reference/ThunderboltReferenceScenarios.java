@@ -33,7 +33,6 @@ public final class ThunderboltReferenceScenarios {
         addCatalyst(result, 1_000);
         addRawCatalystLoop(result, 8);
         addLossyFeedbackLoop(result, 8);
-        addDurability(result, 100, 10_000);
         addFuzzyVariant(result, 1_000);
         addRecursionAmplifier(result, 8);
         addRecursionEssenceCatalyst(result, 8);
@@ -315,22 +314,10 @@ public final class ThunderboltReferenceScenarios {
         return builder.build();
     }
 
-    private static void addDurability(List<ReferenceScenario> out, int uses, int amount) {
-        long tools = (amount + uses - 1L) / uses;
-        Map<String, Long> minimum = Map.of("tool", tools, "raw", (long) amount);
-        Map<String, Long> starved = Map.of("tool", tools - 1L, "raw", (long) amount);
-        addThreeModes(out, "durability/finite-use-chain", ReferenceCapability.DURABILITY_CHAIN,
-                uses, "product", amount, minimum, starved, List.of(Map.of("tool", 1L)),
-                stock -> durability(uses, stock));
-    }
-
-    private static CraftGraph<String> durability(int uses, Map<String, Long> stock) {
-        var builder = CraftGraph.<String>builder()
-                .pattern("product", 1, List.of(
-                        CraftInput.of("raw", 1), CraftInput.finiteUse("tool", 1, uses)));
-        stock.forEach(builder::stock);
-        return builder.build();
-    }
+    // The durability/finite-use-chain scenario was removed with the DURABILITY_TOOL
+    // feature (2026-09-14): the vendor closed form's premise does not hold on the
+    // AE2UEL CPU (exact processing extraction), so the AE2VM planner deliberately
+    // deviates to gross charging — see local/VM-AUDIT.md B3.
 
     private static void addFuzzyVariant(List<ReferenceScenario> out, int amount) {
         var source = new ReusableStockSource("host", "fuzzy-reference");

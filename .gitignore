@@ -119,12 +119,9 @@ gradle-app.setting
 # Avoid ignoring Gradle wrapper jar file (.jar files are usually ignored)
 !gradle-wrapper.jar
 
-# gradle.properties (tracked: project build config)compile_err.txt
-AGENTS.md
+compile_err.txt
 __pycache__/
-CF-DESCRIPTION.md
-REWRITE-PLAN.md
-REWRITE-PLAN-SHA-MAP.txt
+AGENTS.md
 
-# Local workspace: internal design docs, notes, diagnostics — never tracked
+# Local workspace: internal docs, notes, diagnostics — never tracked
 local/

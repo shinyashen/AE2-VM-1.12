@@ -22,7 +22,10 @@ import java.util.concurrent.ConcurrentHashMap;
  * - replacement groups: canSubstitute() + getSubstituteInputs(slot) → FUZZY_SLOT
  * - catalyst: a condensed output that returns the input (same key, amount ≥ the
  *   per-craft consumption) — the 1.12 analogue of IInput.getRemainingKey()==input
- * - durability: a same-item different-damage output transition (tool wear)
+ * - durability: same-item different-damage output transitions compile as an
+ *   ordinary gross input (the worn output is a plain byproduct) — the upstream
+ *   ceil(times/uses) amortization is unusable on the AE2UEL CPU (exact
+ *   processing extraction; see local/VM-AUDIT.md B3)
  * - processing-recipe default fuzzy: every input of a !isCraftable() pattern
  */
 public final class PatternCompiler {
@@ -51,7 +54,7 @@ public final class PatternCompiler {
             new ConcurrentHashMap<>();
 
     /**
-     * T4 byproduct fallback index: output key → the patterns producing it in
+     * Byproduct fallback index: output key → the patterns producing it in
      * ANY output slot. A key with no PRIMARY producer resolves
      * through here while exactly one known pattern produces it — a byproduct
      * intermediate of a ring. Two or more producers is the multi-pattern
@@ -139,7 +142,13 @@ public final class PatternCompiler {
 
     private static boolean contains(Set<IAEItemStack> set, IAEItemStack key) {
         for (IAEItemStack s : set) {
-            if (s.isSameType(key)) return true;
+            try {
+                if (s.isSameType(key)) return true;
+            } catch (ClassCastException crossImplementation) {
+                // isSameType implementations may cast their argument to their
+                // own class; mixed live/fake keys (tests, headless replay)
+                // then read as not-same instead of poisoning the caller
+            }
         }
         return false;
     }
@@ -188,13 +197,23 @@ public final class PatternCompiler {
             COMPILED_PATTERNS.computeIfAbsent(pattern, PatternCompiler::compilePattern);
         }
         if (pattern != null) {
-            indexAnyOutput(pattern); // T4 byproduct fallback index (idempotent)
+            indexAnyOutput(pattern); // byproduct fallback index (idempotent)
         }
     }
 
     public static CraftingBytecode getCompiled(ICraftingPatternDetails pattern) {
         pattern = unwrapScaled(pattern);
         return COMPILED_PATTERNS.get(pattern);
+    }
+
+    /**
+     * Replay support (trace design doc §6.1): pre-populate the compiled
+     * cache from a trace's embedded sub-pattern bytecodes, so offline CALL
+     * execution is served entirely from the cache and never touches the
+     * live compiler (no PatternHelper, recipes or World).
+     */
+    public static void seedCompiled(Map<ICraftingPatternDetails, CraftingBytecode> compiled) {
+        COMPILED_PATTERNS.putAll(compiled);
     }
 
     public static CraftingBytecode compileRequest(ICraftingPatternDetails pattern, long requestedAmount) {
@@ -491,17 +510,21 @@ public final class PatternCompiler {
                 } catch (Throwable ignored) {
                 }
 
-                // Catalyst / durability (returned input) — one-time seed or tool rate.
+                // Returned (catalyst) input — one-time per-batch seed demand.
+                // A DEGRADING tool (same item, damage increased in the outputs)
+                // deliberately gets NO special opcode on 1.12: AE2UEL's CPU
+                // extracts processing inputs by exact key (CraftingCPUCluster
+                // :694) and cannot re-consume the worn return, so the upstream
+                // amt×ceil(times/uses) amortization produced plans the CPU
+                // stalls on. Compile the tool as an ordinary gross input; the
+                // worn output rides along as an inert byproduct (deliberate
+                // deviation from the 1.21 upstream, where the CPU's fuzzy
+                // extraction makes the amortization self-consistent).
                 long[] returned = detectReturnedInput(pattern, normalizedInput);
-                if (returned != null) {
+                if (returned != null && returned[1] == Long.MAX_VALUE) {
                     int seedIdx = builder.addConstant(inputKey);
                     builder.emitPushLong(perCraft);
-                    if (returned[1] == Long.MAX_VALUE) {
-                        builder.emit(Opcode.CATALYST_SEED);
-                    } else {
-                        builder.emitPushLong(returned[1]);
-                        builder.emit(Opcode.DURABILITY_TOOL);
-                    }
+                    builder.emit(Opcode.CATALYST_SEED);
                     builder.emitShort(seedIdx);
                     continue;
                 }
@@ -511,7 +534,7 @@ public final class PatternCompiler {
                 builder.emitPushLong(perCraft);
                 builder.emit(Opcode.MUL);
                 // Always schedule the sub-craft with the FULL per-craft need BEFORE
-                // consuming stock (the v1.8.18 false-missing fix).
+                // consuming stock (prevents false-missing reports).
                 builder.emit(Opcode.DUP);
                 if (fuzzy) {
                     builder.emitFuzzySlot();

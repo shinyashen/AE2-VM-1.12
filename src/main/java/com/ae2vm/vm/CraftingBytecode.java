@@ -236,16 +236,6 @@ public class CraftingBytecode {
             emitShort(constantIndex);
         }
 
-        /**
-         * Records a finite-use (durability) tool demand. Pops {@code uses} then {@code amount}
-         * (i.e. stack: ..., amount, uses), and stores the (key -> [amount, uses]) rate in the
-         * bundle so the aggregation can demand {@code amount * ceil(times/uses)} tools.
-         */
-        public void emitDurabilityTool(int constantIndex) {
-            emit(Opcode.DURABILITY_TOOL);
-            emitShort(constantIndex);
-        }
-
         public void emitHalt() {
             emit(Opcode.HALT);
         }

@@ -12,6 +12,7 @@ import appeng.api.storage.data.IItemList;
 import com.ae2vm.compat.AE2FCCompat;
 import com.ae2vm.compat.PatternCompat;
 import com.ae2vm.compiler.PatternCompiler;
+import com.ae2vm.trace.TraceRecorder;
 import com.ae2vm.vm.CraftingBytecode;
 import com.ae2vm.vm.CraftingVM;
 import com.ae2vm.vm.DeadCycleGuard;
@@ -47,7 +48,7 @@ import java.util.function.Function;
  *   false missing. When the plan reports the requested key as missing, check
  *   the real network stock and shift the stocked amount from missing to used;
  *   a fully corrected plan becomes executable (simulation = false).
- * - resolver T1/T3: exact key first, then a registry-pure key (no NBT, damage 0)
+ * - resolver ladder: exact key first, then a registry-pure key (no NBT, damage 0)
  *   verified against the pattern's actual primary output. (The original's
  *   T2 "drop secondary" is a 1.21 AEKey concept; on 1.12 the canonical drop
  *   form already IS the normalized key.)
@@ -113,10 +114,38 @@ public final class AE2VMCrafting {
      */
     public static VMPlan calculate(IGrid grid, World world,
                                    IAEItemStack what, long amount) {
+        return calculate(grid, world, what, amount, null);
+    }
+
+    /**
+     * Recorder-aware core: {@code rec} is null on the unarmed fast path
+     * (a couple of branch checks, zero recording). Events follow the
+     * design doc §4.3 catalog; free-text discipline — exception CLASS
+     * names only, never messages (they embed real item names).
+     */
+    public static VMPlan calculate(IGrid grid, World world,
+                                   IAEItemStack what, long amount, TraceRecorder rec) {
         ICraftingGrid craftingGrid = grid.getCache(ICraftingGrid.class);
         if (craftingGrid == null) {
+            if (rec != null) {
+                rec.fallback("no-crafting-grid", "grid cache missing");
+                rec.finish("fallback");
+            }
             return null;
         }
+        if (rec != null) {
+            TraceRecorder.setCurrent(rec);
+        }
+        try {
+            return calculateArmed(grid, world, what, amount, rec);
+        } finally {
+            TraceRecorder.setCurrent(null);
+        }
+    }
+
+    private static VMPlan calculateArmed(IGrid grid, World world,
+                                         IAEItemStack what, long amount, TraceRecorder rec) {
+        ICraftingGrid craftingGrid = grid.getCache(ICraftingGrid.class);
 
         CraftingVM vm = vmFor(grid);
         if (vm.cachesStale()) {
@@ -133,6 +162,12 @@ public final class AE2VMCrafting {
                 && entry.patternVersion == PatternCompiler.patternSetVersion()) {
             Function<IAEItemStack, Long> stock = liveStockLookup(grid);
             if (stock != null && entry.plan.planMatchesStock(stock)) {
+                if (rec != null) {
+                    rec.emit(com.ae2vm.trace.TraceSegment.CALC, "PLAN_CACHE_HIT",
+                            java.util.Collections.<String, String>emptyMap());
+                    rec.planResult(entry.plan);
+                    rec.writeNow();
+                }
                 return entry.plan;
             }
             plans.remove(what, entry);
@@ -145,13 +180,24 @@ public final class AE2VMCrafting {
         ICraftingPatternDetails topPattern =
                 findRootPattern(craftingGrid, what, amount, world, rootCandidates);
         if (topPattern == null) {
+            if (rec != null) {
+                rec.fallback("no-root-pattern", "expected: native tree handles pattern-less keys");
+                rec.finish("fallback");
+            }
             return null;
         }
 
         PatternCompiler.compileIfAbsent(topPattern);
         CraftingBytecode bytecode = PatternCompiler.compileRequest(topPattern, amount, what);
         if (bytecode == null) {
+            if (rec != null) {
+                rec.fallback("compile-failed", "compileRequest returned null for root");
+                rec.finish("fallback");
+            }
             return null;
+        }
+        if (rec != null) {
+            rec.stampBytecode(bytecode);
         }
 
         // Multi-pattern choice repair: the greedy first pass is unchanged; only
@@ -165,6 +211,9 @@ public final class AE2VMCrafting {
         // its stock reflects the network rather than a pass's consumption
         // (simulate extracts leave it untouched).
         final NetworkCraftingSandbox stockView = NetworkCraftingSandbox.snapshot(grid);
+        if (rec != null) {
+            rec.stampSnapshot(stockView);
+        }
         // Resolver cache shared across ALL passes of this calculation: cached
         // entries are the no-preference resolutions (preference checks run
         // BEFORE the cache lookup in resolve()), and the dead-ring pruning
@@ -172,7 +221,12 @@ public final class AE2VMCrafting {
         // pruning per pass would only repeat identical work.
         final Map<IAEItemStack, ICraftingPatternDetails> resolverCache = new ConcurrentHashMap<>();
         final Map<VMPlan, BigInteger> remainders = new HashMap<>();
+        final int[] passCounter = {0};
         PatternChoiceRepair.Pass pass = prefs -> {
+            int passIdx = passCounter[0]++;
+            if (rec != null) {
+                rec.passBegin(passIdx);
+            }
             ICraftingPatternDetails passTop = prefs.get(rootKey);
             CraftingBytecode passBytecode = bytecode;
             if (passTop != null && passTop != topPattern) {
@@ -184,7 +238,10 @@ public final class AE2VMCrafting {
             }
             PatternChoiceRepair.PassResult result = runPass(grid, world, vm,
                     passBytecode, passTop != null ? passTop : topPattern,
-                    rootCandidates, what, stockView, prefs, resolverCache);
+                    rootCandidates, what, stockView, prefs, resolverCache, rec);
+            if (rec != null) {
+                rec.passEnd(passIdx, result.plan);
+            }
             remainders.put(result.plan, vm.getBatchRemainder());
             return result;
         };
@@ -197,8 +254,28 @@ public final class AE2VMCrafting {
         }
         VMPlan fixed = applyIgnoreFix(grid, what, plan);
         if (fixed != null) {
+            // Always-on plan assertions (design doc §6.3): violations log
+            // unconditionally and land as INVARIANT_VIOLATION events when
+            // recording. The plan is still served — invariants are evidence,
+            // not a veto.
+            java.util.List<String> violations =
+                    com.ae2vm.vm.PlanInvariants.check(fixed, what, amount, stockView.stockView());
+            if (!violations.isEmpty()) {
+                com.ae2vm.AE2VM.LOGGER.warn("[AE2-VM] plan invariant violations {}: {}",
+                        what.getDefinition(), violations);
+                if (rec != null) {
+                    rec.invariantViolations(violations);
+                }
+            }
             PLAN_CACHE.computeIfAbsent(grid, g -> new ConcurrentHashMap<>())
                     .put(what, new PlanEntry(amount, PatternCompiler.patternSetVersion(), fixed));
+            if (rec != null) {
+                rec.planResult(fixed);
+                rec.writeNow(); // evidence secured even if the confirm screen is abandoned
+            }
+        } else if (rec != null) {
+            rec.fallback("null-plan", "engine produced no plan");
+            rec.finish("fallback");
         }
         return fixed;
     }
@@ -240,11 +317,12 @@ public final class AE2VMCrafting {
                                                           IAEItemStack what,
                                                           NetworkCraftingSandbox stockView,
                                                           Map<IAEItemStack, ICraftingPatternDetails> prefs,
-                                                          Map<IAEItemStack, ICraftingPatternDetails> resolverCache) {
+                                                          Map<IAEItemStack, ICraftingPatternDetails> resolverCache,
+                                                          TraceRecorder rec) {
         PatternChoiceRepair.Choices choices = new PatternChoiceRepair.Choices();
         Function<IAEItemStack, Long> stockLookup = liveStockLookup(grid);
         vm.setPatternResolver(key -> resolve(grid, world, resolverCache, prefs, choices,
-                stockLookup, key));
+                stockLookup, key, rec));
 
         NetworkCraftingSandbox sandbox = NetworkCraftingSandbox.snapshot(grid);
         IAEItemStack ignored = AE2FCCompat.normalizeFluidItem(what);
@@ -272,7 +350,7 @@ public final class AE2VMCrafting {
     }
 
     /**
-     * ignore-fix (v1.10.x parity): correct a simulated plan's requested-key
+     * ignore-fix: correct a simulated plan's requested-key
      * missing against the LIVE network stock.
      */
     private static VMPlan applyIgnoreFix(IGrid grid, IAEItemStack what, VMPlan rawPlan) {
@@ -341,9 +419,10 @@ public final class AE2VMCrafting {
     }
 
     /**
-     * T1/T3 resolver. T1 exact key; T3 registry-pure key (no NBT, damage 0)
-     * verified against the pattern's actual primary output — chain sub-patterns
-     * with NBT variants (appflux cores, Fibonacci chains) resolve through T3.
+     * Two-step resolver. Step one is the exact key; step two is a
+     * registry-pure key (no NBT, damage 0) verified against the pattern's
+     * actual primary output — chain sub-patterns with NBT variants (appflux
+     * cores, Fibonacci chains) resolve through it.
      * Every result is verified to actually output the requested key.
      *
      * <p>Multi-pattern choice repair: a preference for the key (set by the
@@ -357,7 +436,8 @@ public final class AE2VMCrafting {
                                                    Map<IAEItemStack, ICraftingPatternDetails> prefs,
                                                    PatternChoiceRepair.Choices record,
                                                    Function<IAEItemStack, Long> stockLookup,
-                                                   IAEItemStack key) {
+                                                   IAEItemStack key,
+                                                   TraceRecorder rec) {
         if (key == null) {
             return null;
         }
@@ -375,9 +455,12 @@ public final class AE2VMCrafting {
             PatternCompiler.compileIfAbsent(forced);
             cache.put(key, forced);
             record.record(key, forced, null);
+            if (rec != null) {
+                rec.patternResolved(key, "repair-pref", forced, 1);
+            }
             return forced;
         }
-        // T1: exact match.
+        // Exact match.
         Collection<ICraftingPatternDetails> subs = craftingGrid.getCraftingFor(key, null, -1, world);
         if (subs != null && !subs.isEmpty()) {
             // (CYCLE-AWARE) Drop candidates whose inputs would close a DEAD ring
@@ -392,12 +475,15 @@ public final class AE2VMCrafting {
                     key, subs, stockLookup);
             ICraftingPatternDetails sub = pickBestPattern(viable, key);
             record.record(key, sub, verifiedCandidates(viable, key));
+            if (rec != null) {
+                rec.patternResolved(key, "exact", sub, viable.size());
+            }
             PatternCompiler.compileIfAbsent(sub);
             cache.put(key, sub);
             return sub;
         }
 
-        // T2.5: substitution-group variants. The slot may accept a
+        // Substitution-group variants. The slot may accept a
         // variant that is CRAFTABLE while the exact key itself is neither
         // stocked nor craftable — schedule the variant's craft and let the
         // fuzzy slot consume its output. (Upstream fixed the same gap in its
@@ -416,6 +502,9 @@ public final class AE2VMCrafting {
                 ICraftingPatternDetails sub = pickBestPattern(vsubs, variant);
                 if (sub != null && patternOutputs(sub, variant)) {
                     record.record(key, sub, verifiedCandidates(vsubs, variant));
+                    if (rec != null) {
+                        rec.patternResolved(key, "substitute-variant", sub, vsubs.size());
+                    }
                     PatternCompiler.compileIfAbsent(sub);
                     cache.put(key, sub);
                     return sub;
@@ -433,6 +522,9 @@ public final class AE2VMCrafting {
                     ICraftingPatternDetails sub = pickBestPattern(subs, packet);
                     if (sub != null && patternOutputs(sub, key)) {
                         record.record(key, sub, verifiedCandidates(subs, key));
+                        if (rec != null) {
+                            rec.patternResolved(key, "fluid-packet", sub, subs.size());
+                        }
                         PatternCompiler.compileIfAbsent(sub);
                         cache.put(key, sub);
                         return sub;
@@ -441,7 +533,7 @@ public final class AE2VMCrafting {
             }
         }
 
-        // T3: registry-pure key (same item, no NBT, damage 0) — verified.
+        // Registry-pure key (same item, no NBT, damage 0) — verified.
         try {
             Item item = key.getItem();
             if (item != null) {
@@ -453,6 +545,9 @@ public final class AE2VMCrafting {
                         ICraftingPatternDetails sub = pickBestPattern(subs, key);
                         if (sub != null && patternOutputs(sub, key)) {
                             record.record(key, sub, verifiedCandidates(subs, key));
+                            if (rec != null) {
+                                rec.patternResolved(key, "registry-pure", sub, subs.size());
+                            }
                             PatternCompiler.compileIfAbsent(sub);
                             cache.put(key, sub);
                             return sub;

@@ -17,10 +17,12 @@
 
 - **需求传播聚合**:不逐个展开合成树节点,而是沿样板关系图把全部需求一次传播到位,耗时只与样板数和依赖边数线性相关;每条样板只真实执行一次并记录,之后任意数量按比例直接回放
 - **无限精度运算**:数量计算全部使用 BigInteger,10^9 量级的深链与数量 1 的边界均无溢出风险
-- **库存感知**:优先消耗网络库存,缺口自动排程合成;催化剂反馈环、耐久工具、换算环等特殊配方均给出精确语义
+- **库存感知**:优先消耗网络库存,缺口自动排程合成;催化剂反馈环、换算环等特殊配方均给出精确语义
 - **净放大合成环**:互为投入产出、每轮净增产出的环形配方自动检测、代数求解至物料最小轮数并折叠为单一计划;副产物中间键、环外原料、副产物直接下单、跨环耦合等形态全部覆盖,启动垫资单独精确披露
-  **当前版本已禁用**——部分整合包中,合成路径包含环产物的物品下单可能导致合成 CPU 卡死,1.1.1 起环家族默认关闭;问题定位修复后将以配置开关的形式回归,其余规划能力(库存感知、副产物路由、催化剂环、耐久工具)不受影响。
+
+  **当前版本已禁用**——部分整合包中,合成路径包含环产物的物品下单可能导致合成 CPU 卡死,1.2.0 起环家族默认关闭;问题定位修复后将以配置开关的形式回归,其余规划能力(库存感知、副产物路由、催化剂环)不受影响。
 - **守卫体系**:死环提前剪除;样板变更后缓存立即失效;缓存的计划先与当前库存复核再放行;求解方案须实测确认更优方可采纳——性能优化不以牺牲正确性为代价
+- **内置诊断**:按需录制订单轨迹(`/ae2vm trace`),自动伪名化脱敏,轨迹带哈希链防篡改;内置忠实复刻 AE2UEL 合成 CPU 的离线模拟器,可对停摆分类(S1/S2/S4)并给出逐输入证据。详见 wiki([诊断追踪与重放](https://github.com/shinyashen/AE2-VM-1.12/wiki/Diagnostics))
 - **多样板分配求解**:同一产物存在多条样板时自动求解最优配比(如 5 次合成 = 4×样板A + 1×样板B)——上游自 v1.9.6 起唯一遗留的误报场景就此关闭
 - **兼容性**:AE2FC 流体样板、AE2CT 合成预览、第三方缩放样板包装即插即用;VM 无法处理的请求自动回退原版逻辑
 
@@ -54,6 +56,7 @@
 | [功能明细](https://github.com/shinyashen/AE2-VM-1.12/wiki/Features) | 全部已移植功能的机制说明 |
 | [架构与设计](https://github.com/shinyashen/AE2-VM-1.12/wiki/Architecture) | 根节点替换、字节码、JIT 缓存、守卫体系 |
 | [多样板分配求解器](https://github.com/shinyashen/AE2-VM-1.12/wiki/MultiPatternSolver) | 枚举 + 局部搜索 + 虚拟样板 |
+| [诊断追踪与重放](https://github.com/shinyashen/AE2-VM-1.12/wiki/Diagnostics) | 轨迹录制、取证报障、CPU 模拟判定 |
 | [性能](https://github.com/shinyashen/AE2-VM-1.12/wiki/Performance) | 测量方法、历轮优化、发版自动基准 |
 | [测试](https://github.com/shinyashen/AE2-VM-1.12/wiki/Testing) | 209 项测试与对拍方法论 |
 | [差异与路线](https://github.com/shinyashen/AE2-VM-1.12/wiki/Differences-and-Roadmap) | 与原版的刻意差异、语义缺口状态 |
@@ -61,10 +64,28 @@
 ## 构建
 
 ```bash
-./gradlew build      # 编译并跑完全部测试(209 项);产物在 build/libs/
+./gradlew build      # 编译并跑完全部测试(262 项);产物在 build/libs/
 ```
 
 构建用的 JVM 需要 JDK 25(RetroFuturaGradle 2.x 的硬性要求;实际编译用的 JDK 17 工具链由 Gradle 自动下载)。运行环境为 Cleanroom(JDK 21+)或 Forge(Java 8 + MixinBooter)。依赖由 CurseMaven 自动拉取(AE2UEL、AE2FC-Rework、AE2CT、Baubles)。
+
+## 离线轨迹推演(诊断)
+
+合成订单可录制成自包含的伪名化轨迹(`/ae2vm trace record` 后下单;`trace list`
+行内自带可点击的上传/下载按钮)。轨迹可完全离线重放——从 Release 页下载
+两个文件即可:
+
+```
+java -cp ae2_vm_112-x.y.z.jar:ae2_vm_112-x.y.z-replay-shim.jar ^
+     com.ae2vm.replay.ReplayMain trace-xxx.aevmtrace.json.gz [--no-diff] [--no-simulate]
+```
+
+- **replay-shim jar**(随每个 Release 附带)内置重放所需的少数 Minecraft/AE2
+  表面的手写桩与 JSON 解析器——无需真实 Minecraft jar、无需任何 mod jar、
+  无需寻找依赖(Windows 下 `-cp` 分隔符用 `;`)。
+- 退出码 0 = 当前引擎逐 token 复现了记录的计划;1 = 打印 diff(差异是
+  证据,不是判决);2 = 失败;3 = 内置合成 CPU 模拟判定停摆(S1/S2/S4,
+  附逐输入证据)。同一轨迹 + 同一组 jar 输出恒相同。
 
 ## 许可与致谢
 

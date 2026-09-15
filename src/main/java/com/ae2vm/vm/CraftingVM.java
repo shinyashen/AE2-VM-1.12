@@ -6,7 +6,6 @@ import appeng.api.networking.crafting.ICraftingPatternDetails;
 import appeng.api.storage.channels.IItemStorageChannel;
 import appeng.api.storage.data.IAEItemStack;
 import appeng.api.storage.data.IItemList;
-import com.ae2vm.AE2VM;
 import com.ae2vm.compiler.PatternCompiler;
 
 import java.math.BigInteger;
@@ -22,6 +21,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
+import com.ae2vm.Log;
 
 /**
  * Stack-based VM crafting calculator, ported from AE2-VM 1.21.1 (NeoForge).
@@ -33,9 +33,10 @@ import java.util.function.Function;
  * 2) Bundles are memoized in {@code bundleCache}; cts>1 calls apply
  *    {@code bundle[0].scale(cts)} in O(1), recursive chains collapse to
  *    O(patterns) demand propagation in applyAggregation.
- * 3) Recursion (A+B→2A), catalyst feedback loops, pure conversion rings,
- *    durability tools and fuzzy substitution groups receive closed-form
- *    corrections identical to the original v1.10.x semantics.
+ * 3) Recursion (A+B→2A), catalyst feedback loops, pure conversion rings and
+ *    fuzzy substitution groups receive closed-form corrections identical to
+ *    the original semantics (the upstream durability-tool amortization
+ *    is NOT ported: the AE2UEL CPU cannot re-consume worn returns).
  *
  * 1.12 port notes: AEKey → IAEItemStack (type-equality keys), KeyCounter →
  * VMCounter, CraftingSimulationState → SimulationState, ICraftingPlan → VMPlan.
@@ -70,7 +71,6 @@ public class CraftingVM {
     private VMCounter emittedItems;
     private VMCounter simInternal;
     private VMCounter catalystSeedItems;
-    private Map<IAEItemStack, long[]> durabilityItems;
     private Map<ICraftingPatternDetails, Long> patternTimes;
     private SimulationState simulation;
     private IAEItemStack outputKey;
@@ -250,8 +250,6 @@ public class CraftingVM {
          *  permanently spends its inputs (capture accounting symmetry).
          *  Replay ignores this map: claims are capture-time bookkeeping. */
         final Map<IAEItemStack, BigInteger> claimed = new ConcurrentHashMap<>();
-        // Finite-use tool rates (key → [amount, uses]) — NOT scaled.
-        final Map<IAEItemStack, long[]> durability = new ConcurrentHashMap<>();
         // The pattern each direct sub-call was resolved to at capture time.
         // A replay may only reuse the bundle while the CURRENT resolver picks
         // the same pattern for every sub-call (the multi-pattern repair loop
@@ -281,14 +279,13 @@ public class CraftingVM {
             itemNeeds.forEach((k, v) -> b.itemNeeds.put(k, v.multiply(factor)));
             fuzzyItemNeeds.forEach((k, v) -> b.fuzzyItemNeeds.put(k, v.multiply(factor)));
             seeds.forEach((k, v) -> b.seeds.put(k, v));
-            durability.forEach(b.durability::put);
             return b;
         }
 
         boolean isEmpty() {
             return bytes.signum() == 0 && used.isEmpty() && emitted.isEmpty() && missing.isEmpty()
                 && internal.isEmpty() && patterns.isEmpty() && needs.isEmpty() && itemNeeds.isEmpty()
-                && fuzzyItemNeeds.isEmpty() && seeds.isEmpty() && durability.isEmpty();
+                && fuzzyItemNeeds.isEmpty() && seeds.isEmpty();
         }
     }
 
@@ -396,7 +393,6 @@ public class CraftingVM {
         this.emittedItems = new VMCounter();
         this.simInternal = new VMCounter();
         this.catalystSeedItems = new VMCounter();
-        this.durabilityItems = new HashMap<>();
         this.patternTimes = new HashMap<>();
         this.simulation = simulation;
         this.nodeCount = 1;
@@ -475,10 +471,14 @@ public class CraftingVM {
                     // Processing-recipe default fuzzy: same-item NBT variants satisfy the slot.
                     if (got < needed && PatternCompiler.isProcessingInput(key)) {
                         long remaining = needed - got;
+                        com.ae2vm.trace.TraceRecorder _rec = com.ae2vm.trace.TraceRecorder.current();
                         for (IAEItemStack variant : nbtFamilyOf(key)) {
                             if (variant.isSameType(key)) continue;
                             long vgot = simulation.extract(variant, remaining, false);
                             if (vgot <= 0) continue;
+                            if (_rec != null) {
+                                _rec.fuzzySubstitute(key, variant, vgot, nbtFamilyOf(key).size());
+                            }
                             long vint = simInternal.get(variant);
                             long vfromInt = Math.min(vgot, vint);
                             if (vfromInt > 0) simInternal.add(variant, -vfromInt);
@@ -660,7 +660,7 @@ public class CraftingVM {
                             }
                         } else if (PatternCompiler.isProcessingInput(tk)) {
                             // Processing exact slot: same-item NBT variants count —
-                            // NEVER the cross-item replacement group (v1.10.5).
+                            // NEVER the cross-item replacement group.
                             for (IAEItemStack v : nbtFamilyOf(tk)) {
                                 if (v.isSameType(tk)) continue;
                                 availSim += simulation.extract(v, req, true);
@@ -828,12 +828,6 @@ public class CraftingVM {
                         catalystSeedItems.add(constantPool[idx], amt);
                     }
                 }
-                case 19 -> { // DURABILITY_TOOL
-                    int idx = readShort(); long uses = popL(); long amt = popL();
-                    if (amt > 0 && uses > 0 && constantPool[idx] != null) {
-                        durabilityItems.put(constantPool[idx], new long[]{amt, uses});
-                    }
-                }
                 case 255 -> { // HALT
                     simulation.addBytes(nodeCount * 8.0);
                     if (rootCraftTimes > 0 && outputKey != null) simulation.addBytes(rootCraftTimes);
@@ -851,7 +845,7 @@ public class CraftingVM {
 
     private void logPerfLine(long vmStartNs) {
         long calcUs = (System.nanoTime() - vmStartNs) / 1_000;
-        AE2VM.LOGGER.info("[AE2-VM] calc time: {} us ({} ms)", calcUs, String.format("%.2f", calcUs / 1000.0D));
+        Log.LOG.info("[AE2-VM] calc time: {} us ({} ms)", calcUs, String.format("%.2f", calcUs / 1000.0D));
     }
 
     private void applyBundleDirect(Bundle b) {
@@ -921,7 +915,7 @@ public class CraftingVM {
         for (var e : b.missing.entrySet()) {
             long val = toLongSafe(e.getValue(), "miss");
             if (val <= 0) continue;
-            // Realtime-verify capture-time missing against current stock (v1.9.11).
+            // Realtime-verify capture-time missing against current stock.
             long got = simulation.extract(e.getKey(), val, false);
             if (got > 0) {
                 long internal = simInternal.get(e.getKey());
@@ -1007,7 +1001,7 @@ public class CraftingVM {
                         missingItems.add(c, toLongSafe(demand, "agg-miss"));
                     } else {
                         long opc = outputPerCraftOf(c, cArr[0]);
-                        // STOCK-AWARE SUB-CRAFT with EXACT-vs-FUZZY slot split (v1.10.x).
+                        // STOCK-AWARE SUB-CRAFT with EXACT-vs-FUZZY slot split.
                         Set<IAEItemStack> replacementGroup = PatternCompiler.getFuzzyGroup(c);
                         boolean hasReplacement = replacementGroup.size() > 1;
                         long primaryStock = realStockOf(c);
@@ -1166,7 +1160,7 @@ public class CraftingVM {
                 } catch (Throwable ignored) {
                 }
                 long crafts = (deficit + perCraft - 1) / perCraft;
-                AE2VM.LOGGER.info("[AE2-VM] ring E-case: {} deficit {} -> {} crafts of its own pattern",
+                Log.LOG.info("[AE2-VM] ring E-case: {} deficit {} -> {} crafts of its own pattern",
                         e.getKey().getDefinition(), deficit, crafts);
                 total.put(e.getKey(), BigInteger.valueOf(crafts));
                 if (rescheduled == null) rescheduled = new ArrayList<>();
@@ -1973,7 +1967,7 @@ public class CraftingVM {
 
     /**
      * Same-item SAME-dAMAGE NBT variants present in the network stock — the
-     * PROCESSING default fuzzy family (v1.10.x: usable by ANY processing slot,
+     * PROCESSING default fuzzy family (usable by ANY processing slot,
      * unlike the compile-time replacement group which only applies to
      * replacement-enabled slots). Damage variants are a different item in 1.12.
      */
@@ -2060,27 +2054,6 @@ public class CraftingVM {
         }
         subtractStockFromNetwork(scaled);
         applyBundleDirect(scaled);
-        // Finite-use (durability) tool demand: amount × ceil(t/uses) tools.
-        for (var d : arr[0].durability.entrySet()) {
-            IAEItemStack toolKey = d.getKey();
-            long amount = d.getValue()[0];
-            long uses = d.getValue()[1];
-            if (amount <= 0 || uses <= 0) continue;
-            BigInteger units = t.add(BigInteger.valueOf(uses - 1)).divide(BigInteger.valueOf(uses));
-            long demand = toLongSafe(units.multiply(BigInteger.valueOf(amount)), "dur");
-            if (demand <= 0) continue;
-            simulation.addBytes(demand); nodeCount++;
-            long got = simulation.extract(toolKey, demand, false);
-            if (got > 0) {
-                long internal = simInternal.get(toolKey);
-                long fromInternal = Math.min(got, internal);
-                if (fromInternal > 0) simInternal.add(toolKey, -fromInternal);
-                long fromNetwork = got - fromInternal;
-                if (fromNetwork > 0) usedItems.add(toolKey, fromNetwork);
-            }
-            long shortfall = demand - got;
-            if (shortfall > 0) missingItems.add(toolKey, shortfall);
-        }
     }
 
     /** Remove the already-consumed network-stock pool from a bundle's used demand. */
@@ -2201,9 +2174,6 @@ public class CraftingVM {
             catalystSeedItems.add(e.getKey(), -val);
             if (catalystSeedItems.get(e.getKey()) == 0) catalystSeedItems.remove(e.getKey());
         }
-        for (var e : b.durability.entrySet()) {
-            durabilityItems.remove(e.getKey());
-        }
     }
 
     private Bundle captureDelta() {
@@ -2215,7 +2185,6 @@ public class CraftingVM {
         for (var e : missingItems.entrySet()) { if (e.getValue() != 0) b.missing.put(e.getKey(), BigInteger.valueOf(e.getValue())); }
         for (var e : simInternal.entrySet()) { if (e.getValue() != 0) b.internal.put(e.getKey(), BigInteger.valueOf(e.getValue())); }
         for (var e : catalystSeedItems.entrySet()) { if (e.getValue() != 0) b.seeds.put(e.getKey(), BigInteger.valueOf(e.getValue())); }
-        for (var en : durabilityItems.entrySet()) b.durability.put(en.getKey(), en.getValue());
         for (var k : patternTimes.keySet()) { long v = patternTimes.get(k); if (v != 0) b.patterns.put(k, BigInteger.valueOf(v)); }
         return b;
     }
@@ -2259,13 +2228,6 @@ public class CraftingVM {
             BigInteger d = e.getValue().subtract(bv);
             if (d.signum() > 0) b.seeds.put(e.getKey(), d);
         }
-        for (var e : after.durability.entrySet()) {
-            boolean had = false;
-            for (var be : before.durability.keySet()) {
-                if (be.isSameType(e.getKey())) { had = true; break; }
-            }
-            if (!had) b.durability.put(e.getKey(), e.getValue());
-        }
         for (var e : after.patterns.entrySet()) {
             BigInteger bv = before.patterns.get(e.getKey());
             if (bv == null) bv = BigInteger.ZERO;
@@ -2294,7 +2256,7 @@ public class CraftingVM {
         plans = RingSolver.solve(total, itemDemand, k -> {
             ICraftingPatternDetails d = patternResolver != null ? patternResolver.apply(k) : null;
             if (d == null) {
-                // T4 byproduct fallback: SOLVER-VIEW ONLY. A key
+                // Byproduct fallback: SOLVER-VIEW ONLY. A key
                 // with no primary producer but exactly one any-slot producer
                 // joins the ring graph through that pattern — the folded net
                 // bundle then covers its production and consumption itself.
@@ -2389,7 +2351,7 @@ public class CraftingVM {
         } catch (Throwable t) {
             // the fold is abandoned and the propagation plan stays in force;
             // the failure must be visible — a silent catch hid solver bugs before
-            AE2VM.LOGGER.warn("[AE2-VM] ring solver failed; falling back to the propagation plan", t);
+            Log.LOG.warn("[AE2-VM] ring solver failed; falling back to the propagation plan", t);
         }
     }
 
@@ -2404,7 +2366,7 @@ public class CraftingVM {
                 sb.append(" ").append(e.getValue()).append("x").append(e.getKey().getDefinition())
                         .append(hasPattern ? "(PATTERN)" : "(leaf)");
             }
-            AE2VM.LOGGER.info(sb.toString());
+            Log.LOG.info(sb.toString());
         }
         if (!patternTimes.isEmpty()) {
             StringBuilder sb = new StringBuilder("[AE2-VM DIAG-PATS]");
@@ -2413,7 +2375,7 @@ public class CraftingVM {
                         com.ae2vm.compat.PatternCompat.getPrimaryOutput(e.getKey()) == null
                                 ? "?" : com.ae2vm.compat.PatternCompat.getPrimaryOutput(e.getKey()).getDefinition());
             }
-            AE2VM.LOGGER.info(sb.toString());
+            Log.LOG.info(sb.toString());
         }
         long bytes = simulation.getBytes();
         long deliver;

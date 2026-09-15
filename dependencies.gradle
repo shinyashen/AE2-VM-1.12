@@ -19,4 +19,9 @@ dependencies {
     implementation(rfg.deobf("curse.maven:ae2-crafting-tree-legacy-1121489:5814089"))
     // Baubles - AE2UEL's patched Item class references it; tests need it on the classpath
     testImplementation(rfg.deobf("curse.maven:baubles-227083:2518667"))
+    // Trace schema JSON (diagnostics groundwork). Vanilla 1.12.2 ships gson
+    // 2.8.0 at runtime — compile against 2.8.9 (API compatible), runtime is
+    // provided by MC; the standalone replay artifact bundles its own copy.
+    compileOnly 'com.google.code.gson:gson:2.8.9'
+    testImplementation 'com.google.code.gson:gson:2.8.9'
 }

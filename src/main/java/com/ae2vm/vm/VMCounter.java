@@ -39,6 +39,10 @@ public final class VMCounter {
         return entries.get(key);
     }
 
+    /** Temporary forensic probe (ledger trace). */
+    public static boolean TRACE_KEY;
+    private final String traceTag = "VMCounter@" + Integer.toHexString(System.identityHashCode(this));
+
     public void add(IAEItemStack key, long amount) {
         if (amount == 0) {
             return;
@@ -52,6 +56,19 @@ public final class VMCounter {
         }
         if (e.value == 0) {
             entries.remove(e.key);
+        }
+        if (TRACE_KEY) {
+            StackTraceElement[] st = new Throwable().getStackTrace();
+            StringBuilder who = new StringBuilder();
+            for (int i = 2; i < Math.min(6, st.length); i++) {
+                String s = st[i].getClassName();
+                if (!s.contains("VMCounter")) {
+                    who.append(s.substring(s.lastIndexOf('.') + 1)).append(':')
+                       .append(st[i].getLineNumber()).append(' ');
+                }
+            }
+            System.out.println("[LEDGER] " + traceTag + " " + e.key + " "
+                    + (amount > 0 ? "+" : "") + amount + " -> " + e.value + "  | " + who);
         }
     }
 

@@ -131,7 +131,8 @@ jobs:
           version = os.environ["TAG"].removeprefix("v")
 
           jars = [j for j in sorted(glob.glob("build/libs/ae2_vm_112-*.jar"))
-                  if "-dev" not in j and "-sources" not in j]
+                  if "-dev" not in j and "-sources" not in j
+                  and "-replay-shim" not in j]
           if not jars:
               sys.exit("no release jar found in build/libs")
           jar = jars[0]
