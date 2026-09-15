@@ -245,7 +245,9 @@ public final class AE2VMCrafting {
             remainders.put(result.plan, vm.getBatchRemainder());
             return result;
         };
-        VMPlan plan = PatternChoiceRepair.repair(pass, REPAIR_EXTRA_PASSES);
+        VMPlan plan = PatternChoiceRepair.repair(pass, REPAIR_EXTRA_PASSES,
+                rec == null ? null : (key, chosen, alternatives, synthesized) ->
+                        rec.repairChoice(key, chosen, alternatives, synthesized));
         BigInteger remainder = remainders.get(plan);
         if (remainder != null) {
             // The winning plan is not necessarily the last replayed pass; keep
