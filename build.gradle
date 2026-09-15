@@ -87,6 +87,47 @@ configurations {
     compileOnly.extendsFrom(embed)
 }
 
+// Replay shim: standalone stub jar for the out-of-game replay.
+// src/shim/java holds hand-written stubs of the net.minecraft / appeng
+// surfaces the replay exercises, so the offline classpath is just
+// [mod jar, ae2vm-replay-shim jar]. The shim must NEVER ship inside the mod
+// jar: its classes squat the net.minecraft/appeng package names and would
+// collide with the real ones on a live server (1.12 FML resolves every jar
+// through one flat LaunchClassLoader namespace, by URL order).
+sourceSets {
+    shim {
+        java.srcDir 'src/shim/java'
+        compileClasspath = files()
+    }
+}
+
+task shimJar(type: Jar, dependsOn: 'compileShimJava') {
+    archiveClassifier = 'replay-shim'
+    from sourceSets.shim.output
+    from({
+        // bundled standalone JSON parsing: the replay classpath is mod jar + this jar
+        def gson = configurations.detachedConfiguration(
+                dependencies.create('com.google.code.gson:gson:2.8.9'))
+        gson.collect { it.isDirectory() ? it : zipTree(it) }
+    })
+    manifest {
+        attributes('Implementation-Title': 'ae2vm-replay-shim')
+    }
+}
+
+tasks.build.dependsOn shimJar
+
+afterEvaluate {
+    tasks.compileShimJava.configure {
+        sourceCompatibility = "17"
+        options.release = 8
+        options.encoding = "UTF-8"
+        javaCompiler = javaToolchains.compilerFor {
+            languageVersion = JavaLanguageVersion.of(17)
+        }
+    }
+}
+
 minecraft {
     mcVersion.set('1.12.2')
 
@@ -248,7 +289,16 @@ compileTestJava {
     sourceCompatibility = targetCompatibility = 17
 }
 
+def gateGsonJar = configurations.detachedConfiguration(
+        dependencies.create('com.google.code.gson:gson:2.8.9')).singleFile.absolutePath
+
 test {
+    // the shim-isolation gate reads the shim's compiled classes: keep them fresh
+    dependsOn 'compileShimJava'
+    systemProperty 'ae2vm.gate.main', sourceSets.main.output.classesDirs.asPath
+    systemProperty 'ae2vm.gate.resources', sourceSets.main.output.resourcesDir.absolutePath
+    systemProperty 'ae2vm.gate.shim', sourceSets.shim.output.classesDirs.asPath
+    systemProperty 'ae2vm.gate.gson', gateGsonJar
     useJUnitPlatform()
     javaLauncher.set(javaToolchains.launcherFor {
         languageVersion = JavaLanguageVersion.of(17)

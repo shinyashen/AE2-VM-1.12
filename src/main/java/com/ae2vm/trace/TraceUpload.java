@@ -17,6 +17,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.zip.GZIPInputStream;
+import com.ae2vm.Log;
 
 /**
  * Optional mclo.gs upload (design doc §5.4): async POST of the
@@ -47,7 +48,7 @@ public final class TraceUpload {
                         ? TraceLang.format("aevm.trace.upload.failed", "no url in response")
                         : TraceLang.format("aevm.trace.upload.done", url));
             } catch (Exception e) {
-                AE2VM.LOGGER.debug("[AE2-VM] trace upload failed", e);
+                Log.LOG.debug("[AE2-VM] trace upload failed", e);
                 deliver(server, sender, TraceLang.format("aevm.trace.upload.failed",
                         e.getClass().getSimpleName()));
             }

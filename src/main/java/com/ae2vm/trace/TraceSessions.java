@@ -11,6 +11,7 @@ import java.nio.file.Path;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.UUID;
+import com.ae2vm.Log;
 
 /**
  * Armed-session state machine (design doc §4.1): traces exist ONLY when a
@@ -139,7 +140,7 @@ public final class TraceSessions {
             try {
                 vault = f == null ? TokenVault.inMemory() : TokenVault.open(f);
             } catch (IOException e) {
-                AE2VM.LOGGER.warn("[AE2-VM] vault unavailable, falling back to in-memory tokens", e);
+                Log.LOG.warn("[AE2-VM] vault unavailable, falling back to in-memory tokens", e);
                 vault = TokenVault.inMemory();
             }
             installHook();
@@ -164,7 +165,7 @@ public final class TraceSessions {
             try {
                 vault.flush();
             } catch (IOException e) {
-                AE2VM.LOGGER.warn("[AE2-VM] vault flush failed", e);
+                Log.LOG.warn("[AE2-VM] vault flush failed", e);
             }
         }
     }

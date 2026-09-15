@@ -15,6 +15,7 @@ import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.Map;
 import java.util.TreeMap;
+import com.ae2vm.Log;
 
 /**
  * One armed session (design doc §4): owns the in-memory trace document,
@@ -141,7 +142,7 @@ public final class TraceRecorder {
             TraceWriter.write(file, p);
             TraceStore.enforceRetention();
         } catch (IOException e) {
-            AE2VM.LOGGER.warn("[AE2-VM] trace {} could not be written", file.traceId, e);
+            Log.LOG.warn("[AE2-VM] trace {} could not be written", file.traceId, e);
         }
     }
 
@@ -157,7 +158,7 @@ public final class TraceRecorder {
         writeNow();
         Path p = target;
         if (p != null) {
-            AE2VM.LOGGER.info("[AE2-VM] trace {} saved: {}", file.traceId, p);
+            Log.LOG.info("[AE2-VM] trace {} saved: {}", file.traceId, p);
         }
     }
 
@@ -212,7 +213,7 @@ public final class TraceRecorder {
                         Long.toString(s.getStackSize()), false));
             }
         } catch (Throwable t) {
-            AE2VM.LOGGER.debug("[AE2-VM] snapshot capture skipped: {}", t.toString());
+            Log.LOG.debug("[AE2-VM] snapshot capture skipped: {}", t.toString());
         }
         file.snapshot = snap;
         emit(TraceSegment.CALC, "SNAPSHOT_SEED", mapOf(

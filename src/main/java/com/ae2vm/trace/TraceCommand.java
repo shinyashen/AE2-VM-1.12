@@ -26,6 +26,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Stream;
+import com.ae2vm.Log;
 
 /**
  * /ae2vm trace ... — the Evidence entry points (design doc §5). The
@@ -403,7 +404,7 @@ public final class TraceCommand extends CommandBase {
         try {
             return TraceLoader.load(p);
         } catch (IOException e) {
-            AE2VM.LOGGER.debug("[AE2-VM] unreadable trace {}", p, e);
+            Log.LOG.debug("[AE2-VM] unreadable trace {}", p, e);
             return null;
         }
     }

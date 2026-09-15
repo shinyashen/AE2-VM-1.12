@@ -10,6 +10,7 @@ import java.nio.file.Path;
 import java.util.Comparator;
 import java.util.List;
 import java.util.stream.Stream;
+import com.ae2vm.Log;
 
 /**
  * Trace file home and retention (design doc §5.5): files live under
@@ -48,7 +49,7 @@ public final class TraceStore {
         try {
             Files.createDirectories(dir);
         } catch (IOException e) {
-            AE2VM.LOGGER.warn("[AE2-VM] cannot create trace dir {}", dir, e);
+            Log.LOG.warn("[AE2-VM] cannot create trace dir {}", dir, e);
             return null;
         }
         return dir;
@@ -93,12 +94,12 @@ public final class TraceStore {
                 long size = Files.size(oldest);
                 if (Files.deleteIfExists(oldest)) {
                     total -= size;
-                    AE2VM.LOGGER.debug("[AE2-VM] retention dropped old trace {}", oldest.getFileName());
+                    Log.LOG.debug("[AE2-VM] retention dropped old trace {}", oldest.getFileName());
                 }
                 i++;
             }
         } catch (IOException e) {
-            AE2VM.LOGGER.warn("[AE2-VM] retention sweep failed", e);
+            Log.LOG.warn("[AE2-VM] retention sweep failed", e);
         }
     }
 }

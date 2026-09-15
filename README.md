@@ -71,23 +71,22 @@ Requires a JDK 25 build JVM (RetroFuturaGradle 2.x requirement; the JDK 17 compi
 Crafting orders can be recorded as self-contained, pseudonymous traces
 (`/ae2vm trace record`, then place the order; `trace list` lines carry
 clickable upload/download actions). A trace rebuilds the whole order
-offline — the mod jar itself is the replay tool:
+offline — grab two files from the release page and you are set:
 
 ```
-java -cp ae2_vm_112-x.y.z.jar com.ae2vm.replay.ReplayLauncher ^
-     --deps gson.jar --deps deobf-mc-1.12.2.jar ... trace-xxx.aevmtrace.json.gz
+java -cp ae2_vm_112-x.y.z.jar:ae2_vm_112-x.y.z-replay-shim.jar ^
+     com.ae2vm.replay.ReplayMain trace-xxx.aevmtrace.json.gz [--no-diff] [--no-simulate]
 ```
 
-- `--deps` (repeatable, comma-separated) provides the runtime classes the
-  replay needs: gson, guava 21, log4j api/core, commons-lang3, commons-io,
-  netty-all, fastutil, launchwrapper, an AE2UEL **dev-mapped** jar and a
-  deobfuscated Minecraft 1.12.2 jar. Generate the latter two locally with
-  the same gradle toolchain — never distribute Minecraft jars (EULA), and
-  note that **SRG-reobf release jars do not bind** (methods are `func_*`).
+- The **replay-shim jar** (attached to every release) bundles hand-written
+  stubs of the few Minecraft/AE2 surfaces the replay touches plus a JSON
+  parser — no real Minecraft jar, no mod jars, no dependency hunting
+  (Windows: use `;` as the `-cp` separator).
 - Exit code 0 = the current engine reproduces the recorded plan exactly;
   1 = a token-exact diff is printed (differences are evidence, not
-  verdicts); 2 = failure. Same trace + same jar always produces identical
-  output.
+  verdicts); 2 = failure; 3 = the built-in crafting-CPU simulation
+  classifies the plan as a stall (S1/S2/S4, with per-input evidence). Same
+  trace + same jars always produce identical output.
 
 ## License & Credits
 

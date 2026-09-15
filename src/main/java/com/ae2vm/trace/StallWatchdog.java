@@ -11,6 +11,7 @@ import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.IdentityHashMap;
 import java.util.Map;
+import com.ae2vm.Log;
 
 /**
  * Live stall watchdog (design doc §7.4, DEFAULT OFF): AE2UEL's {@code
@@ -67,7 +68,7 @@ public final class StallWatchdog {
         st[1]++;
         if (wfCount > 0 && st[1] >= threshold && st[2] == 0) {
             st[2] = 1;
-            AE2VM.LOGGER.warn("[AE2-VM] stall watchdog: CPU {} unchanged for {} ticks "
+            Log.LOG.warn("[AE2-VM] stall watchdog: CPU {} unchanged for {} ticks "
                     + "(tasks={}, waitingFor={}) — dumping NBT", cluster, threshold, tasksSize, wfCount);
             return true;
         }
@@ -88,9 +89,9 @@ public final class StallWatchdog {
             try (var out = Files.newOutputStream(dir.resolve(name))) {
                 net.minecraft.nbt.CompressedStreamTools.writeCompressed(data, out);
             }
-            AE2VM.LOGGER.warn("[AE2-VM] stall dump written: {}", dir.resolve(name));
+            Log.LOG.warn("[AE2-VM] stall dump written: {}", dir.resolve(name));
         } catch (IOException | RuntimeException e) {
-            AE2VM.LOGGER.warn("[AE2-VM] stall dump failed", e);
+            Log.LOG.warn("[AE2-VM] stall dump failed", e);
         }
     }
 }

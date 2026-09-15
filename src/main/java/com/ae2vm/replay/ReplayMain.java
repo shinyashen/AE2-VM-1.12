@@ -9,9 +9,15 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 
 /**
- * The replay entry point — runs INSIDE the isolated classloader built by
- * {@link ReplayLauncher} (never loaded by Forge). Output goes to stdout;
- * exit code 0 = identical, 1 = differences, 2 = failure.
+ * The replay entry point. Two supported forms:
+ * <ul>
+ *   <li>standalone — classpath is just [mod jar, ae2vm-replay-shim jar]; the
+ *       shim supplies the net.minecraft/appeng stubs the replay exercises;</li>
+ *   <li>isolated — the legacy {@link ReplayLauncher} --deps form (real MC +
+ *       AE2UEL jars).</li>
+ * </ul>
+ * Output goes to stdout; exit code 0 = identical, 1 = differences,
+ * 2 = failure, 3 = simulation verdict STALL.
  */
 public final class ReplayMain {
 
@@ -19,6 +25,11 @@ public final class ReplayMain {
     }
 
     public static void main(String[] args) {
+        System.exit(run(args));
+    }
+
+    /** Returns the process exit code instead of exiting (usable from tests). */
+    public static int run(String[] args) {
         String tracePath = null;
         boolean diff = true;
         boolean simulate = true;
@@ -34,12 +45,13 @@ public final class ReplayMain {
             }
         }
         if (tracePath == null) {
-            System.err.println("usage: java -cp ae2_vm_112.jar com.ae2vm.replay.ReplayLauncher "
-                    + "[--deps <jar>[,<jar>...]]... <trace.json.gz> [--no-diff]");
-            System.exit(2);
+            System.err.println("usage: java -cp ae2_vm_112.jar:ae2vm-replay-shim.jar "
+                    + "com.ae2vm.replay.ReplayMain <trace.json.gz> [--no-diff] [--no-simulate]");
+            return 2;
         }
         try {
             // vanilla registries must exist before any ItemStack is built
+            // (no-op under the replay shim's virtual registry)
             net.minecraft.init.Bootstrap.register();
             Path p = Paths.get(tracePath);
             TraceLoader.Result r = TraceLoader.load(p);
@@ -71,24 +83,24 @@ public final class ReplayMain {
                     System.out.println("  ! " + ev);
                 }
                 if (report.verdict.status == VirtualCPUCluster.Verdict.Status.STALL) {
-                    System.exit(3);
+                    return 3;
                 }
             }
             if (!diff) {
-                System.exit(0);
+                return 0;
             }
             if (report.identical) {
                 System.out.println("diff: identical — the current engine reproduces the recorded plan exactly.");
-                System.exit(0);
+                return 0;
             }
             System.out.println("diff: " + report.differences.size() + " difference(s):");
             for (String d : report.differences) {
                 System.out.println("  - " + d);
             }
-            System.exit(1);
+            return 1;
         } catch (IOException | RuntimeException e) {
             System.err.println("replay failed: " + e);
-            System.exit(2);
+            return 2;
         }
     }
 }

@@ -61,7 +61,7 @@
 ## 构建
 
 ```bash
-./gradlew build      # 编译并跑完全部测试(209 项);产物在 build/libs/
+./gradlew build      # 编译并跑完全部测试(262 项);产物在 build/libs/
 ```
 
 构建用的 JVM 需要 JDK 25(RetroFuturaGradle 2.x 的硬性要求;实际编译用的 JDK 17 工具链由 Gradle 自动下载)。运行环境为 Cleanroom(JDK 21+)或 Forge(Java 8 + MixinBooter)。依赖由 CurseMaven 自动拉取(AE2UEL、AE2FC-Rework、AE2CT、Baubles)。
@@ -69,22 +69,20 @@
 ## 离线轨迹推演(诊断)
 
 合成订单可录制成自包含的伪名化轨迹(`/ae2vm trace record` 后下单;`trace list`
-行内自带可点击的上传/下载按钮)。轨迹可完全离线重放——**mod jar 本身就是
-重放工具**:
+行内自带可点击的上传/下载按钮)。轨迹可完全离线重放——从 Release 页下载
+两个文件即可:
 
 ```
-java -cp ae2_vm_112-x.y.z.jar com.ae2vm.replay.ReplayLauncher ^
-     --deps gson.jar --deps deobf-mc-1.12.2.jar ... trace-xxx.aevmtrace.json.gz
+java -cp ae2_vm_112-x.y.z.jar:ae2_vm_112-x.y.z-replay-shim.jar ^
+     com.ae2vm.replay.ReplayMain trace-xxx.aevmtrace.json.gz [--no-diff] [--no-simulate]
 ```
 
-- `--deps`(可重复、逗号分隔)提供重放所需运行时类:gson、guava 21、
-  log4j api/core、commons-lang3、commons-io、netty-all、fastutil、
-  launchwrapper、一个 **dev 映射**的 AE2UEL jar,以及本地生成的 deobf
-  Minecraft 1.12.2 jar。后两者用同一 gradle 工具链在本地生成——Minecraft
-  jar 永不分发(EULA);注意 **SRG-reobf 的发布 jar 无法绑定**(方法名是
-  `func_*`)。
+- **replay-shim jar**(随每个 Release 附带)内置重放所需的少数 Minecraft/AE2
+  表面的手写桩与 JSON 解析器——无需真实 Minecraft jar、无需任何 mod jar、
+  无需寻找依赖(Windows 下 `-cp` 分隔符用 `;`)。
 - 退出码 0 = 当前引擎逐 token 复现了记录的计划;1 = 打印 diff(差异是
-  证据,不是判决);2 = 失败。同一轨迹 + 同一 jar 输出恒相同。
+  证据,不是判决);2 = 失败;3 = 内置合成 CPU 模拟判定停摆(S1/S2/S4,
+  附逐输入证据)。同一轨迹 + 同一组 jar 输出恒相同。
 
 ## 许可与致谢
 

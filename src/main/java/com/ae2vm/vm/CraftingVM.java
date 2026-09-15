@@ -22,6 +22,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
+import com.ae2vm.Log;
 
 /**
  * Stack-based VM crafting calculator, ported from AE2-VM 1.21.1 (NeoForge).
@@ -845,7 +846,7 @@ public class CraftingVM {
 
     private void logPerfLine(long vmStartNs) {
         long calcUs = (System.nanoTime() - vmStartNs) / 1_000;
-        AE2VM.LOGGER.info("[AE2-VM] calc time: {} us ({} ms)", calcUs, String.format("%.2f", calcUs / 1000.0D));
+        Log.LOG.info("[AE2-VM] calc time: {} us ({} ms)", calcUs, String.format("%.2f", calcUs / 1000.0D));
     }
 
     private void applyBundleDirect(Bundle b) {
@@ -1160,7 +1161,7 @@ public class CraftingVM {
                 } catch (Throwable ignored) {
                 }
                 long crafts = (deficit + perCraft - 1) / perCraft;
-                AE2VM.LOGGER.info("[AE2-VM] ring E-case: {} deficit {} -> {} crafts of its own pattern",
+                Log.LOG.info("[AE2-VM] ring E-case: {} deficit {} -> {} crafts of its own pattern",
                         e.getKey().getDefinition(), deficit, crafts);
                 total.put(e.getKey(), BigInteger.valueOf(crafts));
                 if (rescheduled == null) rescheduled = new ArrayList<>();
@@ -2351,7 +2352,7 @@ public class CraftingVM {
         } catch (Throwable t) {
             // the fold is abandoned and the propagation plan stays in force;
             // the failure must be visible — a silent catch hid solver bugs before
-            AE2VM.LOGGER.warn("[AE2-VM] ring solver failed; falling back to the propagation plan", t);
+            Log.LOG.warn("[AE2-VM] ring solver failed; falling back to the propagation plan", t);
         }
     }
 
@@ -2366,7 +2367,7 @@ public class CraftingVM {
                 sb.append(" ").append(e.getValue()).append("x").append(e.getKey().getDefinition())
                         .append(hasPattern ? "(PATTERN)" : "(leaf)");
             }
-            AE2VM.LOGGER.info(sb.toString());
+            Log.LOG.info(sb.toString());
         }
         if (!patternTimes.isEmpty()) {
             StringBuilder sb = new StringBuilder("[AE2-VM DIAG-PATS]");
@@ -2375,7 +2376,7 @@ public class CraftingVM {
                         com.ae2vm.compat.PatternCompat.getPrimaryOutput(e.getKey()) == null
                                 ? "?" : com.ae2vm.compat.PatternCompat.getPrimaryOutput(e.getKey()).getDefinition());
             }
-            AE2VM.LOGGER.info(sb.toString());
+            Log.LOG.info(sb.toString());
         }
         long bytes = simulation.getBytes();
         long deliver;
