@@ -262,6 +262,29 @@ public final class TraceRecorder {
                 "perCraft", Long.toString(perCraft), "candidates", Integer.toString(candidates)));
     }
 
+    /**
+     * Attribution event for the multi-pattern repair loop (small ledger): the
+     * adopted allocation per contended key — which pattern (or synthesized
+     * split) the confirmed plan uses, and how many verified alternatives the
+     * choice was made from.
+     */
+    public void repairChoice(IAEItemStack key,
+                             appeng.api.networking.crafting.ICraftingPatternDetails chosen,
+                             int alternatives, boolean synthesized) {
+        String chosenToken = "none";
+        if (chosen != null) {
+            appeng.api.storage.data.IAEItemStack out =
+                    com.ae2vm.compat.PatternCompat.getPrimaryOutput(chosen);
+            if (out != null) {
+                chosenToken = token(out);
+            }
+        }
+        emit(TraceSegment.CALC, "REPAIR_CHOICE", mapOf(
+                "key", token(key), "chosen", chosenToken,
+                "alternatives", Integer.toString(alternatives),
+                "synthesized", Boolean.toString(synthesized)));
+    }
+
     public void fuzzySubstitute(IAEItemStack key, IAEItemStack variant, long extracted, int familySize) {
         emit(TraceSegment.CALC, "FUZZY_SUBSTITUTE", mapOf(
                 "key", token(key), "picked", token(variant),
@@ -278,8 +301,17 @@ public final class TraceRecorder {
         fill(p.emitted, plan.getEmittedItems());
         for (Map.Entry<appeng.api.networking.crafting.ICraftingPatternDetails, Long> e
                 : plan.getPatternTimes().entrySet()) {
-            Integer idx = patternIndices.get(e.getKey());
-            p.patternTimes.add(new TracePlan.PatternTime(idx == null ? -1 : idx,
+            Integer idx = e.getKey() == null || file.bytecode == null ? null
+                    : patternIndices.get(e.getKey());
+            if (idx == null && e.getKey() != null && file.bytecode != null) {
+                // A fired pattern the root pool never listed (a repair-loop
+                // preference, a synthesized split, a cache-hit
+                // re-resolution): append it — with its compiled bytecode, so
+                // offline replay can serve its CALLs — instead of writing a
+                // dead -1 index.
+                idx = registerRuntimePattern(e.getKey());
+            }
+            p.patternTimes.add(new TracePlan.PatternTime(idx,
                     Long.toString(e.getValue())));
         }
         p.simulation = plan.isSimulation();
@@ -302,6 +334,56 @@ public final class TraceRecorder {
      */
     private void stampSubBytecodes(CraftingBytecode bc) {
         stampOne(file.bytecode, bc);
+    }
+
+    /**
+     * Appends a runtime-fired pattern to the trace's pattern table and indexes
+     * it. Appending keeps every existing pool index valid.
+     */
+    private int registerRuntimePattern(
+            appeng.api.networking.crafting.ICraftingPatternDetails d) {
+        TracePattern tp = new TracePattern(d.isCraftable(), d.canSubstitute(),
+                d.getPriority());
+        for (IAEItemStack s : d.getCondensedInputs()) {
+            if (s != null && s.getStackSize() > 0) {
+                tp.condensedInputs.add(BytecodeTraceCodec.entryOf(s, codec));
+            }
+        }
+        for (IAEItemStack s : d.getCondensedOutputs()) {
+            if (s != null && s.getStackSize() > 0) {
+                tp.condensedOutputs.add(BytecodeTraceCodec.entryOf(s, codec));
+            }
+        }
+        CraftingBytecode sub = com.ae2vm.compiler.PatternCompiler.getCompiled(d);
+        if (sub != null) {
+            tp.compiled = buildNested(sub);
+        }
+        int idx = file.bytecode.patterns.size();
+        file.bytecode.patterns.add(tp);
+        patternIndices.put(d, idx);
+        return idx;
+    }
+
+    /** The replay-servable compiled form of one sub-pattern bytecode. */
+    private TraceBytecode buildNested(CraftingBytecode sub) {
+        TraceBytecode nested = new TraceBytecode();
+        nested.code = java.util.Base64.getEncoder().encodeToString(sub.getCode());
+        for (IAEItemStack s : sub.getConstantPool()) {
+            nested.pool.add(BytecodeTraceCodec.entryOf(s, codec));
+        }
+        nested.outputIndex = sub.getOutputIndex();
+        nested.perCraft = Long.toString(sub.getOutputAmountPerCraft());
+        for (appeng.api.networking.crafting.ICraftingPatternDetails d : sub.getPatternPool()) {
+            TracePattern ntp = new TracePattern(d.isCraftable(), d.canSubstitute(), d.getPriority());
+            for (IAEItemStack s : d.getCondensedInputs()) {
+                ntp.condensedInputs.add(BytecodeTraceCodec.entryOf(s, codec));
+            }
+            for (IAEItemStack s : d.getCondensedOutputs()) {
+                ntp.condensedOutputs.add(BytecodeTraceCodec.entryOf(s, codec));
+            }
+            nested.patterns.add(ntp);
+        }
+        return nested;
     }
 
     private void stampOne(TraceBytecode t, CraftingBytecode bc) {

@@ -168,6 +168,27 @@ public final class PatternChoiceRepair {
      * bounds the confirmation replays; 0 disables the solver entirely.
      */
     public static VMPlan repair(Pass pass, int maxExtraPasses) {
+        return repair(pass, maxExtraPasses, null);
+    }
+
+    /** Attribution sink for an adopted allocation (small ledger). */
+    public interface Adoption {
+        /**
+         * One adopted choice: the contended key, the pattern (or synthesized
+         * split) the confirmed plan uses, how many verified alternatives the
+         * choice was made from, and whether the pattern was synthesized.
+         */
+        void choice(IAEItemStack key, ICraftingPatternDetails pattern,
+                    int alternatives, boolean synthesized);
+    }
+
+    /**
+     * As {@link #repair(Pass, int)}; when the confirmed allocation is adopted,
+     * {@code adopted} receives every choice that shaped it — the flipped
+     * choices and the synthesized split patterns — for attribution (the
+     * trace's REPAIR_CHOICE events). Never invoked for the greedy pass.
+     */
+    public static VMPlan repair(Pass pass, int maxExtraPasses, Adoption adopted) {
         PassResult current = pass.run(Collections.emptyMap());
         VMPlan best = current.plan;
         if (best == null || best.getMissingItems().isEmpty() || maxExtraPasses <= 0) {
@@ -278,6 +299,20 @@ public final class PatternChoiceRepair {
         PassResult confirmed = pass.run(prefs);
         if (confirmed.plan != null
                 && missingTotal(confirmed.plan).compareTo(missingTotal(best)) < 0) {
+            if (adopted != null) {
+                for (var e : prefs.entrySet()) {
+                    int alternatives = 1;
+                    for (int i = 0; i < model.n; i++) {
+                        if (model.universe.get(i).isSameType(e.getKey())
+                                && model.contendedList[i] != null) {
+                            alternatives = model.contendedList[i].size();
+                            break;
+                        }
+                    }
+                    adopted.choice(e.getKey(), e.getValue(), alternatives,
+                            e.getValue() instanceof VirtualPatternDetails);
+                }
+            }
             return confirmed.plan;
         }
         return best;
