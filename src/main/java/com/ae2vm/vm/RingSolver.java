@@ -49,11 +49,17 @@ import java.util.function.Function;
  * solver the unique any-slot producer of each member key, so every key has
  * exactly one in-ring producer to bump.
  *
- * <p>The startup timing constraint — the first round's inputs must be on hand
- * before the first output lands — is reported separately as a seed shortfall
- * (timing capital, not net consumption; the ring pays it back within the
- * first round). Every pattern is probed as the forced round start, each
- * continuation fires the first ready pattern, and the smallest seed wins.
+ * <p>Runtime faithfulness: the folded plan must EXECUTE on a real CPU, whose
+ * local inventory is exactly the plan's job-start withdrawal. Two rules
+ * follow (M6-B①, the ring-family reopening gate). (1) The delivery must be
+ * CRAFTED — a real job plans against an inventory that ignores the requested
+ * item's own stock (AE2UEL CraftingJob.run), so the root key's stock may not
+ * cover {@code rootDeliver}; stock still spares rounds for non-root members'
+ * net consumption (billed as withdrawal). (2) The engine bills each member
+ * key's net CPU draw plus the {@link #startupFloors} priming floor into the
+ * plan's usedItems — the net bundle's gross extraction alone would silently
+ * net the ring's own production against its consumption and ship a plan the
+ * CPU starves on at t=0 (the original live gaia stall).
  *
  * <p>Topology scope: strongly-connected sets with patterns and no
  * self-adjacency. Shared intermediates (a key consumed by multiple members)
@@ -79,8 +85,13 @@ final class RingSolver {
         final Map<IAEItemStack, BigInteger> emitted = new LinkedHashMap<>();
         /** Gross consumption per key (Σ consumer crafts × per-craft input). */
         final Map<IAEItemStack, BigInteger> used = new LinkedHashMap<>();
-        /** Startup seed shortfall per key (timing: first round's input vs stock). */
-        final Map<IAEItemStack, BigInteger> seedShortfall = new LinkedHashMap<>();
+        /**
+         * Out-of-ring consumer demand per member key (the solver's external
+         * floor). Idle plans carry it as their entire {@code used}: nothing is
+         * crafted, but the stripped member keys must still bill the outside
+         * draw their stock reservation used to cover.
+         */
+        final Map<IAEItemStack, BigInteger> ext = new LinkedHashMap<>();
     }
 
     /** Per-craft typed inputs/outputs of one ring recipe (returned inputs excluded). */
@@ -399,6 +410,10 @@ final class RingSolver {
         if (allZero) {
             RingPlan idle = new RingPlan();
             idle.ringKeys.addAll(scc);
+            // stock covers every round, but the stripped member keys still
+            // owe their out-of-ring draw: the idle bundle bills it (the
+            // released stock reservation would otherwise leak from the plan)
+            idle.used.putAll(ext);
             return idle;
         }
 
@@ -424,8 +439,11 @@ final class RingSolver {
                 needed.merge(e.getKey(), e.getValue(), BigInteger::add);
             }
             for (IAEItemStack k : scc) {
-                BigInteger cov = nonNeg(startStockOf.apply(k))
-                        .add(y.get(viewOfKey.get(k).pattern()).multiply(producerOut.get(k)));
+                // same coverage rule as the solve: the root key's stock may
+                // not cover its delivery component (crafted, not stocked)
+                boolean rootStockExcluded = rootIsMember && k.isSameType(rootKey);
+                BigInteger cov = y.get(viewOfKey.get(k).pattern()).multiply(producerOut.get(k));
+                if (!rootStockExcluded) cov = cov.add(nonNeg(startStockOf.apply(k)));
                 if (needed.getOrDefault(k, BigInteger.ZERO).compareTo(cov) > 0) {
                     return null; // closure broken: adopt nothing
                 }
@@ -455,69 +473,158 @@ final class RingSolver {
             plan.ringKeys.add(rootKey);
         }
 
-        // ---- startup seed: the network must hold the first round's inputs
-        // before the ring's first output lands — timing capital, not net
-        // consumption; the ring pays it back within the first round. Each
-        // pattern is probed as the forced START of the round; after it, the
-        // probe fires the first READY pattern (all member inputs already on
-        // the probe's ledger) and only forces when nothing is ready — a
-        // continuation that can never record more deficits than a fixed
-        // order. The smallest seed across starts wins. External (non-member)
-        // inputs are skipped: their shortfall is disclosed in full by the net
-        // bundle's extraction against network stock — a seed entry would
-        // double-report.
-        Map<IAEItemStack, BigInteger> best = null;
-        List<RecipeView> orderBase = new ArrayList<>(views.values());
-        for (RecipeView start : orderBase) {
-            List<RecipeView> order = new ArrayList<>(orderBase.size());
-            order.add(start);
-            for (RecipeView v : orderBase) {
-                if (v != start) order.add(v);
-            }
-            Map<IAEItemStack, BigInteger> available = new HashMap<>();
-            for (IAEItemStack k : scc) {
-                BigInteger s = nonNeg(startStockOf.apply(k));
-                if (s.signum() > 0) available.put(k, s);
-            }
-            Map<IAEItemStack, BigInteger> seed = new HashMap<>();
-            boolean[] fired = new boolean[order.size()];
-            for (int done = 0; done < order.size(); done++) {
-                int pick = -1;
-                for (int i = 0; i < order.size() && pick < 0; i++) {
-                    if (!fired[i] && isReady(order.get(i), available, scc)) pick = i;
-                }
-                if (pick < 0) {
-                    for (int i = 0; i < order.size(); i++) {
-                        if (!fired[i]) { pick = i; break; }
-                    }
-                }
-                RecipeView v = order.get(pick);
-                fired[pick] = true;
-                for (var e : v.inputs().entrySet()) {
-                    if (!isRingMember(scc, e.getKey())) continue; // used-extraction's domain
-                    BigInteger avail = available.getOrDefault(e.getKey(), BigInteger.ZERO);
-                    if (e.getValue().compareTo(avail) > 0) {
-                        BigInteger deficit = e.getValue().subtract(avail);
-                        BigInteger prev = seed.getOrDefault(e.getKey(), BigInteger.ZERO);
-                        if (deficit.compareTo(prev) > 0) seed.put(e.getKey(), deficit);
-                        available.put(e.getKey(), e.getValue()); // forced: ledger goes negative
-                    } else {
-                        available.put(e.getKey(), avail);
-                    }
-                }
-                for (var e : v.outputs().entrySet()) {
-                    available.merge(e.getKey(), e.getValue(), BigInteger::add);
-                }
-            }
-            BigInteger totalSeed = seed.values().stream().reduce(BigInteger.ZERO, BigInteger::add);
-            BigInteger bestTotal = best == null ? null
-                    : best.values().stream().reduce(BigInteger.ZERO, BigInteger::add);
-            if (best == null || totalSeed.compareTo(bestTotal) < 0) best = seed;
-        }
-        if (best != null) {
-            plan.seedShortfall.putAll(best);
-        }
+        // ---- startup floors are GLOBAL (across all folded rings, and
+        // initialized from the job's own net draw, not network stock): see
+        // {@link #startupFloors}, called once by the caller after all plans
+        // are collected.
         return plan;
+    }
+
+    /**
+     * Minimal per-key startup inventory that keeps the whole folded family
+     * deadlock-free on a real CPU (closed local inventory; task returns are
+     * the only refill). The engine's job-start withdrawal covers each key's
+     * NET draw ({@code netDrawOf}); what the net draw cannot cover is the
+     * priming of keys whose production CIRCULATES (intermediates and
+     * self-returned catalysts net to zero, but the patterns consuming them
+     * must still fire before any return lands).
+     *
+     * <p>The probe mirrors the cluster's execution shape: passes over the
+     * ring patterns in TASK ORDER, each pass firing every pattern whose
+     * member inputs the ledger covers (repeatedly, until inputs run dry),
+     * outputs refilling the ledger next pass (returns arrive a tick later;
+     * the delivered root key never returns). A pass in which nothing fires
+     * with crafts left is a true deadlock — the first stuck pattern is then
+     * FORCED one craft, its uncovered member inputs becoming the floor.
+     * Counts are capped at a shared budget (scaled together so the flow
+     * ratios survive) — priming deadlocks surface within the first handful
+     * of rounds, never in the long tail.
+     */
+    static Map<IAEItemStack, BigInteger> startupFloors(
+            List<RingPlan> plans,
+            Function<ICraftingPatternDetails, Map<IAEItemStack, BigInteger>> perCraftInputs,
+            Function<ICraftingPatternDetails, Map<IAEItemStack, BigInteger>> perCraftOutputs,
+            Function<IAEItemStack, BigInteger> netDrawOf,
+            IAEItemStack outputKey,
+            Set<IAEItemStack> members) {
+        Map<IAEItemStack, BigInteger> floor = new HashMap<>();
+        // distinct ring patterns in task order with proportionally capped counts
+        List<ICraftingPatternDetails> order = new ArrayList<>();
+        BigInteger maxCount = BigInteger.ONE;
+        for (RingPlan plan : plans) {
+            for (var e : plan.patterns.entrySet()) {
+                if (e.getValue().signum() <= 0) continue;
+                if (perCraftInputs.apply(e.getKey()) == null
+                        || perCraftInputs.apply(e.getKey()).isEmpty()) continue;
+                if (!order.contains(e.getKey())) order.add(e.getKey());
+                if (e.getValue().compareTo(maxCount) > 0) maxCount = e.getValue();
+            }
+        }
+        if (order.isEmpty()) return floor;
+        BigInteger CAP = BigInteger.valueOf(256);
+        Map<ICraftingPatternDetails, BigInteger> remaining = new HashMap<>();
+        for (RingPlan plan : plans) {
+            for (var e : plan.patterns.entrySet()) {
+                if (order.contains(e.getKey())) {
+                    BigInteger scaled = e.getValue().multiply(CAP).add(maxCount).subtract(BigInteger.ONE)
+                            .divide(maxCount);
+                    remaining.put(e.getKey(), scaled.max(BigInteger.ONE));
+                }
+            }
+        }
+        Map<ICraftingPatternDetails, Map<IAEItemStack, BigInteger>> insOf = new HashMap<>();
+        for (ICraftingPatternDetails d : order) insOf.put(d, perCraftInputs.apply(d));
+        Map<IAEItemStack, BigInteger> ledger = new HashMap<>();
+        // passes: bounded by total capped crafts (each pass fires >= 1 craft
+        // or forces); plenty for the feedback loops to flow
+        BigInteger totalCrafts = remaining.values().stream()
+                .reduce(BigInteger.ZERO, BigInteger::add);
+        for (BigInteger pass = BigInteger.ZERO;
+                remaining.values().stream().anyMatch(v -> v.signum() > 0)
+                        && pass.compareTo(totalCrafts.add(BigInteger.valueOf(order.size() * 2L))) < 0;
+                pass = pass.add(BigInteger.ONE)) {
+            boolean fired = false;
+            Map<IAEItemStack, BigInteger> refill = new HashMap<>();
+            for (ICraftingPatternDetails d : order) {
+                BigInteger left = remaining.get(d);
+                while (left.signum() > 0 && covered(insOf.get(d), ledger, netDrawOf, members)) {
+                    fire(d, insOf, perCraftOutputs, ledger, refill, netDrawOf,
+                            outputKey, members, floor, false);
+                    left = left.subtract(BigInteger.ONE);
+                    fired = true;
+                }
+                remaining.put(d, left);
+            }
+            if (!fired) {
+                // true deadlock: force the first stuck pattern one craft
+                for (ICraftingPatternDetails d : order) {
+                    if (remaining.get(d).signum() > 0) {
+                        fire(d, insOf, perCraftOutputs, ledger, refill, netDrawOf,
+                                outputKey, members, floor, true);
+                        remaining.put(d, remaining.get(d).subtract(BigInteger.ONE));
+                        break;
+                    }
+                }
+            }
+            for (var e : refill.entrySet()) {
+                ledger.merge(e.getKey(), e.getValue(), BigInteger::add);
+            }
+        }
+        return floor;
+    }
+
+    /** True when every ring-member input is covered by ledger or net draw. */
+    private static boolean covered(Map<IAEItemStack, BigInteger> inputs,
+                                   Map<IAEItemStack, BigInteger> ledger,
+                                   Function<IAEItemStack, BigInteger> netDrawOf,
+                                   Set<IAEItemStack> members) {
+        for (var e : inputs.entrySet()) {
+            if (!isRingMember(members, e.getKey())) continue;
+            BigInteger avail = ledger.getOrDefault(e.getKey(), netDrawOf.apply(e.getKey()));
+            if (e.getValue().compareTo(avail) > 0) return false;
+        }
+        return true;
+    }
+
+    /**
+     * Fires one probe craft: deducts member inputs from the ledger (a
+     * {@code force} records uncovered amounts as floor and tops the ledger
+     * up), and queues outputs into {@code refill} — the caller merges it into
+     * the ledger at pass end, mirroring returns arriving a tick later. The
+     * delivered root key is skipped: its production leaves the CPU for good.
+     */
+    private static void fire(ICraftingPatternDetails d,
+                             Map<ICraftingPatternDetails, Map<IAEItemStack, BigInteger>> insOf,
+                             Function<ICraftingPatternDetails, Map<IAEItemStack, BigInteger>> perCraftOutputs,
+                             Map<IAEItemStack, BigInteger> ledger,
+                             Map<IAEItemStack, BigInteger> refill,
+                             Function<IAEItemStack, BigInteger> netDrawOf,
+                             IAEItemStack outputKey,
+                             Set<IAEItemStack> members,
+                             Map<IAEItemStack, BigInteger> floor,
+                             boolean force) {
+        for (var e : insOf.get(d).entrySet()) {
+            if (!isRingMember(members, e.getKey())) continue;
+            BigInteger avail = ledger.getOrDefault(e.getKey(), netDrawOf.apply(e.getKey()));
+            if (e.getValue().compareTo(avail) > 0) {
+                if (force) {
+                    BigInteger deficit = e.getValue().subtract(avail);
+                    BigInteger prev = floor.getOrDefault(e.getKey(), BigInteger.ZERO);
+                    if (deficit.compareTo(prev) > 0) floor.put(e.getKey(), deficit);
+                    ledger.put(e.getKey(), e.getValue());
+                }
+            } else {
+                ledger.put(e.getKey(), avail);
+            }
+            ledger.put(e.getKey(), ledger.get(e.getKey()).subtract(e.getValue()));
+        }
+        Map<IAEItemStack, BigInteger> outs = perCraftOutputs.apply(d);
+        if (outs != null) {
+            for (var e : outs.entrySet()) {
+                if (outputKey != null && e.getKey().isSameType(outputKey)) continue;
+                refill.merge(e.getKey(), e.getValue(), BigInteger::add);
+            }
+        }
     }
 
     /**
@@ -569,7 +676,14 @@ final class RingSolver {
                 BigInteger dem = needed.getOrDefault(k, BigInteger.ZERO);
                 ICraftingPatternDetails producer = viewOfKey.get(k).pattern();
                 BigInteger cov = y.get(producer).multiply(outPer);
-                if (useStock) cov = cov.add(nonNeg(startStockOf.apply(k)));
+                // The delivery must be CRAFTED: a real job ignores the
+                // requested item's own stock (AE2UEL CraftingJob.run plans
+                // against an inventory with the output ignored), so the root
+                // key's stock may not cover its rootDeliver component — only
+                // its in-ring consumption is stock-sparable (billed as
+                // job-start withdrawal).
+                boolean rootStockExcluded = useStock && rootIsMember && k.isSameType(rootKey);
+                if (useStock && !rootStockExcluded) cov = cov.add(nonNeg(startStockOf.apply(k)));
                 if (dem.compareTo(cov) > 0) {
                     BigInteger bump = dem.subtract(cov).add(outPer).subtract(BigInteger.ONE).divide(outPer);
                     BigInteger nx = y.get(producer).add(bump);
@@ -595,23 +709,6 @@ final class RingSolver {
             if (k.isSameType(key)) return true;
         }
         return false;
-    }
-
-    /**
-     * True when every ring-member input of the pattern is already covered by
-     * the probe's ledger. The ledger never decreases (the seed model records
-     * only each key's deepest unfunded need), so a funded or once-produced
-     * key stays ready.
-     */
-    private static boolean isReady(RecipeView v, Map<IAEItemStack, BigInteger> available,
-                                   Set<IAEItemStack> scc) {
-        for (var e : v.inputs().entrySet()) {
-            if (!isRingMember(scc, e.getKey())) continue;
-            if (e.getValue().compareTo(available.getOrDefault(e.getKey(), BigInteger.ZERO)) > 0) {
-                return false;
-            }
-        }
-        return true;
     }
 
     /** Tarjan SCC (iterative) over {@code deps}; returns SCCs of size ≥ 2. */

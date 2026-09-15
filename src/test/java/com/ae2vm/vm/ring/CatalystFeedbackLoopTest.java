@@ -42,19 +42,17 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * The VM previously reported the byproduct as a false missing leaf; these tests pin the
  * correct feasibility + missing domain/amount for all three material modes.
  *
- * <p><b>Planner vs runtime (M5 finding).</b> The planner assertions pin the solver's
- * material-closure math; the CPU bridge additionally records the faithful runtime
- * verdict, which DIVERGES for the net-solver shapes. A real AE2UEL CPU executes
- * purely from its local inventory (CraftingCPUCluster :694 extracts each condensed
- * input per push) and DELIVERS finalOutput returns instead of circulating them
- * (:265), while the ring solver strips ring-member keys from usedItems (net
- * closure) — so net-balanced ring plans carry no startup inventory and deadlock at
- * t=0 (S2) or starve mid-run when the seed runs dry, and idle-ring plans hang
- * forever (S4). These stalls are the documented reason the ring family stays
- * feature-gated off: re-enabling requires the solver to charge ring-member startup
- * seeds into usedItems. The closed-form scenarios (rawLoop/lossyLoop) DO charge
- * their seeds and faithfully COMPLETE — planner accounting and CPU execution agree
- * there.
+ * <p><b>Planner ⇔ runtime agreement (M6-B①).</b> Folded ring plans are billed so a
+ * real AE2UEL CPU can execute them: the delivery is CRAFTED (a job plans against an
+ * inventory that ignores the requested item's own stock — CraftingJob.run), and every
+ * member key's NET CPU draw plus a priming floor lands in usedItems (the CPU owns
+ * only its job-start withdrawal: closed local inventory, CraftingCPUCluster :694;
+ * final-output returns deliver instead of circulating, :265). Consequently the
+ * capital numbers are grosser than the old net math — the amplifying family needs
+ * the FULL input draw up front (5000 spirits for 10000 delivered, not 3300) — and
+ * every executable scenario here must, and does, reach COMPLETE on the virtual CPU.
+ * The closed-form scenarios (rawLoop/lossyLoop) decline the fold (members merely
+ * circulate) and run on the propagation's catalyst-seed machinery.
  */
 class CatalystFeedbackLoopTest {
 
@@ -179,6 +177,11 @@ class CatalystFeedbackLoopTest {
         return -1;
     }
 
+    /** Billed job-start withdrawal of one key id (0 when unbilled). */
+    private static long usedOf(VMPlan plan, String id) {
+        return plan.getUsedItems().get(Bench.k(id));
+    }
+
     // ---- amplifying-loop (gaia regression): net +8 spirits per turn ----
 
     @Test
@@ -246,25 +249,22 @@ class CatalystFeedbackLoopTest {
         for (BenchPatternDetails p : loop) {
             Bench.register(p);
         }
-        // 2304 stocked covers the 962-turn plan exactly: 2304 + 12x962 - 4x962 = 10000
-        BenchSimulationState sim = new BenchSimulationState().seed("A", 2304);
+        // Faithful capital: A is the DELIVERED root, so its production never
+        // circulates back (:265) — makeIngot's whole draw (4x1250) must be
+        // withdrawn at job start, and the solve targets a CRAFTED delivery
+        // (12x1250 >= 10000, the root's own stock may not cover it).
+        BenchSimulationState sim = new BenchSimulationState().seed("A", 5000);
         VMPlan plan = Bench.run(loop[1], 10000, sim);
-        // Faithful runtime divergence (net-stripped ring: no startup seed) — see the class note on
-        // planner-vs-runtime; AE2UEL CraftingCPUCluster :694/:265.
-        CpuLifecycleAssert.stalls(plan, "S2");
-        StringBuilder pt = new StringBuilder();
-        for (var e : plan.getPatternTimes().entrySet()) {
-            pt.append(e.getValue()).append("x[");
-            for (var in : e.getKey().getCondensedInputs()) pt.append(((BenchAEItemStack) in).id).append(',');
-            pt.append("] ");
-        }
-        assertTrue(schedulesPatternWithInput(plan, "A"),
-                "plan must schedule the synthesis pattern , pt=" + pt);
+        CpuLifecycleAssert.auto(plan);
+        assertTrue(feasible(plan),
+                "byproduct ring with the full input draw stocked must be feasible, got " + dump(plan));
+        assertEquals(5000, usedOf(plan, "A"), "the root's gross input draw is the job-start capital");
+        assertEquals(0, usedOf(plan, "B"), "B circulates: primed by the recycler's own seed order, no capital");
         // exact turns: the solved ring must be the ONLY scheduling — a replayed
         // pre-solver count on top (the old integration bug) would double the
         // dissolve crafts with no backed inputs
-        assertEquals(962, timesOf(plan, "B"), "recycler (B->12A+C+D) turns, pt=" + pt);
-        assertEquals(962, timesOf(plan, "A"), "makeIngot (4A->B) turns, pt=" + pt);
+        assertEquals(1250, timesOf(plan, "B"), "recycler (B->12A+C+D) turns");
+        assertEquals(1250, timesOf(plan, "A"), "makeIngot (4A->B) turns");
     }
 
     @Test
@@ -278,39 +278,37 @@ class CatalystFeedbackLoopTest {
         CpuLifecycleAssert.auto(plan);
         assertFalse(feasible(plan),
                 "unseeded byproduct ring must be infeasible, got feasible");
-        // the fallback's honest shortfall: one B — the next layer's timing seed
-        assertTrue(infeasibleMatches(plan, Map.of("B", 1L)),
-                "unseeded byproduct ring must report a startup shortfall, got " + dump(plan));
+        // the faithful disclosure: makeIngot's whole draw (4x1250) is
+        // job-start capital the empty network cannot cover
+        assertTrue(infeasibleMatches(plan, Map.of("A", 5000L)),
+                "unseeded byproduct ring must report its input-draw capital, got " + dump(plan));
     }
 
     @Test
     void byproductGainRingExternalDemand() {
         // The A request with C ALSO in the network stock: the ring passively
-        // produces 962 C when covering 10000 A — passive byproduct output must
+        // produces 1250 C when covering 10000 A — passive byproduct output must
         // not break the A plan regardless of C stock. (Directly ORDERING C is
-        // the phase-2c external-root driver, tested separately below.)
+        // the external-root driver, tested separately below.)
         BenchPatternDetails[] loop = byproductGainRing();
         for (BenchPatternDetails p : loop) {
             Bench.register(p);
         }
-        // A request unaffected by stocked C (under the passive 962 output)
-        BenchSimulationState sim = new BenchSimulationState().seed("A", 2304);
+        // A request unaffected by stocked C (under the passive output)
+        BenchSimulationState sim = new BenchSimulationState().seed("A", 5000);
         VMPlan under = Bench.run(loop[1], 10000, sim);
-        // Faithful runtime divergence (net-stripped ring: no startup seed) — see the class note on
-        // planner-vs-runtime; AE2UEL CraftingCPUCluster :694/:265.
-        CpuLifecycleAssert.stalls(under, "S2");
+        CpuLifecycleAssert.auto(under);
         assertTrue(feasible(under), "under-request must stay feasible, got " + dump(under));
         long cEmittedUnder = 0;
         for (var k : under.getEmittedItems().keys()) {
             if (((BenchAEItemStack) k).id.equals("C")) cEmittedUnder = under.getEmittedItems().get(k);
         }
         // ... and with C stocked beyond the passive output
-        sim = new BenchSimulationState().seed("A", 2304).seed("C", 5000);
+        sim = new BenchSimulationState().seed("A", 5000).seed("C", 5000);
         VMPlan over = Bench.run(loop[1], 10000, sim);
-        // Faithful runtime divergence (net-stripped ring: no startup seed) — see the class note on
-        // planner-vs-runtime; AE2UEL CraftingCPUCluster :694/:265.
-        CpuLifecycleAssert.stalls(over, "S2");
+        CpuLifecycleAssert.auto(over);
         assertTrue(feasible(over), "over-request must stay feasible, got " + dump(over));
+        assertEquals(1250, cEmittedUnder, "the passive byproduct surplus is emitable");
         System.out.println("[RING-VARIANT] C external: under-request C-emitted=" + cEmittedUnder
                 + " over-request missing=" + dump(over));
     }
@@ -318,27 +316,26 @@ class CatalystFeedbackLoopTest {
     @Test
     void sharedIntermediateRingFeasible() {
         // B feeds two consumers (makeD and the recycler): the general
-        // shared-intermediate topology. Minimal fixed point: recycler ×1924
-        // and makeD ×1924 (D balance), makeIngot ×3848 (B balance) — each
-        // recycler round nets +4 A (12 produced, 8 re-consumed via B
-        // synthesis) and burns 1 C: 2304 + 4×1924 = 10000 delivered,
-        // 1924 of the stocked 5000 C consumed. External drains (C has no
-        // producer in the ring) are honest ingredient demand, not a
-        // conversion-ring signal.
+        // shared-intermediate topology. Faithful fixed point (delivery
+        // crafted, A's stock may not cover it): recycler ×2500 and makeD
+        // ×2500 (D balance), makeIngot ×5000 (B balance) — each recycler
+        // round nets +4 A delivered and burns 1 C: 12×2500 − 4×5000 = 10000
+        // delivered, 2500 of the stocked 5000 C consumed. C is external
+        // fuel: its whole draw (2500) is job-start capital like A's.
         BenchPatternDetails[] loop = sharedIntermediateRing();
         for (BenchPatternDetails p : loop) {
             Bench.register(p);
         }
-        BenchSimulationState sim = new BenchSimulationState().seed("A", 2304).seed("C", 5000);
+        BenchSimulationState sim = new BenchSimulationState().seed("A", 20000).seed("C", 5000);
         VMPlan plan = Bench.run(loop[2], 10000, sim);
-        // Faithful runtime divergence (net-stripped ring: no startup seed) — see the class note on
-        // planner-vs-runtime; AE2UEL CraftingCPUCluster :694/:265.
-        CpuLifecycleAssert.stalls(plan, "S2");
+        CpuLifecycleAssert.auto(plan);
         assertTrue(feasible(plan),
-                "shared-intermediate ring with sufficient C must be feasible, got " + dump(plan));
-        assertEquals(1924, timesOf(plan, "D", "B"), "recycler (D+B->12A) rounds");
-        assertEquals(1924, timesOf(plan, "B", "C"), "makeD (B+C->D) rounds");
-        assertEquals(3848, timesOf(plan, "A"), "makeIngot (4A->B) rounds");
+                "shared-intermediate ring with sufficient capital must be feasible, got " + dump(plan));
+        assertEquals(20000, usedOf(plan, "A"), "the root's gross input draw is the job-start capital");
+        assertEquals(2500, usedOf(plan, "C"), "the external fuel draw is job-start capital too");
+        assertEquals(2500, timesOf(plan, "D", "B"), "recycler (D+B->12A) rounds");
+        assertEquals(2500, timesOf(plan, "B", "C"), "makeD (B+C->D) rounds");
+        assertEquals(5000, timesOf(plan, "A"), "makeIngot (4A->B) rounds");
     }
 
     @Test
@@ -347,15 +344,15 @@ class CatalystFeedbackLoopTest {
         for (BenchPatternDetails p : loop) {
             Bench.register(p);
         }
-        BenchSimulationState sim = new BenchSimulationState().seed("A", 2304).seed("C", 1000);
+        BenchSimulationState sim = new BenchSimulationState().seed("A", 20000).seed("C", 1000);
         VMPlan plan = Bench.run(loop[2], 10000, sim);
         CpuLifecycleAssert.auto(plan);
         // C is the ring's external fuel: the solve is material-honest — the
-        // balanced plan consumes 1924 C, the network holds 1000, so the
+        // faithful plan consumes 2500 C, the network holds 1000, so the
         // extraction shortfall must surface as missing C (never a false
         // feasible, never a missing on a ring-internal key).
         assertFalse(feasible(plan), "fuel-starved shared ring must be infeasible, got " + dump(plan));
-        assertTrue(infeasibleMatches(plan, Map.of("C", 924L)),
+        assertTrue(infeasibleMatches(plan, Map.of("C", 1500L)),
                 "fuel-starved shared ring must report the C shortfall, got " + dump(plan));
     }
 
@@ -371,15 +368,21 @@ class CatalystFeedbackLoopTest {
         for (BenchPatternDetails p : loop) {
             Bench.register(p);
         }
-        BenchSimulationState sim = new BenchSimulationState().seed("A", 2304);
+        // C is not a member: the recycler is the driver (ceil(5000/1) turns)
+        // and the ring self-primes from ONE B of capital — the recycler sits
+        // first in the task order, so the priming floor bills that seed; the
+        // stocked B also spares the solve exactly one makeIngot craft
+        // (4999 = 5000 minus the stocked unit — non-root stock is legitimate
+        // round-sparing, billed as withdrawal).
+        BenchSimulationState sim = new BenchSimulationState().seed("A", 2304).seed("B", 1);
         VMPlan plan = Bench.run(loop[1], 5000, "C", sim);
-        // Faithful runtime divergence (net-stripped ring: no startup seed) — see the class note on
-        // planner-vs-runtime; AE2UEL CraftingCPUCluster :694/:265.
-        CpuLifecycleAssert.stalls(plan, "S2");
+        CpuLifecycleAssert.auto(plan);
         assertTrue(feasible(plan),
                 "C-rooted request must drive the ring, got " + dump(plan));
+        assertEquals(1, usedOf(plan, "B"), "one B of priming capital is the whole job-start bill");
+        assertEquals(0, usedOf(plan, "A"), "A circulates: the recycler's returns feed makeIngot");
         assertEquals(5000, timesOf(plan, "B"), "recycler (B->12A+C+D) turns");
-        assertEquals(5000, timesOf(plan, "A"), "makeIngot (4A->B) turns");
+        assertEquals(4999, timesOf(plan, "A"), "makeIngot (4A->B) turns, one spared by the stocked B");
     }
 
     @Test
@@ -440,17 +443,17 @@ class CatalystFeedbackLoopTest {
         for (BenchPatternDetails p : loop) {
             Bench.register(p);
         }
-        // Balance at the minimal fixed point: 962 rounds of both patterns —
-        // 2304 + 12×962 − 4×962 = 10000 delivered, B and X internally balanced.
-        BenchSimulationState sim = new BenchSimulationState().seed("A", 2304);
+        // Faithful fixed point: 1250 rounds of both patterns — 12×1250 −
+        // 4×1250 = 10000 A crafted for delivery, B and X internally balanced
+        // (makeIngotBy's whole 4A draw is job-start capital).
+        BenchSimulationState sim = new BenchSimulationState().seed("A", 5000);
         VMPlan plan = Bench.run(loop[1], 10000, sim);
-        // Faithful runtime divergence (net-stripped ring: no startup seed) — see the class note on
-        // planner-vs-runtime; AE2UEL CraftingCPUCluster :694/:265.
-        CpuLifecycleAssert.stalls(plan, "S2");
+        CpuLifecycleAssert.auto(plan);
         assertTrue(feasible(plan),
                 "byproduct-intermediate ring must be feasible, got " + dump(plan));
-        assertEquals(962, timesOf(plan, "A"), "makeIngotBy (4A->B+X) turns");
-        assertEquals(962, timesOf(plan, "B", "X"), "recycler (B+X->12A) turns");
+        assertEquals(5000, usedOf(plan, "A"), "the root's gross input draw is the job-start capital");
+        assertEquals(1250, timesOf(plan, "A"), "makeIngotBy (4A->B+X) turns");
+        assertEquals(1250, timesOf(plan, "B", "X"), "recycler (B+X->12A) turns");
     }
 
     @Test
@@ -464,28 +467,51 @@ class CatalystFeedbackLoopTest {
         CpuLifecycleAssert.auto(plan);
         assertFalse(feasible(plan),
                 "unseeded byproduct-intermediate ring must be infeasible, got feasible");
-        // the cheapest priming order starts at the recycler: one B and one X
-        assertTrue(infeasibleMatches(plan, Map.of("B", 1L, "X", 1L)),
-                "unseeded byproduct-intermediate ring must report its startup seed, got " + dump(plan));
+        // the faithful disclosure: makeIngotBy's whole draw (4x1250) is
+        // job-start capital the empty network cannot cover
+        assertTrue(infeasibleMatches(plan, Map.of("A", 5000L)),
+                "unseeded byproduct-intermediate ring must report its input-draw capital, got " + dump(plan));
     }
 
     @Test
     void byproductIntermediateRootDrivesRing() {
-        // Ordering the intermediate X directly: X is a ring MEMBER,
-        // so the request is a member-root delivery — the solve closes at
-        // makeIngot ×7212 / recycler ×2212 (A stock fully spent: 2304 +
-        // 12×2212 − 4×7212 = 0) delivering exactly 5000 X.
+        // Ordering the intermediate X directly: X is a ring MEMBER whose
+        // production the ring re-consumes (the recycler's input). A real CPU
+        // DELIVERS final-output returns instead of circulating them (:265),
+        // so the recycler's X draw (2212) must be pre-stocked and is billed —
+        // honest missing X when the network holds none. The solve itself
+        // still uses the stocked A to spare rounds: 2304 covers part of the
+        // recycling leg, closing at makeIngot ×7212 / recycler ×2212.
         BenchPatternDetails[] loop = byproductIntermediateRing();
         for (BenchPatternDetails p : loop) {
             Bench.register(p);
         }
         BenchSimulationState sim = new BenchSimulationState().seed("A", 2304);
         VMPlan plan = Bench.run(loop[0], 5000, "X", sim);
-        // Faithful runtime divergence (root-output feedback: delivered X never circulates) — see the class note on
-        // planner-vs-runtime; AE2UEL CraftingCPUCluster :694/:265.
-        CpuLifecycleAssert.stalls(plan, "S2");
+        CpuLifecycleAssert.auto(plan);
+        assertFalse(feasible(plan),
+                "member-root re-consumption without X stock must be infeasible, got " + dump(plan));
+        assertTrue(infeasibleMatches(plan, Map.of("X", 2212L)),
+                "the recycler's re-consumed X draw must be disclosed, got " + dump(plan));
+        assertEquals(7212, timesOf(plan, "A"), "makeIngotBy (4A->B+X) turns");
+        assertEquals(2212, timesOf(plan, "B", "X"), "recycler (B+X->12A) turns");
+    }
+
+    @Test
+    void byproductIntermediateRootDrivesRingWithXStocked() {
+        // Same request with the re-consumed draw pre-stocked: the recycler
+        // draws its X from the job-start withdrawal, every other flow
+        // circulates, and the virtual CPU delivers the full 5000 X.
+        BenchPatternDetails[] loop = byproductIntermediateRing();
+        for (BenchPatternDetails p : loop) {
+            Bench.register(p);
+        }
+        BenchSimulationState sim = new BenchSimulationState().seed("A", 2304).seed("X", 2212);
+        VMPlan plan = Bench.run(loop[0], 5000, "X", sim);
+        CpuLifecycleAssert.auto(plan);
         assertTrue(feasible(plan),
-                "X-rooted request must drive the ring, got " + dump(plan));
+                "member-root request with the re-consumed draw stocked must be feasible, got " + dump(plan));
+        assertEquals(2212, usedOf(plan, "X"), "the re-consumed root draw is job-start capital");
         assertEquals(7212, timesOf(plan, "A"), "makeIngotBy (4A->B+X) turns");
         assertEquals(2212, timesOf(plan, "B", "X"), "recycler (B+X->12A) turns");
     }
@@ -503,15 +529,13 @@ class CatalystFeedbackLoopTest {
         Bench.register(makeIngotBy);
         Bench.register(makeIngotC);
         Bench.register(recycler);
-        BenchSimulationState sim = new BenchSimulationState().seed("A", 2304).seed("Q", 50);
+        BenchSimulationState sim = new BenchSimulationState().seed("A", 5000).seed("Q", 50);
         VMPlan plan = Bench.run(recycler, 10000, sim);
-        // Faithful runtime divergence (net-stripped ring: no startup seed) — see the class note on
-        // planner-vs-runtime; AE2UEL CraftingCPUCluster :694/:265.
-        CpuLifecycleAssert.stalls(plan, "S2");
+        CpuLifecycleAssert.auto(plan);
         assertTrue(feasible(plan),
                 "ambiguous X producer must degrade gracefully, got " + dump(plan));
-        assertEquals(962, timesOf(plan, "A"), "makeIngotBy (4A->B+X) turns");
-        assertEquals(962, timesOf(plan, "B", "X"), "recycler (B+X->12A) turns");
+        assertEquals(1250, timesOf(plan, "A"), "makeIngotBy (4A->B+X) turns");
+        assertEquals(1250, timesOf(plan, "B", "X"), "recycler (B+X->12A) turns");
     }
 
     // ---- coupled rings (consumers-first solve + net write-back) ----
@@ -520,10 +544,18 @@ class CatalystFeedbackLoopTest {
     void coupledRingsShareAmplifiedDemand() {
         // ring1 (A economy: 4A->B, B+X->12A) draws X from ring2 (F economy:
         // 2F->X, X->3F). The consumers-first solve writes ring1's SOLVED X
-        // draw (962) into ring2's floor — without the write-back ring2 would
-        // size itself on the propagation's naive 834 and the plan would miss
-        // X×128. Balance: X 2884 = 1922 (makeF) + 962 (recycler); F closes
-        // exactly on its 2 stocked (2 + 3×1922 − 2×2884 = 0).
+        // draw (1250) into ring2's floor — without the write-back ring2 would
+        // size itself on the propagation's naive count. Faithful fixed point:
+        // X 3748 = 2498 (makeF) + 1250 (recycler); F closes exactly on its 2
+        // stocked (2 + 3×2498 − 2×3748 = 0); the delivery is crafted
+        // (12×1250 − 4×1250 = 10000). The global bill: A's whole draw (5000)
+        // plus F's net 2, plus ONE unit of priming capital for whichever
+        // circulating key the minimal firing order forces (B or X — the
+        // probe's tie, asserted order-independently).
+        //
+        // under the cluster's strict task-priority scheduling the priming
+        // capital bootstraps the X/F economy and the whole fold delivers —
+        // the faithful bill is all this shape ever needed.
         BenchPatternDetails makeIngot = pat("B", 1, "A", 4L);
         BenchPatternDetails recycler = patEx(new String[]{"A"}, new long[]{12}, "B", 1L, "X", 1L);
         BenchPatternDetails makeX = pat("X", 1, "F", 2L);
@@ -532,26 +564,33 @@ class CatalystFeedbackLoopTest {
         Bench.register(recycler);
         Bench.register(makeX);
         Bench.register(makeF);
-        BenchSimulationState sim = new BenchSimulationState().seed("A", 2304).seed("F", 2);
+        BenchSimulationState sim = new BenchSimulationState()
+                .seed("A", 5000).seed("B", 1).seed("X", 1).seed("F", 2);
         VMPlan plan = Bench.run(recycler, 10000, sim);
-        // Faithful runtime divergence (net-stripped ring: no startup seed) — see the class note on
-        // planner-vs-runtime; AE2UEL CraftingCPUCluster :694/:265.
-        CpuLifecycleAssert.stalls(plan, "S2");
+        CpuLifecycleAssert.auto(plan);
         assertTrue(feasible(plan),
                 "coupled rings must close on the amplified demand, got " + dump(plan));
-        assertEquals(962, timesOf(plan, "A"), "makeIngot (4A->B) turns");
-        assertEquals(962, timesOf(plan, "B", "X"), "recycler (B+X->12A) turns");
-        assertEquals(2884, timesOf(plan, "F"), "makeX (2F->X) turns");
-        assertEquals(1922, timesOf(plan, "X"), "makeF (X->3F) turns");
+        // the stocked B spares the solve one makeIngot craft (non-root member
+        // stock is round-sparing), so the root draw is 4×1249
+        assertEquals(4996, usedOf(plan, "A"), "the root's input draw is the job-start capital");
+        assertEquals(2, usedOf(plan, "F"), "F's net draw: 7496 consumed minus 7494 circulating");
+        assertTrue(usedOf(plan, "B") + usedOf(plan, "X") >= 1
+                        && usedOf(plan, "B") <= 1 && usedOf(plan, "X") <= 1,
+                "priming capital stays at unit scale across the circulating keys");
+        assertEquals(1249, timesOf(plan, "A"), "makeIngot (4A->B) turns");
+        assertEquals(1250, timesOf(plan, "B", "X"), "recycler (B+X->12A) turns");
+        // the three seeded units (B, X, F-stock) spare coupled rounds down
+        // the write-back chain: the from-below fixed point absorbs them
+        assertEquals(3745, timesOf(plan, "F"), "makeX (2F->X) turns");
+        assertEquals(2496, timesOf(plan, "X"), "makeF (X->3F) turns");
     }
 
     // ---- amplifying loop: the real-world gaia-spirit report ----
-    // 4 spirits craft 1 ingot, 1 ingot dissolves into 12 spirits; 2303 stocked,
-    // 10000 requested. The dissolving plan consumes 834 ingots whose synthesis
-    // needs 3336 more spirits: total demand 13336 vs 12331 coverable → the plan
-    // must be honest about the SPIRIT shortfall (the naive plan used to schedule dissolve-
-    // only and let the CPU report 834 missing ingots). With the shortfall covered
-    // (3400 stocked ≥ 3336 synthesis + margin) the ring is fully feasible.
+    // 4 spirits craft 1 ingot, 1 ingot dissolves into 12 spirits. The
+    // faithful plan CRAFTS the delivery (a job ignores the requested item's
+    // own stock) at the net-gain fixed point: 1250 rounds net 8 spirits each
+    // = 10000 delivered, and makeIngot's whole 4×1250 draw is job-start
+    // capital — 5000 spirits on hand, not the naive net math's 3300.
 
     @Test
     void amplifyingLoopFeasibleWithSufficientStock() {
@@ -559,44 +598,39 @@ class CatalystFeedbackLoopTest {
         for (BenchPatternDetails p : loop) {
             Bench.register(p);
         }
-        BenchSimulationState sim = new BenchSimulationState().seed("S", 3400);
+        BenchSimulationState sim = new BenchSimulationState().seed("S", 5000);
         VMPlan plan = Bench.run(loop[1], 10000, sim);
-        // Faithful runtime divergence (net-stripped ring: no startup seed) — see the class note on
-        // planner-vs-runtime; AE2UEL CraftingCPUCluster :694/:265.
-        CpuLifecycleAssert.stalls(plan, "S2");
+        CpuLifecycleAssert.auto(plan);
         assertTrue(feasible(plan),
-                "amplifying ring with sufficient spirits must be feasible, got " + dump(plan));
+                "amplifying ring with the full input draw stocked must be feasible, got " + dump(plan));
+        assertEquals(5000, usedOf(plan, "S"), "the root's gross input draw is the job-start capital");
+        assertEquals(0, usedOf(plan, "I"), "I circulates: no priming capital beyond the net draw");
         assertTrue(schedulesPatternWithInput(plan, "S"),
                 "plan must schedule the ingot-synthesis pattern ");
-        // material-minimal turns: the fixed point is solved FROM BELOW, so
-        // ample stock no longer inherits the propagation's ceil granularity —
-        // ceil((10000-3400)/8) = 825 exactly
-        assertEquals(825, timesOf(plan, "S"), "makeIngot (4S->I) turns");
-        assertEquals(825, timesOf(plan, "I"), "makeSpirit (I->12S) turns");
+        assertEquals(1250, timesOf(plan, "S"), "makeIngot (4S->I) turns");
+        assertEquals(1250, timesOf(plan, "I"), "makeSpirit (I->12S) turns");
     }
 
     @Test
     void amplifyingLoopShortfallSchedulesSynthesis() {
-        // 2303 stocked is 1025 spirits short of the balanced 834/834 plan; the
-        // the exact shortfall disclosure is the ring fixed-point's job. What
-        // the propagation guarantees is structural: the synthesis MUST be scheduled —
-        // a dissolve-only plan made the CPU stall on 834 missing ingots.
+        // 2303 stocked is honest missing capital: the faithful plan draws
+        // 5000 spirits at job start, and the shortfall must surface as
+        // missing S — never a silently under-capitalized executable plan
+        // (the original live gaia stall).
         BenchPatternDetails[] loop = amplifyingLoop();
         for (BenchPatternDetails p : loop) {
             Bench.register(p);
         }
         BenchSimulationState sim = new BenchSimulationState().seed("S", 2303);
         VMPlan plan = Bench.run(loop[1], 10000, sim);
-        // Faithful runtime divergence (net-stripped ring: no startup seed) — see the class note on
-        // planner-vs-runtime; AE2UEL CraftingCPUCluster :694/:265.
-        CpuLifecycleAssert.stalls(plan, "S2");
+        CpuLifecycleAssert.auto(plan);
+        assertFalse(feasible(plan), "under-capitalized amplifying ring must be infeasible, got " + dump(plan));
+        assertTrue(infeasibleMatches(plan, Map.of("S", 2697L)),
+                "the input-draw shortfall must be disclosed, got " + dump(plan));
         assertTrue(schedulesPatternWithInput(plan, "S"),
                 "plan must schedule the ingot-synthesis pattern ");
-        // solved balance turns: ceil((10000-2303)/8) = 963 — and ONLY the
-        // solved counts (the replayed pre-solver 834 used to double the
-        // dissolve crafts with no backed inputs)
-        assertEquals(963, timesOf(plan, "S"), "makeIngot (4S->I) turns");
-        assertEquals(963, timesOf(plan, "I"), "makeSpirit (I->12S) turns");
+        assertEquals(1250, timesOf(plan, "S"), "makeIngot (4S->I) turns");
+        assertEquals(1250, timesOf(plan, "I"), "makeSpirit (I->12S) turns");
     }
 
     @Test
@@ -607,15 +641,13 @@ class CatalystFeedbackLoopTest {
         }
         BenchSimulationState sim = new BenchSimulationState().seed("S", UNBOUNDED_STOCK);
         VMPlan plan = Bench.run(loop[1], 10000, sim);
-        // Faithful runtime divergence (idle ring: nothing scheduled, nothing arrives) — see the class note on
-        // planner-vs-runtime; AE2UEL CraftingCPUCluster :694/:265.
-        CpuLifecycleAssert.stalls(plan, "S4");
+        CpuLifecycleAssert.auto(plan);
         assertTrue(feasible(plan),
                 "unbounded-stock amplifying ring must be feasible, got " + dump(plan));
-        // the from-below solve stays at zero when stock covers the whole
-        // request: crafting nothing IS the material-minimal plan, and the
-        // idle ring plan strips the propagation's unbacked dissolve counts
-        assertTrue(plan.getPatternTimes().isEmpty(),
-                "stock-covered request must not schedule ring crafts");
+        // the delivery is CRAFTED even when stock could cover it (a job
+        // ignores the requested item's own stock) — the idle plan is gone
+        assertEquals(1250, timesOf(plan, "S"), "makeIngot (4S->I) turns");
+        assertEquals(1250, timesOf(plan, "I"), "makeSpirit (I->12S) turns");
+        assertEquals(5000, usedOf(plan, "S"), "the input draw is billed no matter how deep the stock");
     }
 }

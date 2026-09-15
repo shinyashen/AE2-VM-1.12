@@ -255,7 +255,9 @@ public final class VirtualCPUCluster {
     }
 
     public Verdict run(int maxSteps, int providerLag) {
-        int stallAfter = 2;
+        // idleness within the returns' flight time is not a stall: the CPU
+        // waits for in-flight provider returns before judging
+        int stallAfter = Math.max(2, providerLag + 1);
         int noProgress = 0;
         int step = 0;
         for (; step < maxSteps; step++) {
@@ -297,26 +299,26 @@ public final class VirtualCPUCluster {
 
         // push loop: executeCrafting :602 iterates tasks; canCraft :614;
         // extraction :694 (processing, exact, full per-craft amount);
-        // pushPattern :726; waitingFor registration :730-734
-        boolean instantThisStep = lag == 0;
+        // pushPattern :726; waitingFor registration :730-734.
+        // Scheduling shape: AE2UEL consumes its per-tick operation budget
+        // strictly IN TASK ORDER (the first craftable task absorbs the
+        // budget; later tasks only see leftovers), so the faithful limit is
+        // priority scheduling — each pass fires the tasks in map order, each
+        // repeatedly until its inputs run dry, with returns landing next pass.
         for (Map.Entry<ICraftingPatternDetails, Long> e : new LinkedHashMap<>(tasks).entrySet()) {
             long remaining = e.getValue();
-            if (remaining <= 0) {
-                continue; // :607 TaskProgress <= 0 → removed
+            while (remaining > 0 && canCraft(e.getKey())) {
+                extractInputs(e.getKey());
+                remaining--;
+                changeStamp++;
+                int due = step + Math.max(1, lag); // pushPattern :726 — the provider returns next tick // pushPattern :726 — the provider returns next tick
+                for (IAEItemStack out : outputsOf(e.getKey())) {
+                    // :730 — a successful push records EXPECTED outputs in waitingFor
+                    waitingFor.add(out, out.getStackSize());
+                    scheduleReturn(out, due);
+                }
             }
-            ICraftingPatternDetails d = e.getKey();
-            if (!canCraft(d)) {
-                continue;
-            }
-            extractInputs(d);
-            tasks.put(d, remaining - 1);
-            changeStamp++;
-            int due = instantThisStep ? step + 1 : step + Math.max(1, lag);
-            for (IAEItemStack out : outputsOf(d)) {
-                // :730 — a successful push records EXPECTED outputs in waitingFor
-                waitingFor.add(out, out.getStackSize());
-                scheduleReturn(out, due);
-            }
+            tasks.put(e.getKey(), remaining);
         }
 
         if (delivered >= finalAmount) {
