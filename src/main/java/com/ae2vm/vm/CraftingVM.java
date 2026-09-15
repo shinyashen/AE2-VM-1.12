@@ -93,6 +93,8 @@ public class CraftingVM {
      * emission floods the sandbox, so the withdrawal draws real stock only).
      */
     private final Map<IAEItemStack, BigInteger> ringStartupBill = new HashMap<>();
+    /** The probed firing order the startup bill is valid for (see buildPlan). */
+    private final List<ICraftingPatternDetails> ringTaskOrder = new ArrayList<>();
     /** Type-normalized members of every ring the solver folded this execute —
      *  the authoritative membership for the E-case: a ring member's demand is
      *  covered by the net bundle's internal flow and must never be re-scheduled
@@ -420,6 +422,7 @@ public class CraftingVM {
         ringNetBundles.clear();
         ringReleasedStock.clear();
         ringStartupBill.clear();
+        ringTaskOrder.clear();
         ICraftingPatternDetails[] pool = requestBytecode.getPatternPool();
         this.rootPattern = pool != null && pool.length > 0 ? pool[0] : null;
         this.executeStartStock = snapshotExecuteStartStock();
@@ -2419,37 +2422,25 @@ public class CraftingVM {
                 ringStartupBill.put(k, netDraw > 0 ? BigInteger.valueOf(netDraw) : BigInteger.ZERO);
             }
             RingSolver.FloorPlan floorPlan = RingSolver.startupFloors(plans,
-                    CraftingVM::perCraftInputs, CraftingVM::perCraftOutputs,
+                    CraftingVM::perCraftPrimings, CraftingVM::perCraftOutputs,
                     k -> ringStartupBill.getOrDefault(copyOf(k), BigInteger.ZERO),
                     outputKey, ringMemberKeys);
+            // ADDITIVE: a floor is EXTRA priming beyond the net draw (both
+            // serve different firings — e.g. one unit for the circulating
+            // pair's first craft plus the pair's own net draw); max() would
+            // under-bill exactly the coupled shapes.
             for (var e : floorPlan.floors().entrySet()) {
-                BigInteger cur = ringStartupBill.getOrDefault(copyOf(e.getKey()), BigInteger.ZERO);
-                if (e.getValue().compareTo(cur) > 0) ringStartupBill.put(copyOf(e.getKey()), e.getValue());
+                IAEItemStack k = copyOf(e.getKey());
+                ringStartupBill.put(k,
+                        ringStartupBill.getOrDefault(k, BigInteger.ZERO).add(e.getValue()));
             }
             ringStartupBill.values().removeIf(v -> v.signum() <= 0);
-            // Execution-aware scheduling: the floors are only valid for the
-            // FIRING ORDER that produced them, so the plan must emit that
-            // order — a real CPU consumes its per-tick budget strictly in
-            // task order, and a task sequence the probe never proved can
-            // drain the priming capital before the circulating pair closes
-            // (the coupled-ring zero-slack starvation). Ring-family tasks
-            // take the probe's winning rotation; every other task keeps its
-            // resolution order after them (their outputs feed ring inputs,
-            // covered by the net draw / on-CPU rescheduling).
-            if (floorPlan.order().size() > 1) {
-                java.util.Set<ICraftingPatternDetails> family =
-                        new java.util.HashSet<>(floorPlan.order());
-                LinkedHashMap<ICraftingPatternDetails, Long> reordered = new LinkedHashMap<>();
-                for (ICraftingPatternDetails d : floorPlan.order()) {
-                    Long v = patternTimes.get(d);
-                    if (v != null) reordered.put(d, v);
-                }
-                for (var e : patternTimes.entrySet()) {
-                    if (!family.contains(e.getKey())) reordered.put(e.getKey(), e.getValue());
-                }
-                patternTimes.clear();
-                patternTimes.putAll(reordered);
-            }
+            // Execution-aware scheduling: the floor is only valid for the
+            // FIRING ORDER that produced it, so the plan must EMIT that order.
+            // The enforcement happens in buildPlan (after the net bundles have
+            // repopulated patternTimes — at probe time the map is still empty).
+            ringTaskOrder.clear();
+            ringTaskOrder.addAll(floorPlan.order());
         }
         } catch (Throwable t) {
             // the fold is abandoned and the propagation plan stays in force;
@@ -2482,6 +2473,29 @@ public class CraftingVM {
         return in;
     }
 
+    /**
+     * Per-craft inputs INCLUDING returned/catalyst lines — the STARTUP probe's
+     * view. A catalyst nets to zero (its byproduct returns every firing), so
+     * the net draw never carries it and the plain solver view drops it; but
+     * the FIRST craft still consumes it before any return lands, so a
+     * catalyst-only pattern (pure conversion rings) must be primed with one
+     * unit of its seed — excluding it here is exactly how the seed evaporated
+     * from the bill (VM-AUDIT.md B4).
+     */
+    private static Map<IAEItemStack, BigInteger> perCraftPrimings(ICraftingPatternDetails d) {
+        Map<IAEItemStack, BigInteger> in = new HashMap<>();
+        IAEItemStack[] ins = safeCondensedInputs(d);
+        if (ins != null) {
+            for (IAEItemStack i : ins) {
+                if (i == null || i.getStackSize() <= 0) continue;
+                IAEItemStack ik = i.copy().setStackSize(1);
+                ik.reset();
+                in.merge(ik, BigInteger.valueOf(i.getStackSize()), BigInteger::add);
+            }
+        }
+        return in;
+    }
+
     /** Per-craft typed outputs of one pattern — solver view. */
     private static Map<IAEItemStack, BigInteger> perCraftOutputs(ICraftingPatternDetails d) {
         Map<IAEItemStack, BigInteger> out = new HashMap<>();
@@ -2499,6 +2513,24 @@ public class CraftingVM {
 
     private VMPlan buildPlan(BigInteger requestedAmount) {
         applyAggregation();
+        // Execution-aware scheduling (see the ring-bill block): the CPU
+        // consumes its per-tick budget strictly in task order, so the plan's
+        // task sequence IS the probed firing order — ring-family tasks first
+        // in the winning rotation, every other task after them (their outputs
+        // feed ring inputs and are covered by the net draw / rescheduling).
+        if (ringTaskOrder.size() > 1) {
+            java.util.Set<ICraftingPatternDetails> family = new java.util.HashSet<>(ringTaskOrder);
+            LinkedHashMap<ICraftingPatternDetails, Long> reordered = new LinkedHashMap<>();
+            for (ICraftingPatternDetails d : ringTaskOrder) {
+                Long v = patternTimes.get(d);
+                if (v != null) reordered.put(d, v);
+            }
+            for (var e : patternTimes.entrySet()) {
+                if (!family.contains(e.getKey())) reordered.put(e.getKey(), e.getValue());
+            }
+            patternTimes.clear();
+            patternTimes.putAll(reordered);
+        }
         // final output is delivered separately — must not duplicate in emitted
         emittedItems.remove(outputKey);
         if (!missingItems.isEmpty()) {

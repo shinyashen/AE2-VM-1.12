@@ -531,38 +531,94 @@ final class RingSolver {
      */
     static FloorPlan startupFloors(
             List<RingPlan> plans,
-            Function<ICraftingPatternDetails, Map<IAEItemStack, BigInteger>> perCraftInputs,
+            Function<ICraftingPatternDetails, Map<IAEItemStack, BigInteger>> perCraftPrimings,
             Function<ICraftingPatternDetails, Map<IAEItemStack, BigInteger>> perCraftOutputs,
             Function<IAEItemStack, BigInteger> netDrawOf,
             IAEItemStack outputKey,
             Set<IAEItemStack> members) {
-        Map<IAEItemStack, BigInteger> floor = new HashMap<>();
         // distinct ring patterns in task order with proportionally capped counts
-        List<ICraftingPatternDetails> order = new ArrayList<>();
+        List<ICraftingPatternDetails> orderBase = new ArrayList<>();
         BigInteger maxCount = BigInteger.ONE;
         for (RingPlan plan : plans) {
             for (var e : plan.patterns.entrySet()) {
                 if (e.getValue().signum() <= 0) continue;
-                if (perCraftInputs.apply(e.getKey()) == null
-                        || perCraftInputs.apply(e.getKey()).isEmpty()) continue;
-                if (!order.contains(e.getKey())) order.add(e.getKey());
+                if (perCraftPrimings.apply(e.getKey()) == null
+                        || perCraftPrimings.apply(e.getKey()).isEmpty()) continue;
+                if (!orderBase.contains(e.getKey())) orderBase.add(e.getKey());
                 if (e.getValue().compareTo(maxCount) > 0) maxCount = e.getValue();
             }
         }
-        if (order.isEmpty()) return new FloorPlan(floor, order);
+        if (orderBase.isEmpty()) return new FloorPlan(new HashMap<>(), orderBase);
         BigInteger CAP = BigInteger.valueOf(256);
-        Map<ICraftingPatternDetails, BigInteger> remaining = new HashMap<>();
+        Map<ICraftingPatternDetails, BigInteger> remaining0 = new HashMap<>();
         for (RingPlan plan : plans) {
             for (var e : plan.patterns.entrySet()) {
-                if (order.contains(e.getKey())) {
+                if (orderBase.contains(e.getKey())) {
                     BigInteger scaled = e.getValue().multiply(CAP).add(maxCount).subtract(BigInteger.ONE)
                             .divide(maxCount);
-                    remaining.put(e.getKey(), scaled.max(BigInteger.ONE));
+                    remaining0.put(e.getKey(), scaled.max(BigInteger.ONE));
                 }
             }
         }
         Map<ICraftingPatternDetails, Map<IAEItemStack, BigInteger>> insOf = new HashMap<>();
-        for (ICraftingPatternDetails d : order) insOf.put(d, perCraftInputs.apply(d));
+        for (ICraftingPatternDetails d : orderBase) insOf.put(d, perCraftPrimings.apply(d));
+
+        // FIRING-ORDER SEARCH: the floor is only meaningful for the order it
+        // was probed under, and the strict task-priority scheduler drains
+        // priming capital before a late bootstrap pair can close under some
+        // orders (the coupled-ring starvation) — so probe ROTATIONS of the
+        // task order and keep the completing one with the smallest floor.
+        // An order that hits the pass bound with crafts left is a LIVELOCK
+        // (progress elsewhere, one task starves forever): it is rejected, not
+        // floor-patched, because no finite capital boots it.
+        List<ICraftingPatternDetails> bestOrder = null;
+        Map<IAEItemStack, BigInteger> bestFloor = null;
+        BigInteger bestTotal = null;
+        int rotations = Math.min(orderBase.size(), 8);
+        for (int r = 0; r < rotations; r++) {
+            List<ICraftingPatternDetails> candidate = new ArrayList<>(orderBase.size());
+            for (int i = r; i < orderBase.size(); i++) candidate.add(orderBase.get(i));
+            for (int i = 0; i < r; i++) candidate.add(orderBase.get(i));
+            Map<IAEItemStack, BigInteger> floor = new HashMap<>();
+            if (!probeFiringOrder(candidate, new HashMap<>(remaining0), insOf,
+                    perCraftOutputs, netDrawOf, outputKey, members, floor)) {
+                continue;
+            }
+            BigInteger total = floor.values().stream()
+                    .reduce(BigInteger.ZERO, BigInteger::add);
+            if (bestTotal == null || total.compareTo(bestTotal) < 0) {
+                bestTotal = total;
+                bestOrder = candidate;
+                bestFloor = floor;
+            }
+        }
+        if (bestOrder == null) {
+            // no rotation completed within the cap: keep the given order and
+            // its best-effort floor (the fold's closure gate adjudicates)
+            Map<IAEItemStack, BigInteger> floor = new HashMap<>();
+            probeFiringOrder(orderBase, new HashMap<>(remaining0), insOf,
+                    perCraftOutputs, netDrawOf, outputKey, members, floor);
+            return new FloorPlan(floor, orderBase);
+        }
+        return new FloorPlan(bestFloor, bestOrder);
+    }
+
+    /**
+     * One priority-scheduled probe of a firing order. Returns TRUE when every
+     * pattern fired its full (capped) count — the order runs the plan; FALSE
+     * when the pass bound was hit with crafts left (a live- or deadlock this
+     * order cannot escape; the caller rejects the order). Forced deficits
+     * accumulate into {@code floor} (additive priming on top of the net draw).
+     */
+    private static boolean probeFiringOrder(
+            List<ICraftingPatternDetails> order,
+            Map<ICraftingPatternDetails, BigInteger> remaining,
+            Map<ICraftingPatternDetails, Map<IAEItemStack, BigInteger>> insOf,
+            Function<ICraftingPatternDetails, Map<IAEItemStack, BigInteger>> perCraftOutputs,
+            Function<IAEItemStack, BigInteger> netDrawOf,
+            IAEItemStack outputKey,
+            Set<IAEItemStack> members,
+            Map<IAEItemStack, BigInteger> floor) {
         Map<IAEItemStack, BigInteger> ledger = new HashMap<>();
         // passes: bounded by total capped crafts (each pass fires >= 1 craft
         // or forces); plenty for the feedback loops to flow
@@ -599,7 +655,10 @@ final class RingSolver {
                 ledger.merge(e.getKey(), e.getValue(), BigInteger::add);
             }
         }
-        return new FloorPlan(floor, order);
+        for (BigInteger v : remaining.values()) {
+            if (v.signum() > 0) return false;
+        }
+        return true;
     }
 
     /** True when every ring-member input is covered by ledger or net draw. */
