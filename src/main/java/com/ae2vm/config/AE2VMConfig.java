@@ -16,13 +16,18 @@ public class AE2VMConfig {
     public static boolean proxyEnabled = true;
 
     /**
-     * Feature gate for the incremental ring family (ring folding + the
-     * out-of-ring deficit expansion + their net-bundle hand-off). Deliberately
-     * NOT a registered config entry: shipped hard-off while the live-server
-     * issues (downstream-item stalls) are triaged. Flip to true (by edit, or
-     * via a future config entry) to re-enable the family; ring tests set it
-     * themselves.
+     * Feature gate for the ring family (ring folding + the out-of-ring
+     * deficit expansion + faithful CPU startup billing). EXPERIMENTAL: the
+     * folded plans are now billed so a real CPU can execute them, but the
+     * family ships off by default until live validation (gaia / coupled /
+     * tight-stock scenarios) passes.
      */
+    @Config.Comment({"EXPERIMENTAL: net-amplifying recipe ring folding.",
+            "The ring solver turns mutual recipe loops (e.g. 4 spirits -> 1 ingot,",
+            "1 ingot -> 12 spirits) into a single CPU-executable plan and bills",
+            "the startup inventory the CPU must withdraw. Off by default pending",
+            "live validation."})
+    @Config.RequiresMcRestart
     public static boolean ringSolverEnabled = false;
 
     // ---- diagnostics traces (design doc §4.2/§5.5) ----

@@ -11,24 +11,27 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-
-import appeng.api.storage.data.IAEItemStack;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Live-report gaia ring: 1 terrasteel + 4 spirits -> 1 gaia ingot; 1 gaia
- * ingot -> 12 spirits + 1 dice. Order 10000 spirits with 499 spirits in
- * stock. The ring folds at ceil(9501/8) = 1188 crafts of BOTH patterns; the
- * out-of-ring terrasteel demand (1188) has its own pattern, and the E-case
- * must schedule it (1188 crafts of 2-iron -> 1 T) with the gap flowing down
- * the DAG — 2376 iron missing, NOT a raw 1188-terrasteel shortfall.
+ * ingot -> 12 spirits + 1 dice. Order 10000 spirits. The delivery is CRAFTED
+ * (a real job ignores the requested item's own stock), so the ring folds at
+ * ceil(10000/8) = 1250 crafts of BOTH patterns and bills makeIngot's whole
+ * 4x1250 spirit draw as job-start capital; the out-of-ring terrasteel demand
+ * (1250) has its own pattern, and the E-case must schedule it (1250 crafts of
+ * 2-iron -> 1 T) with the gap flowing down the DAG — iron missing, NOT a raw
+ * terrasteel shortfall, and NOT the ring's own spirit capital either.
  */
 class GaiaRingLiveReproTest {
     @BeforeAll
     static void enableRingFamily() {
-        // The ring family is feature-gated off by default; these tests pin its behavior.
+        // The ring family is experimental and off by default; these tests pin its behavior.
         com.ae2vm.config.AE2VMConfig.ringSolverEnabled = true;
     }
 
@@ -55,31 +58,46 @@ class GaiaRingLiveReproTest {
 
         BenchSimulationState sim = new BenchSimulationState().seed("S", 499);
         VMPlan plan = Bench.run(craft, 10000, sim);
-        // M5 bridge: the shortfall the plan discloses (2376 iron) is exactly
-        // where the virtual CPU stalls — S2, blocked on Fe
-        CpuLifecycleAssert.stalls(plan,
-                com.ae2vm.compat.PatternCompat.getPrimaryOutput(craft), 10000, "S2");
+        CpuLifecycleAssert.auto(plan);
 
-        assertEquals(Long.valueOf(1188L), plan.getPatternTimes().get(recycle),
-                "the recycling pattern balances at the ring solution");
-        assertEquals(Long.valueOf(1188L), plan.getPatternTimes().get(craft),
-                "the crafting pattern balances at the ring solution");
-        assertEquals(Long.valueOf(1188L), plan.getPatternTimes().get(terrasteel),
+        assertEquals(Long.valueOf(1250L), plan.getPatternTimes().get(recycle),
+                "the recycling pattern folds at the crafted-delivery fixed point");
+        assertEquals(Long.valueOf(1250L), plan.getPatternTimes().get(craft),
+                "the crafting pattern folds at the crafted-delivery fixed point");
+        assertEquals(Long.valueOf(1250L), plan.getPatternTimes().get(terrasteel),
                 "the out-of-ring ingredient's own pattern must be scheduled for its deficit (E-case)");
-        Map.Entry<IAEItemStack, Long> missingEntry = null;
-        int missingKinds = 0;
+        Map<String, Long> missing = new LinkedHashMap<>();
         for (var e : plan.getMissingItems().entrySet()) {
-            missingKinds++;
-            missingEntry = e;
+            missing.put(((BenchAEItemStack) e.getKey()).id, e.getValue());
         }
-        assertEquals(1, missingKinds,
-                "only the deepest unscheduled level may be missing");
-        assertEquals("Fe", ((BenchAEItemStack) missingEntry.getKey()).id,
-                "the gap must flow down the DAG to iron, not stop at terrasteel");
-        assertEquals(2376L, (long) missingEntry.getValue(),
-                "1188 terrasteel crafts need 2376 iron");
-        // The 499 seeded spirits are consumed INSIDE the ring: the schedule is
-        // 1188 (= ceil((10000-499)/8)), not 1250 — stock awareness asserted by
-        // the craft counts above.
+        assertEquals(2, missing.size(),
+                "the spirit capital and the iron gap are the only disclosures, got " + missing);
+        assertEquals(Long.valueOf(4501L), missing.get("S"),
+                "makeIngot's whole 4x1250 draw is job-start capital; 499 stocked");
+        assertEquals(Long.valueOf(2500L), missing.get("Fe"),
+                "1250 terrasteel crafts need 2500 iron — the gap flows down the DAG");
+        assertFalse(missing.containsKey("T"),
+                "the E-case supersedes the terrasteel shortfall with its own deeper disclosure");
+    }
+
+    @Test
+    void gaiaRingCompletesWithFullCapital() throws Exception {
+        net.minecraft.init.Bootstrap.register();
+        Bench.reset();
+        BenchPatternDetails recycle = Bench.pat("I", 1, "T", 1L, "S", 4L);
+        BenchPatternDetails craft = Bench.patEx(new String[]{"S", "D"}, new long[]{12, 1}, "I", 1L);
+        BenchPatternDetails terrasteel = Bench.pat("T", 1, "Fe", 2L);
+        Bench.register(recycle);
+        Bench.register(craft);
+        Bench.register(terrasteel);
+        for (var p : Bench.PATTERNS.values()) PatternCompiler.compileIfAbsent(p);
+
+        // the whole input draw on hand: the plan must survive the virtual CPU
+        BenchSimulationState sim = new BenchSimulationState().seed("S", 5000).seed("Fe", 2500);
+        VMPlan plan = Bench.run(craft, 10000, sim);
+        CpuLifecycleAssert.auto(plan);
+        assertEquals(Long.valueOf(1250L), plan.getPatternTimes().get(recycle));
+        assertEquals(Long.valueOf(1250L), plan.getPatternTimes().get(craft));
+        assertTrue(plan.getMissingItems().isEmpty(), "nothing missing: " + plan.getMissingItems());
     }
 }

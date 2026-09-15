@@ -83,6 +83,15 @@ public class CraftingVM {
     private final Set<IAEItemStack> circularCache = new HashSet<>();
     /** Net-effect bundles produced by the ring solver, applied post-order. */
     private final List<Bundle> ringNetBundles = new ArrayList<>();
+
+    /**
+     * Faithful startup billing for folded rings (M6-B①): per member key,
+     * max(net CPU draw, priming floor) — the inventory a real CPU must
+     * withdraw at job start. Computed in {@link #solveRings}, consumed right
+     * after the released stock reservations are restored (before any ring
+     * emission floods the sandbox, so the withdrawal draws real stock only).
+     */
+    private final Map<IAEItemStack, BigInteger> ringStartupBill = new HashMap<>();
     /** Type-normalized members of every ring the solver folded this execute —
      *  the authoritative membership for the E-case: a ring member's demand is
      *  covered by the net bundle's internal flow and must never be re-scheduled
@@ -409,6 +418,7 @@ public class CraftingVM {
         jitFailCache.clear();
         ringNetBundles.clear();
         ringReleasedStock.clear();
+        ringStartupBill.clear();
         ICraftingPatternDetails[] pool = requestBytecode.getPatternPool();
         this.rootPattern = pool != null && pool.length > 0 ? pool[0] : null;
         this.executeStartStock = snapshotExecuteStartStock();
@@ -855,7 +865,12 @@ public class CraftingVM {
     /**
      * With {@code skipEmissions} the bundle's emitted is assumed already in
      * the sandbox (the two-phase net application inserts ALL rings' emissions
-     * before any extraction, so cross-ring supply is order-safe).
+     * before any extraction, so cross-ring supply is order-safe). Keys that
+     * belong to a folded ring never bill here — their draw is covered by the
+     * global startup bill (a captured downstream bundle's member draw is
+     * supplied from the CPU's own startup inventory, not the network), while
+     * a net bundle's non-member keys (fuel, E-case ingredients) keep the
+     * emergent network-shortfall billing.
      */
     private void applyBundleDirect(Bundle b, boolean skipEmissions) {
         simulation.addBytes(toBytesDouble(b.bytes));
@@ -866,16 +881,17 @@ public class CraftingVM {
         for (var e : b.seeds.entrySet()) {
             long val = toLongSafe(e.getValue(), "seed");
             if (val <= 0) continue;
+            boolean ringBilled = containsRingMember(e.getKey());
             simulation.addBytes(val); nodeCount++;
             long got = simulation.extract(e.getKey(), val, false);
-            if (got > 0) {
+            if (!ringBilled && got > 0) {
                 long internal = simInternal.get(e.getKey());
                 long fromInternal = Math.min(got, internal);
                 if (fromInternal > 0) simInternal.add(e.getKey(), -fromInternal);
                 long fromNetwork = got - fromInternal;
                 if (fromNetwork > 0) usedItems.add(e.getKey(), fromNetwork);
             }
-            if (got < val) {
+            if (!ringBilled && got < val) {
                 long remaining = val - got;
                 for (IAEItemStack variant : fuzzyFamilyOf(e.getKey())) {
                     if (variant.isSameType(e.getKey())) continue;
@@ -892,7 +908,7 @@ public class CraftingVM {
                 }
             }
             long shortfall = val - got;
-            if (shortfall > 0) missingItems.add(e.getKey(), shortfall);
+            if (shortfall > 0 && !ringBilled) missingItems.add(e.getKey(), shortfall);
         }
         if (!skipEmissions) {
             for (var e : b.emitted.entrySet()) {
@@ -903,21 +919,25 @@ public class CraftingVM {
         }
         for (var e : b.used.entrySet()) {
             long val = toLongSafe(e.getValue(), "used");
+            boolean ringBilled = containsRingMember(e.getKey());
             long got = simulation.extract(e.getKey(), val, false);
             long internal = simInternal.get(e.getKey());
             long fromInternal = Math.min(got, internal);
             if (fromInternal > 0) simInternal.add(e.getKey(), -fromInternal);
-            long fromNetwork = got - fromInternal;
-            if (fromNetwork > 0) usedItems.add(e.getKey(), fromNetwork);
-            long shortfall = val - got;
-            if (shortfall > 0) missingItems.add(e.getKey(), shortfall);
+            if (!ringBilled) {
+                long fromNetwork = got - fromInternal;
+                if (fromNetwork > 0) usedItems.add(e.getKey(), fromNetwork);
+                long shortfall = val - got;
+                if (shortfall > 0) missingItems.add(e.getKey(), shortfall);
+            }
         }
         for (var e : b.missing.entrySet()) {
             long val = toLongSafe(e.getValue(), "miss");
             if (val <= 0) continue;
+            boolean ringBilled = containsRingMember(e.getKey());
             // Realtime-verify capture-time missing against current stock.
             long got = simulation.extract(e.getKey(), val, false);
-            if (got > 0) {
+            if (!ringBilled && got > 0) {
                 long internal = simInternal.get(e.getKey());
                 long fromInternal = Math.min(got, internal);
                 if (fromInternal > 0) simInternal.add(e.getKey(), -fromInternal);
@@ -925,7 +945,7 @@ public class CraftingVM {
                 if (fromNetwork > 0) usedItems.add(e.getKey(), fromNetwork);
             }
             long shortfall = val - got;
-            if (shortfall > 0) missingItems.add(e.getKey(), shortfall);
+            if (shortfall > 0 && !ringBilled) missingItems.add(e.getKey(), shortfall);
         }
         for (var e : b.patterns.entrySet()) {
             long val = toLongSafe(e.getValue(), "pat");
@@ -1108,11 +1128,24 @@ public class CraftingVM {
             solveRings(total, itemDemand);
         }
         // the released stock reservations of stripped ring keys go back into
-        // the sandbox so the net bundles' extraction can draw them (the net
-        // draw is closure-bounded to exactly this stock)
+        // the sandbox so the startup bill can draw them (the bill is
+        // closure-bounded to exactly this stock)
         for (var e : ringReleasedStock.entrySet()) {
             simulation.insert(e.getKey(), e.getValue().longValue());
         }
+        // consume the faithful startup bill BEFORE any ring emission floods
+        // the sandbox: the withdrawal is job-start capital drawn from real
+        // stock, never from the ring's own future production
+        for (var e : ringStartupBill.entrySet()) {
+            long bill = toLongSafe(e.getValue(), "ring-bill");
+            if (bill <= 0) continue;
+            simulation.addBytes(bill);
+            nodeCount++;
+            long got = simulation.extract(e.getKey(), bill, false);
+            if (got > 0) usedItems.add(e.getKey(), got);
+            if (got < bill) missingItems.add(e.getKey(), bill - got);
+        }
+        ringStartupBill.clear();
         // two-phase application: ALL net emissions land before ANY
         // net extraction, so a downstream ring's draw can be supplied by an
         // upstream ring folded earlier in the consumers-first solve order
@@ -2305,13 +2338,20 @@ public class CraftingVM {
                 }
             };
         }, k -> BigInteger.valueOf(executeStartStock.get(k)), outputKey, this.requestAmount);
+        // gross flow accumulated across ALL folded rings — the startup bill
+        // below is global (a downstream ring's production supplies an
+        // upstream ring's draw, so per-plan netting would double-bill)
+        VMCounter grossUsed = new VMCounter();
+        VMCounter grossEmitted = new VMCounter();
+        VMCounter grossExt = new VMCounter();
         for (RingSolver.RingPlan plan : plans) {
             // the net bundle owns the ring: drop the propagation's counts so
             // applyOrdered never replays a ring member on top of the solved plan
             for (IAEItemStack rk : plan.ringKeys) {
                 total.keySet().removeIf(k -> k.isSameType(rk));
                 // release the scheduling-phase stock reservation of the
-                // superseded plan — the net bundle re-draws what it needs
+                // superseded plan — the startup bill re-draws exactly what
+                // the job must withdraw
                 BigInteger reserved = getPool(stockFromNetwork, rk);
                 if (reserved != null && reserved.signum() > 0) {
                     setPool(stockFromNetwork, rk, BigInteger.ZERO);
@@ -2327,11 +2367,21 @@ public class CraftingVM {
             }
             for (var e : plan.emitted.entrySet()) {
                 long val = toLongSafe(e.getValue(), "ring-emit");
-                if (val > 0) net.emitted.put(e.getKey(), BigInteger.valueOf(val));
+                if (val > 0) {
+                    net.emitted.put(e.getKey(), BigInteger.valueOf(val));
+                    grossEmitted.add(e.getKey(), val);
+                }
             }
             for (var e : plan.used.entrySet()) {
                 long val = toLongSafe(e.getValue(), "ring-use");
-                if (val > 0) net.used.put(e.getKey(), BigInteger.valueOf(val));
+                if (val > 0) {
+                    net.used.put(e.getKey(), BigInteger.valueOf(val));
+                    grossUsed.add(e.getKey(), val);
+                }
+            }
+            for (var e : plan.ext.entrySet()) {
+                long val = toLongSafe(e.getValue(), "ring-ext");
+                if (val > 0) grossExt.add(e.getKey(), val);
             }
             if (ringMemberKeys == null) {
                 ringMemberKeys = new HashSet<>();
@@ -2339,20 +2389,88 @@ public class CraftingVM {
             for (IAEItemStack rk : plan.ringKeys) {
                 ringMemberKeys.add(rk.copy().setStackSize(1));
             }
-            // startup seed shortfall: timing capital the network must hold
-            // before the ring's first output lands — honest missing; the
-            // ring's own production pays it back within the first round
-            for (var e : plan.seedShortfall.entrySet()) {
-                long val = toLongSafe(e.getValue(), "ring-seed");
-                if (val > 0) missingItems.add(e.getKey(), val);
-            }
             ringNetBundles.add(net);
+        }
+        if (!ringNetBundles.isEmpty()) {
+            // Faithful startup billing (M6-B①): a real CPU owns ONLY the
+            // job-start withdrawal (setJob extracts usedItems into its closed
+            // local inventory), so the plan must bill each ring MEMBER key's
+            // NET draw — gross consumption minus production that returns to
+            // the inventory (everything but the delivered final output) —
+            // plus the priming floor for keys whose production merely
+            // circulates. Billing the gross `used` instead would net the
+            // ring's own emission flood against the withdrawal and starve
+            // the CPU at t=0 (the original live gaia stall). Non-member
+            // inputs of ring patterns (fuel, E-case ingredients) stay on the
+            // emergent extraction path: the rescheduled producer covers them
+            // on-CPU, so charging them here would double-report.
+            for (VMCounter c : new VMCounter[]{grossUsed, grossEmitted, grossExt}) {
+                for (IAEItemStack k : c.keys()) {
+                    if (containsRingMember(k)) {
+                        ringStartupBill.put(copyOf(k), BigInteger.ZERO); // key seeding
+                    }
+                }
+            }
+            for (IAEItemStack k : new ArrayList<>(ringStartupBill.keySet())) {
+                boolean root = k.isSameType(outputKey);
+                long netDraw = grossExt.get(k) + grossUsed.get(k)
+                        - (root ? 0L : grossEmitted.get(k));
+                ringStartupBill.put(k, netDraw > 0 ? BigInteger.valueOf(netDraw) : BigInteger.ZERO);
+            }
+            Map<IAEItemStack, BigInteger> floors = RingSolver.startupFloors(plans,
+                    CraftingVM::perCraftInputs, CraftingVM::perCraftOutputs,
+                    k -> ringStartupBill.getOrDefault(copyOf(k), BigInteger.ZERO),
+                    outputKey, ringMemberKeys);
+            for (var e : floors.entrySet()) {
+                BigInteger cur = ringStartupBill.getOrDefault(copyOf(e.getKey()), BigInteger.ZERO);
+                if (e.getValue().compareTo(cur) > 0) ringStartupBill.put(copyOf(e.getKey()), e.getValue());
+            }
+            ringStartupBill.values().removeIf(v -> v.signum() <= 0);
         }
         } catch (Throwable t) {
             // the fold is abandoned and the propagation plan stays in force;
             // the failure must be visible — a silent catch hid solver bugs before
             Log.LOG.warn("[AE2-VM] ring solver failed; falling back to the propagation plan", t);
         }
+    }
+
+    /** Same-type lookup key for the startup bill map. */
+    private static IAEItemStack copyOf(IAEItemStack k) {
+        IAEItemStack c = k.copy();
+        c.reset();
+        c.setStackSize(1);
+        return c;
+    }
+
+    /** Per-craft typed inputs of one pattern (returned inputs excluded) — solver view. */
+    private static Map<IAEItemStack, BigInteger> perCraftInputs(ICraftingPatternDetails d) {
+        Map<IAEItemStack, BigInteger> in = new HashMap<>();
+        IAEItemStack[] ins = safeCondensedInputs(d);
+        if (ins != null) {
+            for (IAEItemStack i : ins) {
+                if (i == null || i.getStackSize() <= 0) continue;
+                if (PatternCompiler.detectReturnedInput(d, i) != null) continue;
+                IAEItemStack ik = i.copy().setStackSize(1);
+                ik.reset();
+                in.merge(ik, BigInteger.valueOf(i.getStackSize()), BigInteger::add);
+            }
+        }
+        return in;
+    }
+
+    /** Per-craft typed outputs of one pattern — solver view. */
+    private static Map<IAEItemStack, BigInteger> perCraftOutputs(ICraftingPatternDetails d) {
+        Map<IAEItemStack, BigInteger> out = new HashMap<>();
+        IAEItemStack[] outs = safeOutputs(d);
+        if (outs != null) {
+            for (IAEItemStack o : outs) {
+                if (o == null || o.getStackSize() <= 0) continue;
+                IAEItemStack ok = o.copy().setStackSize(1);
+                ok.reset();
+                out.merge(ok, BigInteger.valueOf(o.getStackSize()), BigInteger::add);
+            }
+        }
+        return out;
     }
 
     private VMPlan buildPlan(BigInteger requestedAmount) {
