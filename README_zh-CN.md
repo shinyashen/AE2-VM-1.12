@@ -21,6 +21,7 @@
 - **净放大合成环**:互为投入产出、每轮净增产出的环形配方自动检测、代数求解至物料最小轮数并折叠为单一计划;副产物中间键、环外原料、副产物直接下单、跨环耦合等形态全部覆盖,启动垫资单独精确披露
   **当前版本已禁用**——部分整合包中,合成路径包含环产物的物品下单可能导致合成 CPU 卡死,1.1.1 起环家族默认关闭;问题定位修复后将以配置开关的形式回归,其余规划能力(库存感知、副产物路由、催化剂环)不受影响。
 - **守卫体系**:死环提前剪除;样板变更后缓存立即失效;缓存的计划先与当前库存复核再放行;求解方案须实测确认更优方可采纳——性能优化不以牺牲正确性为代价
+- **内置诊断**:按需录制订单轨迹(`/ae2vm trace`),自动伪名化脱敏,轨迹带哈希链防篡改;内置忠实复刻 AE2UEL 合成 CPU 的离线模拟器,可对停摆分类(S1/S2/S4)并给出逐输入证据。详见 wiki([诊断追踪与重放](https://github.com/shinyashen/AE2-VM-1.12/wiki/Diagnostics))
 - **多样板分配求解**:同一产物存在多条样板时自动求解最优配比(如 5 次合成 = 4×样板A + 1×样板B)——上游自 v1.9.6 起唯一遗留的误报场景就此关闭
 - **兼容性**:AE2FC 流体样板、AE2CT 合成预览、第三方缩放样板包装即插即用;VM 无法处理的请求自动回退原版逻辑
 
@@ -54,6 +55,7 @@
 | [功能明细](https://github.com/shinyashen/AE2-VM-1.12/wiki/Features) | 全部已移植功能的机制说明 |
 | [架构与设计](https://github.com/shinyashen/AE2-VM-1.12/wiki/Architecture) | 根节点替换、字节码、JIT 缓存、守卫体系 |
 | [多样板分配求解器](https://github.com/shinyashen/AE2-VM-1.12/wiki/MultiPatternSolver) | 枚举 + 局部搜索 + 虚拟样板 |
+| [诊断追踪与重放](https://github.com/shinyashen/AE2-VM-1.12/wiki/Diagnostics) | 轨迹录制、取证报障、CPU 模拟判定 |
 | [性能](https://github.com/shinyashen/AE2-VM-1.12/wiki/Performance) | 测量方法、历轮优化、发版自动基准 |
 | [测试](https://github.com/shinyashen/AE2-VM-1.12/wiki/Testing) | 209 项测试与对拍方法论 |
 | [差异与路线](https://github.com/shinyashen/AE2-VM-1.12/wiki/Differences-and-Roadmap) | 与原版的刻意差异、语义缺口状态 |

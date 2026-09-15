@@ -22,6 +22,7 @@ Crafting requests that stall the vanilla planner for minutes — deeply nested, 
   **Currently disabled** — the ring family ships switched off in 1.1.1: on some modpacks, ordering an item whose recipe path contains a ring product could stall the crafting CPU. It will return behind a config toggle once the cause is fixed; all other planning (stock-aware propagation, byproduct routing, catalyst loops) is unaffected.
 - **Guards everywhere** — dead-cycle pre-pruning, composite-key JIT cache against stale patterns, plan memoization re-verified against live stock, and a solver confirmation gate that can never make a plan worse
 - **Multi-pattern assignment solver** — when one output has several patterns, mixed splits (5 crafts = 4×A + 1×B) are solved algebraically and encoded as a virtual pattern; this closed upstream's only remaining false-positive (carried since v1.9.6)
+- **Diagnostics built in** — opt-in job tracing (`/ae2vm trace`), automatic item pseudonymization, hash-chained trace files, and a faithful offline crafting-CPU simulator that classifies stalls (S1/S2/S4) with per-input evidence. See the wiki ([Diagnostics](https://github.com/shinyashen/AE2-VM-1.12/wiki/Diagnostics-en))
 - **Compatibility** — AE2FC fluid patterns, AE2CT display trees, third-party scaled-pattern wrappers, with automatic fallback to the vanilla tree if the VM can't handle a request
 
 Full details: [Features](https://github.com/shinyashen/AE2-VM-1.12/wiki/Features-en) · [Architecture](https://github.com/shinyashen/AE2-VM-1.12/wiki/Architecture-en) · [Multi-pattern solver](https://github.com/shinyashen/AE2-VM-1.12/wiki/MultiPatternSolver-en)
@@ -54,6 +55,7 @@ The [wiki](https://github.com/shinyashen/AE2-VM-1.12/wiki/Home-en) carries the f
 | [Features](https://github.com/shinyashen/AE2-VM-1.12/wiki/Features-en) | Every ported feature and how it works |
 | [Architecture](https://github.com/shinyashen/AE2-VM-1.12/wiki/Architecture-en) | Root-node replacement, bytecode, JIT cache, guard system |
 | [Multi-pattern solver](https://github.com/shinyashen/AE2-VM-1.12/wiki/MultiPatternSolver-en) | Enumeration + local search + virtual patterns |
+| [Diagnostics](https://github.com/shinyashen/AE2-VM-1.12/wiki/Diagnostics-en) | Trace recording, evidence reporting, CPU simulation verdicts |
 | [Performance](https://github.com/shinyashen/AE2-VM-1.12/wiki/Performance-en) | Methodology, optimization history, per-release benchmarks |
 | [Testing](https://github.com/shinyashen/AE2-VM-1.12/wiki/Testing-en) | 209 tests and the differential-testing methodology |
 | [Differences & roadmap](https://github.com/shinyashen/AE2-VM-1.12/wiki/Differences-and-Roadmap-en) | Deliberate deviations from upstream, gap status |
