@@ -12,7 +12,6 @@ import com.ae2vm.api.AE2VMCrafting;
 import com.ae2vm.api.AE2VMCraftingRegistry;
 import com.ae2vm.config.AE2VMConfig;
 import com.ae2vm.trace.TraceRecorder;
-import com.ae2vm.trace.TraceSegment;
 import com.ae2vm.trace.TraceSessions;
 import com.ae2vm.vm.VMPlan;
 import net.minecraft.world.World;

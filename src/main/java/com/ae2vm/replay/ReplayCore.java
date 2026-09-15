@@ -32,7 +32,7 @@ import java.util.Map;
  *
  * <p>Everything here is deterministic by construction: no wall clock, no
  * randomness, no network — the same trace through the same jar produces
- * byte-identical output (M4 gate).
+ * byte-identical output.
  */
 public final class ReplayCore {
 
@@ -63,7 +63,7 @@ public final class ReplayCore {
     /** Same, with the CPU-lifecycle simulation skippable. */
     public static Report replay(TraceFile trace, boolean simulate) {
         if (trace.bytecode == null) {
-            throw new IllegalArgumentException("trace has no embedded bytecode (recorded before M4?)");
+            throw new IllegalArgumentException("trace has no embedded bytecode (recorded before sub-pattern embedding?)");
         }
         HeadlessStackFactory factory = new HeadlessStackFactory();
 
@@ -186,7 +186,7 @@ public final class ReplayCore {
                              Map<ICraftingPatternDetails, Integer> patternIndices) {
         List<String> diffs = new ArrayList<>();
         if (recorded == null) {
-            diffs.add("recorded plan absent (pre-M4 trace)");
+            diffs.add("recorded plan absent (trace without an embedded plan)");
             return diffs;
         }
         diffMaps("used", toTokenMap(recorded.used), toSpecMap(replayed.getUsedItems(), factory), diffs);

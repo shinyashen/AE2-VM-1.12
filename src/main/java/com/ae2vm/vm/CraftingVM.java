@@ -6,7 +6,6 @@ import appeng.api.networking.crafting.ICraftingPatternDetails;
 import appeng.api.storage.channels.IItemStorageChannel;
 import appeng.api.storage.data.IAEItemStack;
 import appeng.api.storage.data.IItemList;
-import com.ae2vm.AE2VM;
 import com.ae2vm.compiler.PatternCompiler;
 
 import java.math.BigInteger;
@@ -36,7 +35,7 @@ import com.ae2vm.Log;
  *    O(patterns) demand propagation in applyAggregation.
  * 3) Recursion (A+B→2A), catalyst feedback loops, pure conversion rings and
  *    fuzzy substitution groups receive closed-form corrections identical to
- *    the original v1.10.x semantics (the upstream durability-tool amortization
+ *    the original semantics (the upstream durability-tool amortization
  *    is NOT ported: the AE2UEL CPU cannot re-consume worn returns).
  *
  * 1.12 port notes: AEKey → IAEItemStack (type-equality keys), KeyCounter →
@@ -661,7 +660,7 @@ public class CraftingVM {
                             }
                         } else if (PatternCompiler.isProcessingInput(tk)) {
                             // Processing exact slot: same-item NBT variants count —
-                            // NEVER the cross-item replacement group (v1.10.5).
+                            // NEVER the cross-item replacement group.
                             for (IAEItemStack v : nbtFamilyOf(tk)) {
                                 if (v.isSameType(tk)) continue;
                                 availSim += simulation.extract(v, req, true);
@@ -916,7 +915,7 @@ public class CraftingVM {
         for (var e : b.missing.entrySet()) {
             long val = toLongSafe(e.getValue(), "miss");
             if (val <= 0) continue;
-            // Realtime-verify capture-time missing against current stock (v1.9.11).
+            // Realtime-verify capture-time missing against current stock.
             long got = simulation.extract(e.getKey(), val, false);
             if (got > 0) {
                 long internal = simInternal.get(e.getKey());
@@ -1002,7 +1001,7 @@ public class CraftingVM {
                         missingItems.add(c, toLongSafe(demand, "agg-miss"));
                     } else {
                         long opc = outputPerCraftOf(c, cArr[0]);
-                        // STOCK-AWARE SUB-CRAFT with EXACT-vs-FUZZY slot split (v1.10.x).
+                        // STOCK-AWARE SUB-CRAFT with EXACT-vs-FUZZY slot split.
                         Set<IAEItemStack> replacementGroup = PatternCompiler.getFuzzyGroup(c);
                         boolean hasReplacement = replacementGroup.size() > 1;
                         long primaryStock = realStockOf(c);
@@ -1968,7 +1967,7 @@ public class CraftingVM {
 
     /**
      * Same-item SAME-dAMAGE NBT variants present in the network stock — the
-     * PROCESSING default fuzzy family (v1.10.x: usable by ANY processing slot,
+     * PROCESSING default fuzzy family (usable by ANY processing slot,
      * unlike the compile-time replacement group which only applies to
      * replacement-enabled slots). Damage variants are a different item in 1.12.
      */
@@ -2257,7 +2256,7 @@ public class CraftingVM {
         plans = RingSolver.solve(total, itemDemand, k -> {
             ICraftingPatternDetails d = patternResolver != null ? patternResolver.apply(k) : null;
             if (d == null) {
-                // T4 byproduct fallback: SOLVER-VIEW ONLY. A key
+                // Byproduct fallback: SOLVER-VIEW ONLY. A key
                 // with no primary producer but exactly one any-slot producer
                 // joins the ring graph through that pattern — the folded net
                 // bundle then covers its production and consumption itself.

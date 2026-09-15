@@ -48,7 +48,7 @@ import java.util.function.Function;
  *   false missing. When the plan reports the requested key as missing, check
  *   the real network stock and shift the stocked amount from missing to used;
  *   a fully corrected plan becomes executable (simulation = false).
- * - resolver T1/T3: exact key first, then a registry-pure key (no NBT, damage 0)
+ * - resolver ladder: exact key first, then a registry-pure key (no NBT, damage 0)
  *   verified against the pattern's actual primary output. (The original's
  *   T2 "drop secondary" is a 1.21 AEKey concept; on 1.12 the canonical drop
  *   form already IS the normalized key.)
@@ -350,7 +350,7 @@ public final class AE2VMCrafting {
     }
 
     /**
-     * ignore-fix (v1.10.x parity): correct a simulated plan's requested-key
+     * ignore-fix: correct a simulated plan's requested-key
      * missing against the LIVE network stock.
      */
     private static VMPlan applyIgnoreFix(IGrid grid, IAEItemStack what, VMPlan rawPlan) {
@@ -419,9 +419,10 @@ public final class AE2VMCrafting {
     }
 
     /**
-     * T1/T3 resolver. T1 exact key; T3 registry-pure key (no NBT, damage 0)
-     * verified against the pattern's actual primary output — chain sub-patterns
-     * with NBT variants (appflux cores, Fibonacci chains) resolve through T3.
+     * Two-step resolver. Step one is the exact key; step two is a
+     * registry-pure key (no NBT, damage 0) verified against the pattern's
+     * actual primary output — chain sub-patterns with NBT variants (appflux
+     * cores, Fibonacci chains) resolve through it.
      * Every result is verified to actually output the requested key.
      *
      * <p>Multi-pattern choice repair: a preference for the key (set by the
@@ -459,7 +460,7 @@ public final class AE2VMCrafting {
             }
             return forced;
         }
-        // T1: exact match.
+        // Exact match.
         Collection<ICraftingPatternDetails> subs = craftingGrid.getCraftingFor(key, null, -1, world);
         if (subs != null && !subs.isEmpty()) {
             // (CYCLE-AWARE) Drop candidates whose inputs would close a DEAD ring
@@ -475,14 +476,14 @@ public final class AE2VMCrafting {
             ICraftingPatternDetails sub = pickBestPattern(viable, key);
             record.record(key, sub, verifiedCandidates(viable, key));
             if (rec != null) {
-                rec.patternResolved(key, "T1-exact", sub, viable.size());
+                rec.patternResolved(key, "exact", sub, viable.size());
             }
             PatternCompiler.compileIfAbsent(sub);
             cache.put(key, sub);
             return sub;
         }
 
-        // T2.5: substitution-group variants. The slot may accept a
+        // Substitution-group variants. The slot may accept a
         // variant that is CRAFTABLE while the exact key itself is neither
         // stocked nor craftable — schedule the variant's craft and let the
         // fuzzy slot consume its output. (Upstream fixed the same gap in its
@@ -502,7 +503,7 @@ public final class AE2VMCrafting {
                 if (sub != null && patternOutputs(sub, variant)) {
                     record.record(key, sub, verifiedCandidates(vsubs, variant));
                     if (rec != null) {
-                        rec.patternResolved(key, "T2.5-variant", sub, vsubs.size());
+                        rec.patternResolved(key, "substitute-variant", sub, vsubs.size());
                     }
                     PatternCompiler.compileIfAbsent(sub);
                     cache.put(key, sub);
@@ -532,7 +533,7 @@ public final class AE2VMCrafting {
             }
         }
 
-        // T3: registry-pure key (same item, no NBT, damage 0) — verified.
+        // Registry-pure key (same item, no NBT, damage 0) — verified.
         try {
             Item item = key.getItem();
             if (item != null) {
@@ -545,7 +546,7 @@ public final class AE2VMCrafting {
                         if (sub != null && patternOutputs(sub, key)) {
                             record.record(key, sub, verifiedCandidates(subs, key));
                             if (rec != null) {
-                                rec.patternResolved(key, "T3-registry-pure", sub, subs.size());
+                                rec.patternResolved(key, "registry-pure", sub, subs.size());
                             }
                             PatternCompiler.compileIfAbsent(sub);
                             cache.put(key, sub);

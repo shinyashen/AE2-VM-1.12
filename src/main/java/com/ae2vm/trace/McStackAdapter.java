@@ -5,7 +5,6 @@ import appeng.util.item.AEItemStack;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.JsonToNBT;
-import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.util.ResourceLocation;
 
 /**
@@ -13,7 +12,7 @@ import net.minecraft.util.ResourceLocation;
  * identities. AE2FC fluid fake drops need no special case here — they
  * are recorded as their item identity (FluidDrop item + FluidName NBT),
  * which is lossless at the VM level where drops ARE items; the 'f' spec
- * kind is reserved for the fluid storage channel (M1 snapshot).
+ * kind is reserved for the fluid storage channel.
  */
 public final class McStackAdapter {
 

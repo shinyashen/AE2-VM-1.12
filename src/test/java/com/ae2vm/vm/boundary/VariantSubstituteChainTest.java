@@ -57,7 +57,7 @@ class VariantSubstituteChainTest {
 
     // ------------------------------------------------------------------
     // 1. A fuzzy-slot substitute with no stock but its own pattern must be
-    //    crafted to satisfy the slot (fixed via the resolver's T2.5
+    //    crafted to satisfy the slot (fixed via the resolver's substitution-group
     //    substitution-group fallback — same layer the upstream fix targets).
     // ------------------------------------------------------------------
 
@@ -74,7 +74,7 @@ class VariantSubstituteChainTest {
         view.put(k("white"), white);
         PatternCompiler.compileIfAbsent(comp);
         PatternCompiler.compileIfAbsent(white);
-        // Resolver with the T2.5 substitution-group fallback (mirrors the
+        // Resolver with the substitution-group fallback (mirrors the
         // production resolve()): the exact key resolves to nothing, but a
         // CRAFTABLE substitute variant's pattern is returned so the VM
         // schedules its sub-chain.

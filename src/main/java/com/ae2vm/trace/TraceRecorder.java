@@ -2,7 +2,6 @@ package com.ae2vm.trace;
 
 import appeng.api.networking.security.IActionSource;
 import appeng.api.storage.data.IAEItemStack;
-import com.ae2vm.AE2VM;
 import com.ae2vm.vm.CraftingBytecode;
 import com.ae2vm.vm.NetworkCraftingSandbox;
 import com.ae2vm.vm.VMPlan;

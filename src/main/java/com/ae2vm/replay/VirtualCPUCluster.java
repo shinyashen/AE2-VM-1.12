@@ -28,7 +28,7 @@ import java.util.Map;
  *       {@code finalOutput} are delivered (:265 dec finalOutput) and never
  *       enter {@code inventory}; everything else awaited goes to inventory
  *       (:284/:314). Amounts beyond the waitingFor entry are rejected.</li>
- *   <li><b>Consequence (the M5 finding):</b> a plan whose final output is
+ *   <li><b>Consequence (a faithful-simulation finding):</b> a plan whose final output is
  *       also an intermediate its own schedule re-consumes cannot execute —
  *       the produced units are delivered, not circulated, so the consumer
  *       starves on inventory once the pre-extracted seed runs dry. The same

@@ -1,6 +1,5 @@
 package com.ae2vm.trace;
 
-import com.ae2vm.AE2VM;
 import io.netty.buffer.ByteBuf;
 import net.minecraft.command.ICommandSender;
 import net.minecraft.entity.player.EntityPlayerMP;

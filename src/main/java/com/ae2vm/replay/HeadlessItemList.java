@@ -22,7 +22,7 @@ import net.minecraft.item.Item;
  * <ul>
  *   <li>{@code add}/{@code findPrecise} — value-equality merge
  *       (item + damage + NBT, i.e. full stack identity);</li>
- *   <li>{@code findFuzzy(IGNORE_ALL)} — the family boundary fixed in M1:
+ *   <li>{@code findFuzzy(IGNORE_ALL)} — the fuzzy family boundary:
  *       SAME item + SAME damage, NBT variants only, key included,
  *       insertion order (deterministic — no Platform comparator).</li>
  * </ul>

@@ -8,7 +8,7 @@ package com.ae2vm.trace;
  * <p>AE2FC fluid fake drops are recorded as their item identity (the
  * FluidDrop item + FluidName NBT) — lossless at the VM level, where drops
  * ARE items; the 'f' kind of {@link StackSpec} is reserved for the fluid
- * storage channel (M1 snapshot work).
+ * storage channel .
  */
 public final class StackIdentity {
 

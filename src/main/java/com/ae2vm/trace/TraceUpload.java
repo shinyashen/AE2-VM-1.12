@@ -1,6 +1,5 @@
 package com.ae2vm.trace;
 
-import com.ae2vm.AE2VM;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import net.minecraft.command.ICommandSender;

@@ -3,7 +3,6 @@ package com.ae2vm.trace;
 import appeng.api.networking.IGrid;
 import appeng.api.networking.security.IActionSource;
 import appeng.api.storage.data.IAEItemStack;
-import com.ae2vm.AE2VM;
 import com.ae2vm.config.AE2VMConfig;
 
 import java.io.IOException;

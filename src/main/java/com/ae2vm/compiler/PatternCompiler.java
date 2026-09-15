@@ -54,7 +54,7 @@ public final class PatternCompiler {
             new ConcurrentHashMap<>();
 
     /**
-     * T4 byproduct fallback index: output key → the patterns producing it in
+     * Byproduct fallback index: output key → the patterns producing it in
      * ANY output slot. A key with no PRIMARY producer resolves
      * through here while exactly one known pattern produces it — a byproduct
      * intermediate of a ring. Two or more producers is the multi-pattern
@@ -197,7 +197,7 @@ public final class PatternCompiler {
             COMPILED_PATTERNS.computeIfAbsent(pattern, PatternCompiler::compilePattern);
         }
         if (pattern != null) {
-            indexAnyOutput(pattern); // T4 byproduct fallback index (idempotent)
+            indexAnyOutput(pattern); // byproduct fallback index (idempotent)
         }
     }
 
@@ -534,7 +534,7 @@ public final class PatternCompiler {
                 builder.emitPushLong(perCraft);
                 builder.emit(Opcode.MUL);
                 // Always schedule the sub-craft with the FULL per-craft need BEFORE
-                // consuming stock (the v1.8.18 false-missing fix).
+                // consuming stock (prevents false-missing reports).
                 builder.emit(Opcode.DUP);
                 if (fuzzy) {
                     builder.emitFuzzySlot();

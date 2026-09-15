@@ -421,9 +421,9 @@ class CatalystFeedbackLoopTest {
         assertEquals(10, timesOf(plan, "I", "R"), "makeWidget (2I+R->W) turns");
     }
 
-    // ---- rings routed THROUGH a byproduct-only intermediate key (T4) ----
+    // ---- rings routed THROUGH a byproduct-only intermediate key ----
     // X exists only as makeIngotBy's byproduct (no pattern is primarily X):
-    // the resolver's T4 fallback hands the solver the intermediate, and the
+    // the resolver's byproduct fallback hands the solver the intermediate, and the
     // pattern-level variables count makeIngotBy ONCE per round (key-level
     // variables would double-count it under B and X).
 
@@ -471,7 +471,7 @@ class CatalystFeedbackLoopTest {
 
     @Test
     void byproductIntermediateRootDrivesRing() {
-        // Ordering the intermediate X directly: X is a ring MEMBER under T4,
+        // Ordering the intermediate X directly: X is a ring MEMBER,
         // so the request is a member-root delivery — the solve closes at
         // makeIngot ×7212 / recycler ×2212 (A stock fully spent: 2304 +
         // 12×2212 − 4×7212 = 0) delivering exactly 5000 X.
@@ -492,7 +492,7 @@ class CatalystFeedbackLoopTest {
 
     @Test
     void byproductIntermediateAmbiguousProducerDegradesGracefully() {
-        // X produced by TWO patterns: the T4 index resolves to nothing (the
+        // X produced by TWO patterns: the byproduct index resolves to nothing (the
         // multi-pattern choice domain), so X degrades to external-byproduct
         // semantics — the ring solves without X as a member, and X being
         // internally balanced (produced = consumed by the recycler) keeps the

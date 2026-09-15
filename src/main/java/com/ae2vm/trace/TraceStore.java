@@ -1,6 +1,5 @@
 package com.ae2vm.trace;
 
-import com.ae2vm.AE2VM;
 import com.ae2vm.config.AE2VMConfig;
 import net.minecraftforge.fml.common.FMLCommonHandler;
 
@@ -15,7 +14,7 @@ import com.ae2vm.Log;
 /**
  * Trace file home and retention (design doc §5.5): files live under
  * {@code aevm/traces} under the running server's game dir; retention is LAZY —
- * enforced on every write and (M2) on server start — never by a background
+ * enforced on every write and on server start — never by a background
  * task. {@code vault.json} lives one level up and is never touched by
  * retention.
  */

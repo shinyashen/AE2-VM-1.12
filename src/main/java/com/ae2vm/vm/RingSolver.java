@@ -276,7 +276,7 @@ final class RingSolver {
             }
         }
         // per member key: its own pattern's per-craft output of that key (the
-        // resolver — primary or T4-unique — guarantees the pattern outputs it).
+        // resolver — primary or byproduct-unique — guarantees the pattern outputs it).
         Map<IAEItemStack, BigInteger> producerOut = new HashMap<>();
         for (IAEItemStack k : scc) {
             BigInteger outPer = BigInteger.ZERO;

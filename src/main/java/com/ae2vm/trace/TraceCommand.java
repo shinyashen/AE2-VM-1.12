@@ -1,6 +1,5 @@
 package com.ae2vm.trace;
 
-import com.ae2vm.AE2VM;
 import com.ae2vm.config.AE2VMConfig;
 import net.minecraft.command.CommandBase;
 import net.minecraft.command.CommandException;
@@ -335,7 +334,7 @@ public final class TraceCommand extends CommandBase {
     }
 
     // ------------------------------------------------------------------
-    // upload / download (M2)
+    // upload / download
 
     private void upload(MinecraftServer server, ICommandSender sender, String idPart)
             throws CommandException, PlayerNotFoundException {
