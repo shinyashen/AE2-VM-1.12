@@ -18,7 +18,7 @@ import java.util.Map;
  * The watchdog fingerprints each CPU per tick (task count + waitingFor
  * summary); when the fingerprint holds for {@code stallWatchdogTicks}
  * ticks with a non-empty waitingFor, the CPU's NBT is dumped once per
- * episode into {@code logs/aevm/} — the evidence for stall shapes no
+ * episode into {@code aevm/} under the server game dir — the evidence for stall shapes no
  * bench can reproduce.
  */
 public final class StallWatchdog {
@@ -81,7 +81,7 @@ public final class StallWatchdog {
             if (root == null) {
                 return;
             }
-            Path dir = root.resolve("logs").resolve("aevm");
+            Path dir = root.resolve("aevm");
             Files.createDirectories(dir);
             String name = "stall-" + STAMP.format(new Date())
                     + "-" + Integer.toHexString(System.identityHashCode(cluster)) + ".nbt";

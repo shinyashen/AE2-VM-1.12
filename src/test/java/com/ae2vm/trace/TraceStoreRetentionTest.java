@@ -31,7 +31,7 @@ class TraceStoreRetentionTest {
         Path oldest = writeTrace("trace-a.aevmtrace.json.gz");
         Path middle = writeTrace("trace-b.aevmtrace.json.gz");
         Path newest = writeTrace("trace-c.aevmtrace.json.gz");
-        // the real vault lives in logs/aevm/ (outside traces/); a stray file
+        // the real vault lives in aevm/ (outside traces/); a stray file
         // here stands in for "anything that is not a trace must survive"
         Path vault = dir.resolve("vault.json");
         Files.write(vault, new byte[]{9});

@@ -31,10 +31,10 @@ public class AE2VMConfig {
             "Oldest events are dropped first and the trace is marked truncated."})
     public static int traceSessionEventCap = 100000;
 
-    @Config.Comment("Maximum number of trace files kept under logs/aevm/traces (oldest deleted first).")
+    @Config.Comment("Maximum number of trace files kept under <server dir>/aevm/traces (oldest deleted first).")
     public static int traceRetentionCount = 20;
 
-    @Config.Comment("Maximum total size in bytes of trace files under logs/aevm/traces.")
+    @Config.Comment("Maximum total size in bytes of trace files under <server dir>/aevm/traces.")
     public static long traceRetentionMaxBytes = 104857600L;
 
     @Config.Comment({"Chat language for trace command feedback.", "en_us or zh_cn."})
@@ -46,7 +46,7 @@ public class AE2VMConfig {
 
     @Config.Comment({"Stall watchdog: when a crafting CPU's state is unchanged",
             "for this many ticks with a non-empty waitingFor, its NBT is dumped",
-            "to logs/aevm/ for diagnostics. 0 = off (default)."})
+            "to <server dir>/aevm/ for diagnostics. 0 = off (default)."})
     public static int stallWatchdogTicks = 0;
 
     @Mod.EventBusSubscriber(modid = "ae2_vm_112")

@@ -13,7 +13,7 @@ import java.util.stream.Stream;
 
 /**
  * Trace file home and retention (design doc §5.5): files live under
- * {@code logs/aevm/traces} of the running server; retention is LAZY —
+ * {@code aevm/traces} under the running server's game dir; retention is LAZY —
  * enforced on every write and (M2) on server start — never by a background
  * task. {@code vault.json} lives one level up and is never touched by
  * retention.
@@ -36,7 +36,7 @@ public final class TraceStore {
 
     public static Path vaultFile() {
         Path root = serverRoot();
-        return root == null ? null : root.resolve("logs").resolve("aevm").resolve("vault.json");
+        return root == null ? null : root.resolve("aevm").resolve("vault.json");
     }
 
     public static synchronized Path tracesDir() {
@@ -44,7 +44,7 @@ public final class TraceStore {
         if (root == null) {
             return null;
         }
-        Path dir = root.resolve("logs").resolve("aevm").resolve("traces");
+        Path dir = root.resolve("aevm").resolve("traces");
         try {
             Files.createDirectories(dir);
         } catch (IOException e) {

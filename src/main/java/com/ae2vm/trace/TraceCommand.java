@@ -454,6 +454,9 @@ public final class TraceCommand extends CommandBase {
         if (args.length == 3 && "record".equals(args[1])) {
             return getListOfStringsMatchingLastWord(args, "next", "on", "off");
         }
+        if (args.length == 3 && "list".equals(args[1]) && isOp(sender)) {
+            return getListOfStringsMatchingLastWord(args, "all");
+        }
         return java.util.Collections.emptyList();
     }
 }
