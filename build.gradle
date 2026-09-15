@@ -300,6 +300,11 @@ test {
     systemProperty 'ae2vm.gate.shim', sourceSets.shim.output.classesDirs.asPath
     systemProperty 'ae2vm.gate.gson', gateGsonJar
     useJUnitPlatform()
+    // a fresh JVM per test class: the compilers' static registries
+    // (fuzzy groups / processing inputs / byproduct producers) are keyed by
+    // content, and the benchmark fakes collide on ids across classes —
+    // sharing one JVM made suite verdicts order-dependent
+    forkEvery = 1
     javaLauncher.set(javaToolchains.launcherFor {
         languageVersion = JavaLanguageVersion.of(17)
     })

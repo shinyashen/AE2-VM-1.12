@@ -209,10 +209,14 @@ class PerfReportTest {
         double coldMs = (System.nanoTime() - t0) / 1_000_000.0;
         assertTrue(cold.supported() && cold.missing().isEmpty(),
                 "the conversion-ring scenario must complete, missing=" + cold.missing());
-        // Faithful runtime divergence (ring-net): the conversion catalyst C is
-        // net-stripped from usedItems, but a real AE2UEL CPU needs 1 C in its
-        // local inventory to fire the first craft (extract per push, :694) —
-        // the plan deadlocks at t=0 until the solver charges catalyst seeds.
+        // Faithful runtime divergence at the SHIPPING configuration (the ring
+        // solver gate is OFF here): the cycle's catalyst seed evaporates in
+        // the propagation net (VM-AUDIT B4), so the plan schedules crafts the
+        // CPU cannot feed — a real AE2UEL job deadlocks at t=0 (:694 exact
+        // extraction, :265 delivery). With ringSolverEnabled=true the fold
+        // bills the seed as priming and the job is honestly REFUSED instead
+        // (the seed is unstocked): the multi-pattern A-feed bootstrap that
+        // makes Thunderbolt feasible here stays future work.
         assertEquals("S2", planner.lastRuntimeVerdict.stallClass,
                 "conversion ring must faithfully stall: " + planner.lastRuntimeVerdict);
         List<Double> hot = new ArrayList<>();
