@@ -16,6 +16,7 @@ import java.util.Collections;
 import java.util.Deque;
 import java.util.Iterator;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -402,7 +403,7 @@ public class CraftingVM {
         this.emittedItems = new VMCounter();
         this.simInternal = new VMCounter();
         this.catalystSeedItems = new VMCounter();
-        this.patternTimes = new HashMap<>();
+        this.patternTimes = new LinkedHashMap<>();
         this.simulation = simulation;
         this.nodeCount = 1;
         this.rootCraftTimes = 0;
@@ -2417,15 +2418,38 @@ public class CraftingVM {
                         - (root ? 0L : grossEmitted.get(k));
                 ringStartupBill.put(k, netDraw > 0 ? BigInteger.valueOf(netDraw) : BigInteger.ZERO);
             }
-            Map<IAEItemStack, BigInteger> floors = RingSolver.startupFloors(plans,
+            RingSolver.FloorPlan floorPlan = RingSolver.startupFloors(plans,
                     CraftingVM::perCraftInputs, CraftingVM::perCraftOutputs,
                     k -> ringStartupBill.getOrDefault(copyOf(k), BigInteger.ZERO),
                     outputKey, ringMemberKeys);
-            for (var e : floors.entrySet()) {
+            for (var e : floorPlan.floors().entrySet()) {
                 BigInteger cur = ringStartupBill.getOrDefault(copyOf(e.getKey()), BigInteger.ZERO);
                 if (e.getValue().compareTo(cur) > 0) ringStartupBill.put(copyOf(e.getKey()), e.getValue());
             }
             ringStartupBill.values().removeIf(v -> v.signum() <= 0);
+            // Execution-aware scheduling: the floors are only valid for the
+            // FIRING ORDER that produced them, so the plan must emit that
+            // order — a real CPU consumes its per-tick budget strictly in
+            // task order, and a task sequence the probe never proved can
+            // drain the priming capital before the circulating pair closes
+            // (the coupled-ring zero-slack starvation). Ring-family tasks
+            // take the probe's winning rotation; every other task keeps its
+            // resolution order after them (their outputs feed ring inputs,
+            // covered by the net draw / on-CPU rescheduling).
+            if (floorPlan.order().size() > 1) {
+                java.util.Set<ICraftingPatternDetails> family =
+                        new java.util.HashSet<>(floorPlan.order());
+                LinkedHashMap<ICraftingPatternDetails, Long> reordered = new LinkedHashMap<>();
+                for (ICraftingPatternDetails d : floorPlan.order()) {
+                    Long v = patternTimes.get(d);
+                    if (v != null) reordered.put(d, v);
+                }
+                for (var e : patternTimes.entrySet()) {
+                    if (!family.contains(e.getKey())) reordered.put(e.getKey(), e.getValue());
+                }
+                patternTimes.clear();
+                patternTimes.putAll(reordered);
+            }
         }
         } catch (Throwable t) {
             // the fold is abandoned and the propagation plan stays in force;
@@ -2505,8 +2529,11 @@ public class CraftingVM {
             batchRemainder = null;
         }
         boolean sim = !missingItems.isEmpty();
+        // LinkedHashMap: the plan's patternTimes IS the CPU's task order —
+        // hash order over pattern instances (identity hashCode) would shuffle
+        // it between JVM runs and flip priority-scheduling verdicts
         return new VMPlan(outputKey, deliver, bytes, sim,
-                usedItems, missingItems, emittedItems, new HashMap<>(patternTimes));
+                usedItems, missingItems, emittedItems, new LinkedHashMap<>(patternTimes));
     }
 
     private void push(BigInteger v) { stack[sp++] = v; }
