@@ -29,6 +29,13 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * this as a fuzzy group, the VM's missing-check must see substitute stock as
  * satisfying the primary slot (no false "missing gray wool"), while a pattern
  * WITHOUT replacement (exact single input) still rejects substitutes.
+ *
+ * <p><b>B1: groups are a CRAFTING-pattern feature.</b> AE2UEL encodes
+ * {@code canSubstitute = isCrafting && nbt} (PatternHelper :87) and its CPU
+ * consults substitutes in the {@code isCraftable()} branch only, so the
+ * compiler registers substitute groups from CRAFTABLE patterns exclusively;
+ * a processing pattern's slots stay exact even if it reports substitute
+ * inputs.
  */
 class FuzzyGroupRegistrationTest {
 
@@ -61,12 +68,33 @@ class FuzzyGroupRegistrationTest {
     @Test
     void fuzzyRegisteredGrayAcceptsWhiteStock() {
         BenchPatternDetails pattern = withSlotSubstitute(
-                pat("product", 1, "gray_wool", 1L), new int[]{0}, "white_wool");
+                pat("product", 1, "gray_wool", 1L).asCraftable(), new int[]{0}, "white_wool");
         BenchSimulationState sim = new BenchSimulationState().seed("white_wool", 1000L);
 
         VMPlan plan = run(pattern, sim);
         assertTrue(plan.getMissingItems().isEmpty(),
                 "white wool must satisfy the gray-wool fuzzy slot, missing=" + missingDump(plan));
+    }
+
+    /**
+     * B1: the same substitute table on a PROCESSING pattern registers NO
+     * group — its slots are exact (PatternHelper :87), so white stock must
+     * not satisfy the slot and the resolver's substitute-variant fallback
+     * has nothing to resolve through.
+     */
+    @Test
+    void processingSubstituteTableRegistersNoGroup() {
+        BenchPatternDetails pattern = withSlotSubstitute(
+                pat("product", 1, "gray_wool", 1L), new int[]{0}, "white_wool");
+        PatternCompiler.compileIfAbsent(pattern);
+
+        assertTrue(PatternCompiler.getFuzzyGroup(k("gray_wool")).size() <= 1,
+                "a processing pattern's substitute table must not register a fuzzy group, group="
+                        + PatternCompiler.getFuzzyGroup(k("gray_wool")));
+        BenchSimulationState sim = new BenchSimulationState().seed("white_wool", 1000L);
+        VMPlan plan = run(pattern, sim);
+        assertFalse(plan.getMissingItems().isEmpty(),
+                "processing slots are exact: white wool must NOT satisfy the slot");
     }
 
     @Test
@@ -91,7 +119,7 @@ class FuzzyGroupRegistrationTest {
         BenchPatternDetails grayPattern = pat("gray_wool", 1, "black_wool", 1L);
         Bench.register(grayPattern);
         BenchPatternDetails product = withSlotSubstitute(
-                pat("product", 1, "gray_wool", 1L), new int[]{0}, "white_wool");
+                pat("product", 1, "gray_wool", 1L).asCraftable(), new int[]{0}, "white_wool");
         Bench.register(product);
 
         // compile both so the fuzzy groups register before the request

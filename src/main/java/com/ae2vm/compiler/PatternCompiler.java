@@ -19,7 +19,13 @@ import java.util.concurrent.ConcurrentHashMap;
  *
  * 1.12 adaptation notes (semantics preserved where the API allows):
  * - inputs: getCondensedInputs() (amount per craft carried by the stack)
- * - replacement groups: canSubstitute() + getSubstituteInputs(slot) → FUZZY_SLOT
+ * - replacement groups: canSubstitute() + getSubstituteInputs(slot) → FUZZY_SLOT,
+ *   CRAFTABLE patterns only — AE2UEL encodes the flag as
+ *   {@code canSubstitute = isCrafting && nbt} (PatternHelper :87) and its CPU
+ *   consults substitutes inside the {@code isCraftable()} branch only
+ *   (CraftingCPUCluster.executeCrafting); processing patterns extract their
+ *   exact condensed inputs, so compiling a substitute slot for one produces
+ *   plans the real engine can never execute (VM-AUDIT.md B1)
  * - catalyst: a condensed output that returns the input (same key, amount ≥ the
  *   per-craft consumption) — the 1.12 analogue of IInput.getRemainingKey()==input
  * - durability: same-item different-damage output transitions compile as an
@@ -289,7 +295,12 @@ public final class PatternCompiler {
             if (processing) {
                 PROCESSING_INPUT_KEYS.add(primaryKey);
             }
-            if (!canSubstitute) {
+            // Substitute GROUPS are a crafting-pattern feature (PatternHelper
+            // :87): a processing pattern's slots are exact no matter what a
+            // stray canSubstitute() reports, so its inputs must not register
+            // — otherwise the resolver's substitute-variant fallback would
+            // schedule variant crafts real CPU slots can never consume.
+            if (!canSubstitute || processing) {
                 continue;
             }
             Set<IAEItemStack> group = new HashSet<>();
@@ -484,12 +495,18 @@ public final class PatternCompiler {
                     inputKey = normalize(normalizedInput);
                 }
 
-                // Replacement (substitute) slot variants → FUZZY_SLOT + per-variant EXTRACTs.
+                // Replacement (substitute) slot variants → FUZZY_SLOT + per-variant
+                // EXTRACTs. CRAFTABLE patterns only: AE2UEL's CPU fills slots from
+                // substitutes inside its isCraftable() branch and extracts
+                // processing inputs by their exact condensed key
+                // (CraftingCPUCluster.executeCrafting; encoding-side PatternHelper :87
+                // {@code canSubstitute = isCrafting && nbt}) — a fuzzy slot compiled
+                // for a processing pattern plans a fill the CPU cannot consume.
                 List<IAEItemStack> variants = new ArrayList<>();
                 variants.add(inputKey);
                 boolean fuzzy = false;
                 try {
-                    if (pattern.canSubstitute()) {
+                    if (pattern.canSubstitute() && !isProcessingPattern(pattern)) {
                         for (int slot : findInputSlots(pattern, input)) {
                             List<IAEItemStack> subs = pattern.getSubstituteInputs(slot);
                             if (subs == null) continue;

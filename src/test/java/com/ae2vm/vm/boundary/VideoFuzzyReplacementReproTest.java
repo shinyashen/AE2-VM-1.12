@@ -35,6 +35,14 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * be pushed. The fix tracks which demand comes from replacement-ENABLED slots
  * (FUZZY_SLOT marker) and only lets substitute-variant stock satisfy that portion;
  * same-item NBT variants (processing default fuzzy) remain usable by any slot.
+ *
+ * <p><b>B1 (2026-09-15): the substitute-slot parents here are CRAFTABLE
+ * fakes.</b> AE2UEL's slot substitution is a crafting-pattern feature
+ * (PatternHelper :87 {@code canSubstitute = isCrafting && nbt}; CPU consults
+ * substitutes in the isCraftable() branch only), so a processing pattern with
+ * slot substitutes compiles EXACT and the planner math below would not exist
+ * for it. The processing shape is pinned by the twins in
+ * VariantSubstituteChainTest / FuzzyGroupRegistrationTest.
  */
 class VideoFuzzyReplacementReproTest {
 
@@ -96,7 +104,7 @@ class VideoFuzzyReplacementReproTest {
         BenchPatternDetails target = pat("target", 1, "exact_comp", 1L, "fuzzy_comp", 1L);
         BenchPatternDetails exactComp = pat("exact_comp", 1, "gray", 1L);
         BenchPatternDetails fuzzyComp = withSlotSubstitute(
-                pat("fuzzy_comp", 1, "gray", 1L), new int[]{0}, "white");
+                pat("fuzzy_comp", 1, "gray", 1L).asCraftable(), new int[]{0}, "white");
         BenchPatternDetails gray = pat("gray", 1, "black", 1L);
         Bench.register(target);
         Bench.register(exactComp);
@@ -131,7 +139,7 @@ class VideoFuzzyReplacementReproTest {
         BenchPatternDetails target = pat("target", 1, "exact_comp", 1L, "fuzzy_comp", 1L);
         BenchPatternDetails exactComp = pat("exact_comp", 1, "gray", 1L);
         BenchPatternDetails fuzzyComp = withSlotSubstitute(
-                pat("fuzzy_comp", 1, "gray", 1L), new int[]{0}, "white");
+                pat("fuzzy_comp", 1, "gray", 1L).asCraftable(), new int[]{0}, "white");
         Bench.register(target);
         Bench.register(exactComp);
         Bench.register(fuzzyComp);
@@ -154,7 +162,7 @@ class VideoFuzzyReplacementReproTest {
     @Test
     void singleFuzzyLeafUsesSubstitute() {
         BenchPatternDetails target = withSlotSubstitute(
-                pat("target", 1, "gray", 1L), new int[]{0}, "white");
+                pat("target", 1, "gray", 1L).asCraftable(), new int[]{0}, "white");
         Bench.register(target);
         BenchSimulationState stock = new BenchSimulationState().seed("white", 1000L);
 
@@ -171,7 +179,7 @@ class VideoFuzzyReplacementReproTest {
     @Test
     void singleFuzzyCraftableStillUsesSubstituteForDeficit() {
         BenchPatternDetails target = withSlotSubstitute(
-                pat("target", 1, "gray", 1L), new int[]{0}, "white");
+                pat("target", 1, "gray", 1L).asCraftable(), new int[]{0}, "white");
         BenchPatternDetails gray = pat("gray", 1, "black", 1L);
         Bench.register(target);
         Bench.register(gray);
@@ -194,9 +202,9 @@ class VideoFuzzyReplacementReproTest {
     void sharedSubstitutePoolConsumedOnceAcrossFuzzyParents() {
         BenchPatternDetails target = pat("target", 1, "compA", 1L, "compB", 1L);
         BenchPatternDetails compA = withSlotSubstitute(
-                pat("compA", 1, "gray", 1L, "leaf", 1L), new int[]{0}, "white");
+                pat("compA", 1, "gray", 1L, "leaf", 1L).asCraftable(), new int[]{0}, "white");
         BenchPatternDetails compB = withSlotSubstitute(
-                pat("compB", 1, "gray", 1L, "leaf", 1L), new int[]{0}, "white");
+                pat("compB", 1, "gray", 1L, "leaf", 1L).asCraftable(), new int[]{0}, "white");
         BenchPatternDetails gray = pat("gray", 1, "black", 1L);
         Bench.register(target);
         Bench.register(compA);

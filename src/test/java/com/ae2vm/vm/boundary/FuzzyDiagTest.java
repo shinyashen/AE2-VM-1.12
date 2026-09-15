@@ -35,6 +35,11 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
  * </ol>
  * Like the original, these are diagnostics: they print the plan and assert the
  * boundary quantities that must hold once the fix is in.
+ *
+ * <p>The substitute-slot products are CRAFTABLE fakes: slot substitution is a
+ * crafting-pattern feature (VM-AUDIT.md B1, PatternHelper :87), so a
+ * processing pattern with a substitute table compiles exact slots and none of
+ * the fuzzy-fill math below would apply to it.
  */
 class FuzzyDiagTest {
 
@@ -76,7 +81,7 @@ class FuzzyDiagTest {
     @Test
     void diagFuzzyGrayWool() {
         BenchPatternDetails product = withSlotSubstitute(
-                pat("product", 1, "gray_wool", 1L), new int[]{0}, "white_wool");
+                pat("product", 1, "gray_wool", 1L).asCraftable(), new int[]{0}, "white_wool");
         Bench.register(product);
         BenchSimulationState sim = new BenchSimulationState().seed("white_wool", 1000L);
 
@@ -93,7 +98,7 @@ class FuzzyDiagTest {
         BenchPatternDetails x = pat("X", 1, "raw", 1L);
         Bench.register(x);
         BenchPatternDetails product = withSlotSubstitute(
-                pat("product", 1, "X", 1L), new int[]{0}, "X_prime");
+                pat("product", 1, "X", 1L).asCraftable(), new int[]{0}, "X_prime");
         Bench.register(product);
         BenchSimulationState sim = new BenchSimulationState()
                 .seed("X", 1L)
@@ -113,7 +118,7 @@ class FuzzyDiagTest {
         BenchPatternDetails x = pat("X", 1, "raw", 1L);
         Bench.register(x);
         BenchPatternDetails product = withSlotSubstitute(
-                pat("product", 1, "X", 1L), new int[]{0}, "X_prime");
+                pat("product", 1, "X", 1L).asCraftable(), new int[]{0}, "X_prime");
         Bench.register(product);
         BenchSimulationState sim = new BenchSimulationState().seed("raw", 1000L);
 
