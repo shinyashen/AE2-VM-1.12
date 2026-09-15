@@ -70,8 +70,11 @@ class Ae2VmBoundaryCapabilitySuiteTest {
         final Map<String, Long> stock = new LinkedHashMap<>();
 
         Fixture fuzzyCraftablePrimary(boolean grayCraftable) {
+            // CRAFTABLE: slot substitution is a crafting-pattern feature
+            // (VM-AUDIT.md B1, PatternHelper :87) — a processing pattern with
+            // slotSubs compiles exact and the whole family would flip.
             BenchPatternDetails product = withSlotSubstitute(
-                    pat("product", 1, "gray_wool", 1L), new int[]{0}, "white_wool");
+                    pat("product", 1, "gray_wool", 1L).asCraftable(), new int[]{0}, "white_wool");
             byOutput.put("product", product);
             if (grayCraftable) {
                 byOutput.put("gray_wool", pat("gray_wool", 1, "black_wool", 1L));
@@ -129,19 +132,19 @@ class Ae2VmBoundaryCapabilitySuiteTest {
     }
 
     /**
-     * Faithful runtime note (M5): AE2UEL processing patterns extract their exact
-     * condensed inputs per push (CraftingCPUCluster :694) and slot substitution is
-     * crafting-only (PatternHelper :85 {@code canSubstitute = isCrafting && ...}),
-     * so a plan whose fuzzy slot was filled purely with substitute stock has NO
-     * CPU-level support: the pattern cannot consume the substitute and the job
-     * deadlocks at t=0 (S2). Those cases assert the faithful stall; every other
-     * executable case must COMPLETE. The planner-level assertions above are
-     * unaffected — the substitution math itself is pinned separately.
+     * Faithful runtime note (B1): planner and runtime AGREE on this suite.
+     * The substitute-slot product is a CRAFTABLE pattern (slot substitution is
+     * a crafting-pattern feature — PatternHelper :87 {@code canSubstitute =
+     * isCrafting && ...}), so the virtual CPU fills its slots through the
+     * craftable-branch hook. Processing patterns compile exact slots; the
+     * processing shape is pinned by the twins in VariantSubstituteChainTest /
+     * FuzzyGroupRegistrationTest. Every executable case must COMPLETE.
      */
-    private static final java.util.Set<String> PROCESSING_SUBSTITUTE_CASES = java.util.Set.of(
-            "quantity/craftable-primary-white-stock/",
-            "quantity/craftable-primary-white-stock10/",
-            "quantity/fuzzy-leaf-white-stock/");
+    private static final com.ae2vm.replay.VirtualCPUCluster.SlotAlternates SLOT_ALTERNATES =
+            (d, slot) -> d instanceof BenchPatternDetails b
+                    ? b.getSlotSubstitutes().getOrDefault(slot,
+                            java.util.Collections.<appeng.api.storage.data.IAEItemStack>emptyList())
+                    : java.util.Collections.<appeng.api.storage.data.IAEItemStack>emptyList();
 
     private static void runCase(BoundaryCase c) {
         long start = System.nanoTime();
@@ -149,11 +152,7 @@ class Ae2VmBoundaryCapabilitySuiteTest {
         c.build().accept(fx);
         VMPlan plan = runTarget(fx, c.target(), c.amount());
         if (plan != null) {
-            if (!plan.isSimulation() && PROCESSING_SUBSTITUTE_CASES.stream().anyMatch(c.id()::startsWith)) {
-                CpuLifecycleAssert.stalls(plan, "S2");
-            } else {
-                CpuLifecycleAssert.auto(plan); // feasible must complete; infeasible must stall
-            }
+            CpuLifecycleAssert.auto(plan, SLOT_ALTERNATES); // feasible must complete; infeasible must stall
         }
         Map<String, Long> miss = missing(plan);
         boolean feasible = miss.isEmpty();

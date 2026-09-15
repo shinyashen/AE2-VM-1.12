@@ -161,7 +161,7 @@ class VmSemantics2Test {
     @Test
     void substituteSlotSatisfiedByVariant() {
         BenchPatternDetails consumer = withSubstitute(
-                new long[][]{{0, 1}, {1, 1}}, new long[][]{{2, 1}}, "SUB");
+                new long[][]{{0, 1}, {1, 1}}, new long[][]{{2, 1}}, "SUB").asCraftable();
         Bench.register(consumer);
         BenchSimulationState sim = new BenchSimulationState()
                 .seed("SUB", 5)

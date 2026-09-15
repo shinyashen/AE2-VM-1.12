@@ -30,6 +30,14 @@ public final class CpuLifecycleAssert {
         return v;
     }
 
+    /** COMPLETE with craftable-branch slot filling (substitute-enabled slots). */
+    public static VirtualCPUCluster.Verdict complete(VMPlan plan, IAEItemStack what, long amount,
+                                                     VirtualCPUCluster.SlotAlternates alternates) {
+        VirtualCPUCluster.Verdict v = new VirtualCPUCluster(plan, what, amount, alternates).run(MAX_STEPS, 0);
+        assertEquals(VirtualCPUCluster.Verdict.Status.COMPLETE, v.status, v.toString());
+        return v;
+    }
+
     /**
      * Zero-config bridge for Bench.run call sites. An executable plan
      * (job would be accepted) must faithfully COMPLETE on the virtual CPU —
@@ -50,6 +58,17 @@ public final class CpuLifecycleAssert {
             return new VirtualCPUCluster(plan, what, amount).run(MAX_STEPS, 0);
         }
         return complete(plan, what, amount);
+    }
+
+    /** {@link #auto} with craftable-branch slot filling (substitute-enabled slots). */
+    public static VirtualCPUCluster.Verdict auto(VMPlan plan,
+                                                 VirtualCPUCluster.SlotAlternates alternates) {
+        IAEItemStack what = plan.getOutputKey();
+        long amount = plan.getDeliverAmount();
+        if (plan.isSimulation()) {
+            return new VirtualCPUCluster(plan, what, amount, alternates).run(MAX_STEPS, 0);
+        }
+        return complete(plan, what, amount, alternates);
     }
 
     public static VirtualCPUCluster.Verdict stalls(VMPlan plan, IAEItemStack what, long amount,

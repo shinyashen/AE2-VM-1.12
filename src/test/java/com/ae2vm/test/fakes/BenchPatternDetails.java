@@ -13,25 +13,46 @@ import java.util.Map;
 
 /**
  * ICraftingPatternDetails fake backed by plain recipe lines: condensed inputs
- * and ordered outputs (first = primary, rest = byproducts). Deliberately
- * reports isCraftable() == false (processing semantics), matching the VM's
- * benchmark reference graphs.
+ * and ordered outputs (first = primary, rest = byproducts). Defaults to
+ * {@code isCraftable() == false} (processing semantics), matching the VM's
+ * benchmark reference graphs; {@link #craftable} / {@link #asCraftable}
+ * produce the crafting-pattern shape needed to exercise the substitute-slot
+ * machinery (AE2UEL encodes substitution as a crafting-pattern feature —
+ * PatternHelper :87 — so a processing fake with slot substitutes no longer
+ * compiles fuzzy slots: VM-AUDIT.md B1).
  */
 public final class BenchPatternDetails implements ICraftingPatternDetails {
     private final IAEItemStack[] condensedInputs;
     private final IAEItemStack[] outputs;
     /** Condensed slot index -> accepted substitute variants (replacement-enabled slots). */
     private final Map<Integer, List<IAEItemStack>> slotSubs;
+    private final boolean craftable;
 
     private BenchPatternDetails(IAEItemStack[] condensedInputs, IAEItemStack[] outputs) {
-        this(condensedInputs, outputs, java.util.Collections.emptyMap());
+        this(condensedInputs, outputs, java.util.Collections.emptyMap(), false);
     }
 
     private BenchPatternDetails(IAEItemStack[] condensedInputs, IAEItemStack[] outputs,
                                 Map<Integer, List<IAEItemStack>> slotSubs) {
+        this(condensedInputs, outputs, slotSubs, false);
+    }
+
+    private BenchPatternDetails(IAEItemStack[] condensedInputs, IAEItemStack[] outputs,
+                                Map<Integer, List<IAEItemStack>> slotSubs, boolean craftable) {
         this.condensedInputs = condensedInputs;
         this.outputs = outputs;
         this.slotSubs = slotSubs;
+        this.craftable = craftable;
+    }
+
+    /** The same pattern re-labeled as a molecular-assembler crafting pattern. */
+    public BenchPatternDetails asCraftable() {
+        return new BenchPatternDetails(condensedInputs, outputs, slotSubs, true);
+    }
+
+    /** Crafting-pattern shape of a plain recipe line (no substitute slots). */
+    public static BenchPatternDetails craftable(long[][] inputs, long[][] outputs) {
+        return processing(inputs, outputs).asCraftable();
     }
 
     /** Pattern whose inputs accept one substitute variant (replacement enabled). */
@@ -46,14 +67,14 @@ public final class BenchPatternDetails implements ICraftingPatternDetails {
             slotSubs.put(slot, java.util.Collections.singletonList(
                     (IAEItemStack) new BenchAEItemStack(subId, 1)));
         }
-        return new BenchPatternDetails(base.condensedInputs, base.outputs, slotSubs);
+        return new BenchPatternDetails(base.condensedInputs, base.outputs, slotSubs, base.craftable);
     }
 
     /** Enables arbitrary pre-built variant keys on exactly the given condensed slots. */
     public static BenchPatternDetails withSlotVariants(BenchPatternDetails base,
                                                        Map<Integer, List<IAEItemStack>> slotSubs) {
         return new BenchPatternDetails(base.condensedInputs, base.outputs,
-                new java.util.HashMap<>(slotSubs));
+                new java.util.HashMap<>(slotSubs), base.craftable);
     }
 
     /** inputs: {id, amount} pairs; outputs: first is primary, rest are byproducts. */
@@ -103,7 +124,7 @@ public final class BenchPatternDetails implements ICraftingPatternDetails {
 
     @Override
     public boolean isCraftable() {
-        return false;
+        return craftable;
     }
 
     @Override
@@ -143,6 +164,16 @@ public final class BenchPatternDetails implements ICraftingPatternDetails {
     /** Slot-substitute table for lifecycle-simulation hooks (slot → alternates). */
     public Map<Integer, java.util.List<IAEItemStack>> getSlotSubstitutes() {
         return slotSubs;
+    }
+
+    /**
+     * The virtual CPU's craftable-branch slot-filling view over this fake's
+     * table (the offline counterpart of {@code getSubstituteInputs} +
+     * {@code findFuzzy}); null-safe per slot.
+     */
+    public com.ae2vm.replay.VirtualCPUCluster.SlotAlternates slotAlternates() {
+        return (d, slot) -> slotSubs.getOrDefault(slot,
+                java.util.Collections.<IAEItemStack>emptyList());
     }
 
 }

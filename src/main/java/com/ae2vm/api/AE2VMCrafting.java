@@ -488,7 +488,10 @@ public final class AE2VMCrafting {
         // stocked nor craftable — schedule the variant's craft and let the
         // fuzzy slot consume its output. (Upstream fixed the same gap in its
         // resolve(); gated on the slot's substitute group so the variant
-        // space stays finite and explicit.)
+        // space stays finite and explicit.) B1: groups exist for CRAFTABLE
+        // patterns only (PatternHelper :87), so demand whose only consumers
+        // are processing slots never resolves through here — their slots are
+        // exact and stay exact.
         try {
             for (IAEItemStack variant : PatternCompiler.getFuzzyGroup(key)) {
                 if (variant == null || variant.isSameType(key)) {

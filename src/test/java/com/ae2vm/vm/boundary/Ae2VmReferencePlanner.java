@@ -298,7 +298,15 @@ public final class Ae2VmReferencePlanner implements ReferencePlanner {
                 outputs.add(damaged(input.key(), p.damage() + 1, p.maxDamage(), input.amount()));
             }
             if (input.reusableStockSource() != null) {
-                // Host-owned reusable stock: the slot accepts any candidate variant.
+                // Host-owned reusable stock: the slot accepts any candidate
+                // variant. B1 (2026-09-15): the translated patterns are
+                // PROCESSING (machine recipes), and AE2UEL slot substitution
+                // is a crafting-pattern feature (PatternHelper :87) — the
+                // compiler ignores these tables, so the fuzzy/variant-route
+                // MINIMUM/UNBOUNDED modes (feasible only through the
+                // damaged_tool variant) report the exact key as missing for
+                // this engine (FALSE_NEGATIVE in the measurement suite; the
+                // upstream capability stays Thunderbolt-only).
                 List<IAEItemStack> variants = new ArrayList<>();
                 for (String candidate : routes.getOrDefault(input, List.of())) {
                     if (candidate.equals(input.key())) {
