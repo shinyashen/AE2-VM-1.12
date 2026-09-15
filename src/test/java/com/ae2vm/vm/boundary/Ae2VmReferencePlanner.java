@@ -57,6 +57,9 @@ public final class Ae2VmReferencePlanner implements ReferencePlanner {
     /** Faithful CPU verdict for the most recent plan (informational probe). */
     public com.ae2vm.replay.VirtualCPUCluster.Verdict lastRuntimeVerdict;
 
+    /** Whether the most recent plan claimed executable (job would be accepted). */
+    public boolean lastPlanExecutable;
+
 
     /** Replay budget for the multi-pattern choice repair (see PatternChoiceRepair). */
     private static final int REPAIR_EXTRA_PASSES = 32;
@@ -231,6 +234,7 @@ public final class Ae2VmReferencePlanner implements ReferencePlanner {
         // is EXPOSED, not asserted: ring-net / substitute-fill / root-feedback
         // shapes faithfully STALL on a real AE2UEL CPU (see the annotated test
         // sites); expectations belong to each scenario's test.
+        lastPlanExecutable = plan != null && !plan.isSimulation();
         lastRuntimeVerdict = plan == null ? null
                 : new com.ae2vm.replay.VirtualCPUCluster(plan, plan.getOutputKey(),
                         plan.getDeliverAmount()).run(10_000, 0);

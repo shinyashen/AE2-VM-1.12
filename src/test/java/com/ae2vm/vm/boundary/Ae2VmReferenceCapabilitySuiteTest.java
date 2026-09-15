@@ -11,10 +11,13 @@ import org.junit.jupiter.api.DynamicTest;
 import org.junit.jupiter.api.TestFactory;
 
 import java.time.Duration;
+import com.ae2vm.replay.VirtualCPUCluster;
+
 import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.stream.Stream;
 
@@ -59,9 +62,43 @@ class Ae2VmReferenceCapabilitySuiteTest {
         return tests.stream();
     }
 
+    /**
+     * The adjudication batch gate: a plan the planner judged EXECUTABLE
+     * (non-simulation — the submit layer would accept the job) must COMPLETE
+     * on the faithful CPU; a stall is a live t=0 deadlock the user would hit.
+     * Simulation plans are refused before any CPU exists, so their forced-run
+     * verdict is informational only. The allowlist below is the closed set of
+     * M5 faithful divergences this port accepts, each with its AE2UEL
+     * citation; an executable plan stalling anywhere else fails the gate, and
+     * an allowlisted scenario that stalls with a DIFFERENT class fails too
+     * (the divergence moved — re-adjudicate it).
+     */
+    private static final Map<String, String> FAITHFUL_STALLS = new TreeMap<>(Map.of(
+            "recursion/amplifier/minimum",
+            "S2 — A is finalOutput AND self-consumed: a real CPU delivers the "
+                    + "returned units (CraftingCPUCluster :265) instead of circulating "
+                    + "them, so the run starves once the seeded unit is spent",
+            "recursion/amplifier/unbounded",
+            "S4 — unbounded stock closes the solve at zero crafts: an idle plan "
+                    + "extracts the whole request but never pushes a finalOutput return",
+            "cycle/self-growth-cut/unbounded",
+            "S4 — idle plan: stock covers the whole request, no pattern is "
+                    + "scheduled, so nothing ever arrives",
+            "cycle/conversion-ring/minimum",
+            "S2 — at the shipping default (solver gate off) the cycle's "
+                    + "catalyst seed evaporates in the propagation net (VM-AUDIT "
+                    + "B4); with ringSolverEnabled=true the fold bills the seed "
+                    + "and the job is honestly refused",
+            "cycle/conversion-ring/unbounded",
+            "S2 — at the shipping default (solver gate off) the cycle's "
+                    + "catalyst seed evaporates in the propagation net (VM-AUDIT "
+                    + "B4); with ringSolverEnabled=true the fold bills the seed "
+                    + "and the job is honestly refused"));
+
     private static void runOne(ReferenceScenario scenario) {
         var result = RUNNER.run(AE2_VM, scenario);
         RESULTS.add(result);
+        var planner = (Ae2VmReferencePlanner) AE2_VM;
         System.out.println("[reference-capability] engine=ae2vm id=" + scenario.id()
                 + " capability=" + scenario.capability()
                 + " mode=" + scenario.materialMode()
@@ -69,7 +106,27 @@ class Ae2VmReferenceCapabilitySuiteTest {
                 + " status=" + result.status()
                 + " missingOverhead=" + result.missingOverhead()
                 + " missing=" + (result.plan() == null ? null : result.plan().missing())
+                + " executable=" + planner.lastPlanExecutable
+                + " runtime=" + planner.lastRuntimeVerdict
                 + " elapsedMs=" + String.format("%.3f", result.elapsedNanos() / 1_000_000.0D));
+        // The batch gate itself (see FAITHFUL_STALLS).
+        if (planner.lastPlanExecutable && planner.lastRuntimeVerdict != null) {
+            VirtualCPUCluster.Verdict v = planner.lastRuntimeVerdict;
+            if (v.status == VirtualCPUCluster.Verdict.Status.STALL) {
+                String note = FAITHFUL_STALLS.get(scenario.id());
+                if (note == null) {
+                    throw new AssertionError("executable plan stalled on the faithful CPU: "
+                            + scenario.id() + " -> " + v
+                            + " (adjudicate: a faithful divergence must be allowlisted "
+                            + "with its AE2UEL citation, anything else is a planner bug)", null);
+                }
+                if (v.stallClass == null || !note.startsWith(v.stallClass)) {
+                    throw new AssertionError("scenario " + scenario.id()
+                            + " was adjudicated as " + note + " but now stalls as "
+                            + v.stallClass + " — the divergence moved, re-adjudicate", null);
+                }
+            }
+        }
         if (result.failure() != null && result.status() == ReferenceSupportStatus.ENGINE_ERROR) {
             result.failure().printStackTrace(System.out);
         }
