@@ -481,6 +481,34 @@ final class RingSolver {
     }
 
     /**
+     * One firing order's priming outcome: the per-key startup floor plus THE
+     * ORDER THAT PRODUCED IT. The floor is only valid for its own order — a
+     * real CPU consumes its per-tick budget strictly in task order, so the
+     * caller must emit {@link #order()} as the plan's task sequence or the
+     * priming guarantee does not transfer (the coupled-ring zero-slack
+     * starvation).
+     */
+    public static final class FloorPlan {
+        private final Map<IAEItemStack, BigInteger> floors;
+        private final List<ICraftingPatternDetails> order;
+
+        FloorPlan(Map<IAEItemStack, BigInteger> floors, List<ICraftingPatternDetails> order) {
+            this.floors = floors;
+            this.order = order;
+        }
+
+        /** Priming floor per member key (zero entries removed by the caller). */
+        public Map<IAEItemStack, BigInteger> floors() {
+            return floors;
+        }
+
+        /** The firing order the floor was probed under (ring task order). */
+        public List<ICraftingPatternDetails> order() {
+            return order;
+        }
+    }
+
+    /**
      * Minimal per-key startup inventory that keeps the whole folded family
      * deadlock-free on a real CPU (closed local inventory; task returns are
      * the only refill). The engine's job-start withdrawal covers each key's
@@ -498,9 +526,10 @@ final class RingSolver {
      * FORCED one craft, its uncovered member inputs becoming the floor.
      * Counts are capped at a shared budget (scaled together so the flow
      * ratios survive) — priming deadlocks surface within the first handful
-     * of rounds, never in the long tail.
+     * of rounds, never in the long tail. ORDER AND FLOOR RETURN TOGETHER
+     * (see {@link FloorPlan}).
      */
-    static Map<IAEItemStack, BigInteger> startupFloors(
+    static FloorPlan startupFloors(
             List<RingPlan> plans,
             Function<ICraftingPatternDetails, Map<IAEItemStack, BigInteger>> perCraftInputs,
             Function<ICraftingPatternDetails, Map<IAEItemStack, BigInteger>> perCraftOutputs,
@@ -520,7 +549,7 @@ final class RingSolver {
                 if (e.getValue().compareTo(maxCount) > 0) maxCount = e.getValue();
             }
         }
-        if (order.isEmpty()) return floor;
+        if (order.isEmpty()) return new FloorPlan(floor, order);
         BigInteger CAP = BigInteger.valueOf(256);
         Map<ICraftingPatternDetails, BigInteger> remaining = new HashMap<>();
         for (RingPlan plan : plans) {
@@ -570,7 +599,7 @@ final class RingSolver {
                 ledger.merge(e.getKey(), e.getValue(), BigInteger::add);
             }
         }
-        return floor;
+        return new FloorPlan(floor, order);
     }
 
     /** True when every ring-member input is covered by ledger or net draw. */
