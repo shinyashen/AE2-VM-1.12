@@ -1,4 +1,4 @@
-# 1.1.1 (unreleased, pending live validation)
+# 1.2.0 (unreleased, pending live validation)
 
 ## Diagnostics: trace, out-of-game replay and CPU simulation
 
