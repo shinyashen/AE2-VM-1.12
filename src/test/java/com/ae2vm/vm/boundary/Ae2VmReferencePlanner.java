@@ -60,6 +60,9 @@ public final class Ae2VmReferencePlanner implements ReferencePlanner {
     /** Whether the most recent plan claimed executable (job would be accepted). */
     public boolean lastPlanExecutable;
 
+    /** The most recent final plan (diagnostics: task order + counters). */
+    public com.ae2vm.vm.VMPlan lastPlan;
+
 
     /** Replay budget for the multi-pattern choice repair (see PatternChoiceRepair). */
     private static final int REPAIR_EXTRA_PASSES = 32;
@@ -235,6 +238,7 @@ public final class Ae2VmReferencePlanner implements ReferencePlanner {
         // shapes faithfully STALL on a real AE2UEL CPU (see the annotated test
         // sites); expectations belong to each scenario's test.
         lastPlanExecutable = plan != null && !plan.isSimulation();
+        lastPlan = plan;
         lastRuntimeVerdict = plan == null ? null
                 : new com.ae2vm.replay.VirtualCPUCluster(plan, plan.getOutputKey(),
                         plan.getDeliverAmount()).run(10_000, 0);

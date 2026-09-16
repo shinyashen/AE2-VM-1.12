@@ -1,7 +1,6 @@
 package com.ae2vm.vm.boundary;
 
 import com.moakiee.thunderbolt.core.planner.reference.ReferenceCapabilityRunner;
-import com.moakiee.thunderbolt.core.planner.reference.ReferencePlanner;
 import com.moakiee.thunderbolt.core.planner.reference.ReferenceRunResult;
 import com.moakiee.thunderbolt.core.planner.reference.ReferenceScenario;
 import com.moakiee.thunderbolt.core.planner.reference.ReferenceSupportStatus;
@@ -36,8 +35,6 @@ class Ae2VmReferenceCapabilitySuiteTest {
 
     private static final ReferenceCapabilityRunner RUNNER = new ReferenceCapabilityRunner(
             Duration.ofSeconds(1), Duration.ofMillis(100));
-
-    private static final ReferencePlanner AE2_VM = new Ae2VmReferencePlanner();
 
     /** Accumulates per-scenario outcomes so the trailing summary test can report aggregates. */
     private static final ConcurrentLinkedQueue<ReferenceRunResult> RESULTS =
@@ -93,18 +90,22 @@ class Ae2VmReferenceCapabilitySuiteTest {
             "S2 — at the shipping default (solver gate off) the cycle's "
                     + "catalyst seed evaporates in the propagation net (VM-AUDIT "
                     + "B4); with ringSolverEnabled=true the fold bills the seed "
-                    + "and the job is honestly refused",
-            "single-dag/fibonacci/unbounded",
-            "S2 — the deterministic task order (formerly hash-bucket shuffled, "
-                    + "which masked this) lists consumers before producers for "
-                    + "this 32-deep DAG and neither the discovery order nor its "
-                    + "reversal completes; execution-aware ordering for deep "
-                    + "non-ring DAGs is a tracked follow-up"));
+                    + "and the job is honestly refused"));
+    // single-dag/fibonacci/unbounded left the table (P0): the CONSTRUCTED
+    // task order (TaskOrdering) is producers-first for this 32-deep DAG and
+    // the faithful CPU completes it — the old entry masked a discovery-order
+    // stall that the construction obsoleted.
 
     private static void runOne(ReferenceScenario scenario) {
-        var result = RUNNER.run(AE2_VM, scenario);
+        // A FRESH planner per scenario: the shared instance's probe fields
+        // (lastPlan/lastRuntimeVerdict) are written by the scenario's worker
+        // thread — and a NON_COOPERATIVE_TIMEOUT zombie from an earlier case
+        // keeps writing its own late results through the shared fields, so a
+        // gate read here could pair one case's "executable" with another's
+        // stall verdict (the fibonacci/minimum phantom failure).
+        Ae2VmReferencePlanner planner = new Ae2VmReferencePlanner();
+        var result = RUNNER.run(planner, scenario);
         RESULTS.add(result);
-        var planner = (Ae2VmReferencePlanner) AE2_VM;
         System.out.println("[reference-capability] engine=ae2vm id=" + scenario.id()
                 + " capability=" + scenario.capability()
                 + " mode=" + scenario.materialMode()
@@ -115,8 +116,13 @@ class Ae2VmReferenceCapabilitySuiteTest {
                 + " executable=" + planner.lastPlanExecutable
                 + " runtime=" + planner.lastRuntimeVerdict
                 + " elapsedMs=" + String.format("%.3f", result.elapsedNanos() / 1_000_000.0D));
-        // The batch gate itself (see FAITHFUL_STALLS).
-        if (planner.lastPlanExecutable && planner.lastRuntimeVerdict != null) {
+        // The batch gate itself (see FAITHFUL_STALLS). A runner timeout means
+        // the case never finished — its half-written probe fields are not
+        // gate evidence and the pair-read below would race the (still
+        // running) worker's writes.
+        boolean timedOut = result.status() == ReferenceSupportStatus.ENGINE_TIMEOUT
+                || result.status() == ReferenceSupportStatus.NON_COOPERATIVE_TIMEOUT;
+        if (!timedOut && planner.lastPlanExecutable && planner.lastRuntimeVerdict != null) {
             VirtualCPUCluster.Verdict v = planner.lastRuntimeVerdict;
             if (v.status == VirtualCPUCluster.Verdict.Status.STALL) {
                 String note = FAITHFUL_STALLS.get(scenario.id());

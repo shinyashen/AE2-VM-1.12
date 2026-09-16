@@ -48,6 +48,11 @@ public class CraftingVM {
 
     private static final BigInteger BIG_MAX_LONG = BigInteger.valueOf(Long.MAX_VALUE);
 
+    // Cap for the task-order assertion pass (see buildPlan): the faithful
+    // replica fires craft-by-craft, so beyond this budget the check costs
+    // real server-thread time and the by-construction order is trusted.
+    private static final long VERIFY_CRAFT_BUDGET = 2_000_000L;
+
     // Pre-allocated BigInteger cache for values 0–1023 (hot values in VM)
     private static final BigInteger[] BIG_CACHE = new BigInteger[1024];
     static {
@@ -2513,104 +2518,72 @@ public class CraftingVM {
 
     private VMPlan buildPlan(BigInteger requestedAmount) {
         applyAggregation();
-        // Execution-aware scheduling (see the ring-bill block): the CPU
-        // consumes its per-tick budget strictly in task order, so the plan's
-        // task sequence IS the probed firing order — ring-family tasks first
-        // in the winning rotation, every other task after them (their outputs
-        // feed ring inputs and are covered by the net draw / rescheduling).
         // final output is delivered separately — must not duplicate in emitted
         emittedItems.remove(outputKey);
-        // Deep plans (>16 patterns) skip the validation: each candidate run
-        // costs real milliseconds and the reference suite runs those under a
-        // 1s deadline — their order divergence is adjudicated by the gate
-        // instead.
-        if (missingItems.isEmpty() && patternTimes.size() > 1 && patternTimes.size() <= 16) {
-            // Execution-aware scheduling: the plan's task order IS the
-            // execution order on the strict task-priority CPU, and a wrong
-            // order starves even a perfectly billed plan (the coupled-ring
-            // family stalled at delivered=24; the fibonacci chain blocked at
-            // t=0 because root-first discovery lists consumers before
-            // producers). The faithful CPU replica is the EXACT judge and
-            // costs microseconds: validate candidate orders on it and keep
-            // the first one it completes — the order as built, then (for
-            // folded rings) the probe's rotations and every small-family
-            // permutation, then plain reversal (leaves before consumers).
-            // None completing -> keep the order as built.
-            java.util.Set<ICraftingPatternDetails> family = new java.util.HashSet<>(ringTaskOrder);
-            LinkedHashMap<ICraftingPatternDetails, Long> probeOrder = new LinkedHashMap<>();
-            for (ICraftingPatternDetails d : ringTaskOrder) {
-                Long v = patternTimes.get(d);
-                if (v != null) probeOrder.put(d, v);
-            }
-            for (var e : patternTimes.entrySet()) {
-                if (!family.contains(e.getKey())) probeOrder.put(e.getKey(), e.getValue());
-            }
-            LinkedHashMap<ICraftingPatternDetails, Long> asBuilt = new LinkedHashMap<>(patternTimes);
+        if (missingItems.isEmpty() && patternTimes.size() > 1) {
+            // Execution-aware scheduling: the CPU consumes its per-tick budget
+            // strictly in task order, so the plan's patternTimes sequence IS
+            // its execution order — and that order is CONSTRUCTED, not
+            // searched: a topological order of the pattern dependency
+            // condensation, with folded rings kept in the probed firing order
+            // their priming floor was computed under (the cycle is cut at the
+            // priming edges). For exact plans any such order completes on the
+            // faithful CPU — a deadlock needs a cycle of mutual waits, only
+            // SCCs can form one, and the greedy drain of shared outputs
+            // merely delays a consumer by a pass (proof: TaskOrdering). The
+            // replica pass below is the fallback ASSERTION: it should
+            // complete on the first candidate; the discovery order and its
+            // reversal run only when that fails, and total failure keeps the
+            // constructed order with the WARN as evidence.
+            LinkedHashMap<ICraftingPatternDetails, Long> constructed = TaskOrdering.construct(
+                    patternTimes, ringTaskOrder,
+                    CraftingVM::perCraftPrimings, CraftingVM::perCraftOutputs);
             List<LinkedHashMap<ICraftingPatternDetails, Long>> candidates = new ArrayList<>();
-            // candidate orders: for a fold, the probed ring order first, then
-            // — small families only — every other permutation (the
-            // bootstrapping order need not be cyclically adjacent to the
-            // views order; the lucky coupled order never was); always the
-            // plain reversal of the as-built order (consumers are DISCOVERED
-            // before producers, so reversal is leaves-first).
-            java.util.function.Function<List<ICraftingPatternDetails>, LinkedHashMap<ICraftingPatternDetails, Long>> assemble = seq -> {
-                LinkedHashMap<ICraftingPatternDetails, Long> cand = new LinkedHashMap<>();
-                for (ICraftingPatternDetails d : seq) {
-                    Long v = probeOrder.get(d);
-                    if (v != null) cand.put(d, v);
-                }
-                for (var e : probeOrder.entrySet()) {
-                    if (!family.contains(e.getKey())) cand.put(e.getKey(), e.getValue());
-                }
-                return cand;
-            };
-            if (ringTaskOrder.size() > 1) {
-                candidates.add(assemble.apply(new ArrayList<>(ringTaskOrder)));
-                if (ringTaskOrder.size() <= 6) {
-                    List<ICraftingPatternDetails> perm = new ArrayList<>(ringTaskOrder);
-                    int[] c = new int[perm.size()];
-                    for (int i = 0; i < perm.size(); ) {
-                        if (c[i] < i) {
-                            int j = (i % 2 == 0) ? 0 : c[i];
-                            ICraftingPatternDetails tmp = perm.get(i);
-                            perm.set(i, perm.get(j));
-                            perm.set(j, tmp);
-                            candidates.add(assemble.apply(perm));
-                            c[i]++;
-                            i = 0;
-                        } else {
-                            c[i] = 0;
-                            i++;
-                        }
-                    }
-                }
-            }
+            candidates.add(constructed);
+            candidates.add(new LinkedHashMap<>(patternTimes)); // discovery order
             LinkedHashMap<ICraftingPatternDetails, Long> reversed = new LinkedHashMap<>();
             java.util.Deque<Map.Entry<ICraftingPatternDetails, Long>> stack = new java.util.ArrayDeque<>();
-            for (var e : asBuilt.entrySet()) stack.push(e);
+            for (var e : patternTimes.entrySet()) stack.push(e);
             for (var e : stack) reversed.put(e.getKey(), e.getValue());
             candidates.add(reversed);
+            long totalCrafts = 0;
+            for (Long v : patternTimes.values()) {
+                long next = totalCrafts + v;
+                totalCrafts = next < 0 ? VERIFY_CRAFT_BUDGET + 1
+                        : Math.min(VERIFY_CRAFT_BUDGET + 1, next);
+                if (totalCrafts > VERIFY_CRAFT_BUDGET) {
+                    break;
+                }
+            }
             long bytesNow = simulation.getBytes();
             long deliverNow = requestedAmount.compareTo(BIG_MAX_LONG) > 0
                     ? Long.MAX_VALUE : requestedAmount.longValue();
-            LinkedHashMap<ICraftingPatternDetails, Long> chosen = asBuilt;
+            LinkedHashMap<ICraftingPatternDetails, Long> chosen = constructed;
             com.ae2vm.replay.VirtualCPUCluster.Verdict closestStall = null;
-            for (LinkedHashMap<ICraftingPatternDetails, Long> cand : candidates) {
-                patternTimes.clear();
-                patternTimes.putAll(cand);
-                com.ae2vm.replay.VirtualCPUCluster.Verdict v = new com.ae2vm.replay.VirtualCPUCluster(
-                        new VMPlan(outputKey, deliverNow, bytesNow, false, usedItems,
-                                missingItems, emittedItems, new LinkedHashMap<>(patternTimes)),
-                        outputKey, deliverNow).run(10_000, 0);
-                if (v.status == com.ae2vm.replay.VirtualCPUCluster.Verdict.Status.COMPLETE) {
-                    chosen = cand;
-                    closestStall = null;
-                    break;
+            if (totalCrafts <= VERIFY_CRAFT_BUDGET) {
+                for (LinkedHashMap<ICraftingPatternDetails, Long> cand : candidates) {
+                    patternTimes.clear();
+                    patternTimes.putAll(cand);
+                    com.ae2vm.replay.VirtualCPUCluster.Verdict v = new com.ae2vm.replay.VirtualCPUCluster(
+                            new VMPlan(outputKey, deliverNow, bytesNow, false, usedItems,
+                                    missingItems, emittedItems, new LinkedHashMap<>(patternTimes)),
+                            outputKey, deliverNow).run(10_000, 0);
+                    if (v.status == com.ae2vm.replay.VirtualCPUCluster.Verdict.Status.COMPLETE) {
+                        chosen = cand;
+                        closestStall = null;
+                        break;
+                    }
+                    // keep the closest stall (most delivered) for the report below
+                    if (closestStall == null || v.delivered > closestStall.delivered) {
+                        closestStall = v;
+                    }
                 }
-                // keep the closest stall (most delivered) for the report below
-                if (closestStall == null || v.delivered > closestStall.delivered) {
-                    closestStall = v;
-                }
+            } else {
+                // Beyond the budget the assertion pass costs real time on the
+                // server thread; the by-construction order is trusted and the
+                // reference suite's gate adjudicates order fidelity test-side.
+                Log.LOG.debug("[AE2-VM] task-order validation skipped ({} crafts > budget {})",
+                        totalCrafts, VERIFY_CRAFT_BUDGET);
             }
             patternTimes.clear();
             patternTimes.putAll(chosen);
@@ -2619,7 +2592,7 @@ public class CraftingVM {
                 // that may stall live. The stall evidence (blocked inputs,
                 // pass count) is the "why" the enumerator cannot give.
                 Log.LOG.warn("[AE2-VM] task-order validation: no candidate order completed on the "
-                        + "faithful CPU ({} candidate(s) tried; closest: {}); keeping the as-built "
+                        + "faithful CPU ({} candidate(s) tried; closest: {}); keeping the constructed "
                         + "order — this job may stall", candidates.size(), closestStall);
             }
         }
