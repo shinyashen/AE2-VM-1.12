@@ -251,7 +251,7 @@ public final class VirtualCPUCluster {
             }
         }
         sb.append("} pending=").append(pendingKeys.size()).append(" refused=").append(refused);
-        System.out.println(sb);
+        com.ae2vm.Log.LOG.debug("{}", sb);
     }
 
     public Verdict run(int maxSteps, int providerLag) {

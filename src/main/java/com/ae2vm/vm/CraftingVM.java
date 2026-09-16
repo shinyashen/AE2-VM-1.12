@@ -859,7 +859,7 @@ public class CraftingVM {
 
     private void logPerfLine(long vmStartNs) {
         long calcUs = (System.nanoTime() - vmStartNs) / 1_000;
-        Log.LOG.info("[AE2-VM] calc time: {} us ({} ms)", calcUs, String.format("%.2f", calcUs / 1000.0D));
+        Log.LOG.debug("[AE2-VM] calc time: {} us ({} ms)", calcUs, String.format("%.2f", calcUs / 1000.0D));
     }
 
     private void applyBundleDirect(Bundle b) {
@@ -1197,7 +1197,7 @@ public class CraftingVM {
                 } catch (Throwable ignored) {
                 }
                 long crafts = (deficit + perCraft - 1) / perCraft;
-                Log.LOG.info("[AE2-VM] ring E-case: {} deficit {} -> {} crafts of its own pattern",
+                Log.LOG.debug("[AE2-VM] ring E-case: {} deficit {} -> {} crafts of its own pattern",
                         e.getKey().getDefinition(), deficit, crafts);
                 total.put(e.getKey(), BigInteger.valueOf(crafts));
                 if (rescheduled == null) rescheduled = new ArrayList<>();
@@ -2594,6 +2594,7 @@ public class CraftingVM {
             long deliverNow = requestedAmount.compareTo(BIG_MAX_LONG) > 0
                     ? Long.MAX_VALUE : requestedAmount.longValue();
             LinkedHashMap<ICraftingPatternDetails, Long> chosen = asBuilt;
+            com.ae2vm.replay.VirtualCPUCluster.Verdict closestStall = null;
             for (LinkedHashMap<ICraftingPatternDetails, Long> cand : candidates) {
                 patternTimes.clear();
                 patternTimes.putAll(cand);
@@ -2603,11 +2604,24 @@ public class CraftingVM {
                         outputKey, deliverNow).run(10_000, 0);
                 if (v.status == com.ae2vm.replay.VirtualCPUCluster.Verdict.Status.COMPLETE) {
                     chosen = cand;
+                    closestStall = null;
                     break;
+                }
+                // keep the closest stall (most delivered) for the report below
+                if (closestStall == null || v.delivered > closestStall.delivered) {
+                    closestStall = v;
                 }
             }
             patternTimes.clear();
             patternTimes.putAll(chosen);
+            if (closestStall != null) {
+                // Never silent: every candidate the replica rejected is a plan
+                // that may stall live. The stall evidence (blocked inputs,
+                // pass count) is the "why" the enumerator cannot give.
+                Log.LOG.warn("[AE2-VM] task-order validation: no candidate order completed on the "
+                        + "faithful CPU ({} candidate(s) tried; closest: {}); keeping the as-built "
+                        + "order — this job may stall", candidates.size(), closestStall);
+            }
         }
         if (!missingItems.isEmpty()) {
             StringBuilder sb = new StringBuilder("[AE2-VM DIAG-MISS] rootCraftTimes=").append(rootCraftTimes).append(" missing:");
@@ -2616,7 +2630,7 @@ public class CraftingVM {
                 sb.append(" ").append(e.getValue()).append("x").append(e.getKey().getDefinition())
                         .append(hasPattern ? "(PATTERN)" : "(leaf)");
             }
-            Log.LOG.info(sb.toString());
+            Log.LOG.debug(sb.toString());
         }
         if (!patternTimes.isEmpty()) {
             StringBuilder sb = new StringBuilder("[AE2-VM DIAG-PATS]");
@@ -2625,7 +2639,7 @@ public class CraftingVM {
                         com.ae2vm.compat.PatternCompat.getPrimaryOutput(e.getKey()) == null
                                 ? "?" : com.ae2vm.compat.PatternCompat.getPrimaryOutput(e.getKey()).getDefinition());
             }
-            Log.LOG.info(sb.toString());
+            Log.LOG.debug(sb.toString());
         }
         long bytes = simulation.getBytes();
         long deliver;

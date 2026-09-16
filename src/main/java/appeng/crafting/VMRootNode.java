@@ -85,7 +85,7 @@ public final class VMRootNode extends CraftingTreeNode {
                 return super.request(inventory, amount, source);
             }
             long us = (System.nanoTime() - start) / 1_000L;
-            AE2VM.LOGGER.info("[AE2-VM] job {}: plan for {}x{} in {} us (missing={} patterns={})",
+            AE2VM.LOGGER.debug("[AE2-VM] job {}: plan for {}x{} in {} us (missing={} patterns={})",
                     debugTag, amount, requestedOutput.getDefinition(),
                     us, plan.getMissingItems().size(), plan.getPatternTimes().size());
             if (plan.isSimulation() && !craftingJob.isSimulation()) {
@@ -211,7 +211,7 @@ public final class VMRootNode extends CraftingTreeNode {
             traceRecorder.startSummary(plan);
             traceRecorder.finish("started");
         }
-        AE2VM.LOGGER.info("[AE2-VM DIAG-SETJOB] job {}: cpu got used={} emitted={} patterns={}",
+        AE2VM.LOGGER.debug("[AE2-VM DIAG-SETJOB] job {}: cpu got used={} emitted={} patterns={}",
                 debugTag, plan.getUsedItems().size(), plan.getEmittedItems().size(),
                 plan.getPatternTimes().size());
     }

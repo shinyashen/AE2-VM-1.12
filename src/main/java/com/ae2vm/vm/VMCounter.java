@@ -67,8 +67,8 @@ public final class VMCounter {
                        .append(st[i].getLineNumber()).append(' ');
                 }
             }
-            System.out.println("[LEDGER] " + traceTag + " " + e.key + " "
-                    + (amount > 0 ? "+" : "") + amount + " -> " + e.value + "  | " + who);
+            com.ae2vm.Log.LOG.debug("[LEDGER] {} {} {} -> {}  | {}",
+                    traceTag, e.key, (amount > 0 ? "+" : "") + amount, e.value, who);
         }
     }
 
