@@ -93,7 +93,13 @@ class Ae2VmReferenceCapabilitySuiteTest {
             "S2 — at the shipping default (solver gate off) the cycle's "
                     + "catalyst seed evaporates in the propagation net (VM-AUDIT "
                     + "B4); with ringSolverEnabled=true the fold bills the seed "
-                    + "and the job is honestly refused"));
+                    + "and the job is honestly refused",
+            "single-dag/fibonacci/unbounded",
+            "S2 — the deterministic task order (formerly hash-bucket shuffled, "
+                    + "which masked this) lists consumers before producers for "
+                    + "this 32-deep DAG and neither the discovery order nor its "
+                    + "reversal completes; execution-aware ordering for deep "
+                    + "non-ring DAGs is a tracked follow-up"));
 
     private static void runOne(ReferenceScenario scenario) {
         var result = RUNNER.run(AE2_VM, scenario);

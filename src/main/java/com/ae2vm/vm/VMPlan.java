@@ -3,7 +3,7 @@ package com.ae2vm.vm;
 import appeng.api.networking.crafting.ICraftingPatternDetails;
 import appeng.api.storage.data.IAEItemStack;
 
-import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.function.Function;
 
@@ -31,7 +31,10 @@ public final class VMPlan {
         this.usedItems = usedItems;
         this.missingItems = missingItems;
         this.emittedItems = emittedItems;
-        this.patternTimes = new HashMap<>(patternTimes);
+        // LinkedHashMap: the plan's task order IS the execution order the
+        // fold validated — a HashMap here re-shuffles it by identity hash
+        // (different every JVM) and priority scheduling flips verdicts
+        this.patternTimes = new LinkedHashMap<>(patternTimes);
     }
 
     public IAEItemStack getOutputKey() { return outputKey; }
@@ -49,7 +52,7 @@ public final class VMPlan {
     public VMCounter getEmittedItems() { return emittedItems; }
 
     public Map<ICraftingPatternDetails, Long> getPatternTimes() {
-        return new HashMap<>(patternTimes);
+        return new LinkedHashMap<>(patternTimes);
     }
 
     /**
