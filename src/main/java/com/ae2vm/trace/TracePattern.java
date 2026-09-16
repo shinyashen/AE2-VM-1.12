@@ -10,7 +10,7 @@ import java.util.List;
 /**
  * A pattern as the trace sees it: condensed inputs/outputs (tokenized
  * specs with their encoded sizes), crafting/processing kind, substitution
- * flag and priority. This is the closure-table entry (design doc §3.3)
+ * flag and priority. This is the closure-table entry
  * that keeps a trace self-contained for --recompile.
  */
 public final class TracePattern {
@@ -22,7 +22,7 @@ public final class TracePattern {
     public int priority;
 
     /**
-     * Schema v2 (design doc §6.1): this pattern's own compiled bytecode,
+     * Schema v2: this pattern's own compiled bytecode,
      * embedded so offline CALL execution never needs the live compiler.
      * Null for patterns that were never CALLed during recording.
      */

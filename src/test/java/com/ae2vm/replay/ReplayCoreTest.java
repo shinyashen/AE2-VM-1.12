@@ -10,7 +10,6 @@ import com.ae2vm.trace.TraceSnapshot;
 import com.ae2vm.vm.Opcode;
 import org.junit.jupiter.api.Test;
 
-import java.io.ByteArrayOutputStream;
 import java.util.Base64;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;

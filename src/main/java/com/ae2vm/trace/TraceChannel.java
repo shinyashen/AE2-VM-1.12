@@ -8,7 +8,7 @@ import net.minecraftforge.fml.relauncher.Side;
  * The mod's own network channel — used only by trace download (S2C).
  * Handlers live in the common package and are strictly side-guarded; the
  * client-side receiver is reached through lazy class resolution so a
- * dedicated server never loads client classes (design doc §5.2).
+ * dedicated server never loads client classes.
  */
 public final class TraceChannel {
 

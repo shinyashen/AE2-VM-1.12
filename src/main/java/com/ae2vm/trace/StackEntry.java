@@ -7,7 +7,7 @@ import com.google.gson.JsonObject;
  * A counted occurrence of a {@link StackSpec} — snapshot inventory lines,
  * plan used/missing/emitted lines, bytecode constant-pool entries.
  * Counts are JSON strings so BigInteger amounts (> 2^53) survive round
- * trips without precision loss (design doc §3.2).
+ * trips without precision loss.
  *
  * <p>Canonical JSON: {"s":{...spec...},"c":"1000"} with "cf":true added
  * only when craftable (snapshot craftable entries).

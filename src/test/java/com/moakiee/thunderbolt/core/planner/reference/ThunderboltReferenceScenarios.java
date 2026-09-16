@@ -315,9 +315,9 @@ public final class ThunderboltReferenceScenarios {
     }
 
     // The durability/finite-use-chain scenario was removed with the DURABILITY_TOOL
-    // feature (2026-09-14): the vendor closed form's premise does not hold on the
+    // feature: the vendor closed form's premise does not hold on the
     // AE2UEL CPU (exact processing extraction), so the AE2VM planner deliberately
-    // deviates to gross charging — see local/VM-AUDIT.md B3.
+    // deviates to gross charging.
 
     private static void addFuzzyVariant(List<ReferenceScenario> out, int amount) {
         var source = new ReusableStockSource("host", "fuzzy-reference");

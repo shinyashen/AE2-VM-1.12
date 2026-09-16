@@ -1,5 +1,4 @@
 package com.ae2vm.vm;
-import com.ae2vm.test.harness.Bench;
 import com.ae2vm.test.fakes.BenchSimulationState;
 import com.ae2vm.test.fakes.BenchPatternDetails;
 import com.ae2vm.test.fakes.BenchAEItemStack;

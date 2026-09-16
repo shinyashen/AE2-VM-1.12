@@ -42,47 +42,47 @@ import appeng.api.storage.IStorageChannel;
 public interface IItemList<T extends IAEStack<T>> extends IItemContainer<T>, Iterable<T>
 {
 
-	/**
-	 * add a stack to the list stackSize is used to add to stackSize, this will merge the stack with an item already in
-	 * the list if found.
-	 *
-	 * @param option stacktype option
-	 */
-	void addStorage( T option ); // adds a stack as stored
+    /**
+     * add a stack to the list stackSize is used to add to stackSize, this will merge the stack with an item already in
+     * the list if found.
+     *
+     * @param option stacktype option
+     */
+    void addStorage( T option ); // adds a stack as stored
 
-	/**
-	 * add a stack to the list as craftable, this will merge the stack with an item already in the list if found.
-	 *
-	 * @param option stacktype option
-	 */
-	void addCrafting( T option );
+    /**
+     * add a stack to the list as craftable, this will merge the stack with an item already in the list if found.
+     *
+     * @param option stacktype option
+     */
+    void addCrafting( T option );
 
-	/**
-	 * add a stack to the list, stack size is used to add to requestable, this will merge the stack with an item already
-	 * in the list if found.
-	 *
-	 * @param option stacktype option
-	 */
-	void addRequestable( T option ); // adds a stack as requestable
+    /**
+     * add a stack to the list, stack size is used to add to requestable, this will merge the stack with an item already
+     * in the list if found.
+     *
+     * @param option stacktype option
+     */
+    void addRequestable( T option ); // adds a stack as requestable
 
-	/**
-	 * @return the first item in the list
-	 */
-	T getFirstItem();
+    /**
+     * @return the first item in the list
+     */
+    T getFirstItem();
 
-	/**
-	 * @return the number of items in the list
-	 */
-	int size();
+    /**
+     * @return the number of items in the list
+     */
+    int size();
 
-	/**
-	 * allows you to iterate the list.
-	 */
-	@Override
-	Iterator<T> iterator();
+    /**
+     * allows you to iterate the list.
+     */
+    @Override
+    Iterator<T> iterator();
 
-	/**
-	 * resets stack sizes to 0.
-	 */
-	void resetStatus();
+    /**
+     * resets stack sizes to 0.
+     */
+    void resetStatus();
 }

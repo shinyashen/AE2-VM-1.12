@@ -32,13 +32,13 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * missing ("有概率把已经有样板的物品报成缺少"), and a fuzzy-slot substitute that
  * has no stock but IS craftable must be scheduled instead of stalling the plan.
  *
- * <p><b>Slot substitution is a CRAFTING-pattern feature (VM-AUDIT.md B1).</b>
+ * <p><b>Slot substitution is a CRAFTING-pattern feature.</b>
  * AE2UEL encodes {@code canSubstitute = isCrafting && nbt} (PatternHelper :87)
  * and its CPU consults substitutes inside the {@code isCraftable()} branch
  * only (CraftingCPUCluster.executeCrafting) — processing patterns extract
  * their exact condensed keys. The substitute scenarios therefore run on
  * CRAFTABLE fakes and the faithful runtime fills their slots through the
- * craftable-branch hook: planner and runtime AGREE (COMPLETE — the former M5
+ * craftable-branch hook: planner and runtime AGREE (COMPLETE — the former
  * "substitute-only fill stalls at S2" divergence is fixed at the source).
  * The processing twins pin the narrowed compiler: a substitute enabled on a
  * processing pattern's slot is ignored; the EXACT input is scheduled and, if
@@ -111,7 +111,7 @@ class VariantSubstituteChainTest {
     }
 
     /**
-     * B1 twin (processing): the SAME substitute-enabled slot on a PROCESSING
+     * The processing twin: the SAME substitute-enabled slot on a PROCESSING
      * pattern compiles EXACT — no white sub-chain is scheduled and the
      * unstocked exact input is disclosed missing (a real CPU would refuse the
      * job instead of deadlocking on a fill it can never consume).

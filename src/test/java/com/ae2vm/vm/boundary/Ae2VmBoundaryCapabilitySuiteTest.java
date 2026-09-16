@@ -71,7 +71,7 @@ class Ae2VmBoundaryCapabilitySuiteTest {
 
         Fixture fuzzyCraftablePrimary(boolean grayCraftable) {
             // CRAFTABLE: slot substitution is a crafting-pattern feature
-            // (VM-AUDIT.md B1, PatternHelper :87) — a processing pattern with
+            // (PatternHelper :87) — a processing pattern with
             // slotSubs compiles exact and the whole family would flip.
             BenchPatternDetails product = withSlotSubstitute(
                     pat("product", 1, "gray_wool", 1L).asCraftable(), new int[]{0}, "white_wool");
@@ -132,7 +132,7 @@ class Ae2VmBoundaryCapabilitySuiteTest {
     }
 
     /**
-     * Faithful runtime note (B1): planner and runtime AGREE on this suite.
+     * Faithful runtime note: planner and runtime AGREE on this suite.
      * The substitute-slot product is a CRAFTABLE pattern (slot substitution is
      * a crafting-pattern feature — PatternHelper :87 {@code canSubstitute =
      * isCrafting && ...}), so the virtual CPU fills its slots through the

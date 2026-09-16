@@ -14,10 +14,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 
 /**
- * Server → client trace delivery (design doc §5.2): gzip bytes chunked
+ * Server → client trace delivery: gzip bytes chunked
  * into ~28 KiB packets, reassembled client-side into
- * {@code .minecraft/aevm/traces}. Requires the mod on the client — that
- * is the §5.6 matrix's "installed player" channel.
+ * {@code .minecraft/aevm/traces}. Requires the mod on the client — the
+ * installed-player delivery channel.
  */
 public final class TraceDownload {
 

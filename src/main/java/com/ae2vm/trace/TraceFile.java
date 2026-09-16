@@ -10,7 +10,7 @@ import java.util.Map;
 import java.util.TreeMap;
 
 /**
- * The trace document — one order's lifecycle (design doc §2/§3). Field
+ * The trace document — one order's lifecycle. Field
  * set is deliberately minimal and forward-compatible: readers ignore
  * unknown members, unknown event types verify but carry no semantics
  * (WAL-style "skip, don't fail").

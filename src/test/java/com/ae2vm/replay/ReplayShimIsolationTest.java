@@ -24,7 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 /**
- * The shim-isolation gate (design doc §6.0 "哑注册表垫片"): the offline
+ * The shim-isolation gate (the dummy-registry shim): the offline
  * replay classpath is [mod classes, replay-shim classes, gson] with an EMPTY
  * parent loader — no real Minecraft, no AE2UEL. A green run proves the shim
  * surface is complete for the replay path; any engine change that starts

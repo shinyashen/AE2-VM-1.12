@@ -10,9 +10,9 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Offline replica of AE2UEL's crafting-CPU state machine (design doc §7.1),
+ * Offline replica of AE2UEL's crafting-CPU state machine,
  * built operation-by-operation against the live source
- * ({@code CraftingCPUCluster} in /tmp/ae2uel-src, commit of 2026-09):
+ * ({@code CraftingCPUCluster}):
  *
  * <ul>
  *   <li><b>Inputs are charged per push, exactly.</b> There is no input-class
@@ -42,7 +42,7 @@ import java.util.Map;
  * outputs the step after the push (real providers never answer within the
  * same tick), {@code lag=k} k steps later (IO-rhythm checking).
  *
- * <p>Verdict semantics (design doc §7.2): COMPLETE when the requested
+ * <p>Verdict semantics: COMPLETE when the requested
  * amount has been delivered (a CPU whose waitingFor never drains stays busy
  * FOREVER — AE2 has no stall detection, {@code waiting} resets every tick);
  * stalls classified:
@@ -125,7 +125,7 @@ public final class VirtualCPUCluster {
         }
     }
 
-    /** Simulation verdict (design doc §7.2). */
+    /** Simulation verdict. */
     public static final class Verdict {
         public enum Status { COMPLETE, STALL }
 
@@ -343,7 +343,7 @@ public final class VirtualCPUCluster {
      * the pattern's own {@code getSubstituteInputs} — the same source the
      * real CPU reads (PatternHelper :289: the user's grid stack first, then
      * the recipe ingredient's matching stacks). Processing patterns never
-     * reach this: both call sites gate on {@code craftable} (B1 — slot
+     * reach this: both call sites gate on {@code craftable} (slot
      * substitution is a crafting-pattern feature, PatternHelper :87).
      */
     private java.util.Collection<IAEItemStack> substitutesOf(ICraftingPatternDetails d, int slot) {

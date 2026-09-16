@@ -38,30 +38,30 @@ import appeng.api.config.FuzzyMode;
 public interface IItemContainer<T extends IAEStack<T>>
 {
 
-	/**
-	 * add a stack to the list, this will merge the stack with an item already in the list if found.
-	 *
-	 * @param option added stack
-	 */
-	void add( T option ); // adds stack as is
+    /**
+     * add a stack to the list, this will merge the stack with an item already in the list if found.
+     *
+     * @param option added stack
+     */
+    void add( T option ); // adds stack as is
 
-	/**
-	 * @param i compared item
-	 *
-	 * @return a stack equivalent to the stack passed in, but with the correct stack size information, or null if its
-	 * not present
-	 */
-	T findPrecise( T i );
+    /**
+     * @param i compared item
+     *
+     * @return a stack equivalent to the stack passed in, but with the correct stack size information, or null if its
+     * not present
+     */
+    T findPrecise( T i );
 
-	/**
-	 * @param input compared item
-	 *
-	 * @return a list of relevant fuzzy matched stacks
-	 */
-	Collection<T> findFuzzy( T input, FuzzyMode fuzzy );
+    /**
+     * @param input compared item
+     *
+     * @return a list of relevant fuzzy matched stacks
+     */
+    Collection<T> findFuzzy( T input, FuzzyMode fuzzy );
 
-	/**
-	 * @return true if there are no items in the list
-	 */
-	boolean isEmpty();
+    /**
+     * @return true if there are no items in the list
+     */
+    boolean isEmpty();
 }

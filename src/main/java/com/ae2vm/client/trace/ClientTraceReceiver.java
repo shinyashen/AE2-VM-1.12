@@ -11,7 +11,7 @@ import java.nio.file.Path;
 import java.util.Arrays;
 
 /**
- * CLIENT-ONLY receiver for trace downloads (§5.2). Loaded lazily — the
+ * CLIENT-ONLY receiver for trace downloads . Loaded lazily — the
  * side-guarded common handlers are the only callers, so a dedicated
  * server never touches this class. Reassembles chunks on the client
  * thread and saves under {@code .minecraft/aevm/traces}.

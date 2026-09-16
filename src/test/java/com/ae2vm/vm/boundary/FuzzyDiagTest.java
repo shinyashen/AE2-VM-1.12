@@ -37,7 +37,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
  * boundary quantities that must hold once the fix is in.
  *
  * <p>The substitute-slot products are CRAFTABLE fakes: slot substitution is a
- * crafting-pattern feature (VM-AUDIT.md B1, PatternHelper :87), so a
+ * crafting-pattern feature (PatternHelper :87), so a
  * processing pattern with a substitute table compiles exact slots and none of
  * the fuzzy-fill math below would apply to it.
  */

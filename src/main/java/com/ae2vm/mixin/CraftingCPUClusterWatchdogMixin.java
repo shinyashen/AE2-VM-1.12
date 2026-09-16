@@ -19,7 +19,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import java.util.Map;
 
 /**
- * Stall watchdog hook (design doc §7.4, default off): fingerprints the CPU
+ * Stall watchdog hook (default off): fingerprints the CPU
  * on every updateCraftingLogic return and asks {@link StallWatchdog} for a
  * one-shot NBT dump when the state is frozen with a non-empty waitingFor.
  * All AE2 members here are AE2-own names (no SRG), hence remap = false.

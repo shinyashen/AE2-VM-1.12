@@ -5,8 +5,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 
 /**
- * The per-event chained checksum (WAL frame-chain model, design doc
- * §3.1): H = SHA-256(prevHex + "\n" + canonicalEventJson). Any edit,
+ * The per-event chained checksum (WAL frame-chain model): H = SHA-256(prevHex + "\n" + canonicalEventJson). Any edit,
  * reorder or deletion after the fact breaks every subsequent link, which
  * is the technical backing for "please don't edit" and for the loader's
  * truncate-at-first-bad-frame semantics.

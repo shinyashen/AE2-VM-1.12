@@ -8,7 +8,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * The inventory world the calculation saw (design doc §3.3): relevant
+ * The inventory world the calculation saw: relevant
  * subset by default (request closure-reachable families + fluids), full
  * snapshot optional. Fluid-channel stacks use {@code fluid=true} specs;
  * AE2FC fake drops appear as item lines with their FluidName NBT.

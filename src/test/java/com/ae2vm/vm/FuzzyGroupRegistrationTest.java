@@ -13,7 +13,6 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import java.util.Map;
 import java.util.TreeMap;
 
 import static com.ae2vm.test.harness.Bench.k;
@@ -30,7 +29,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * satisfying the primary slot (no false "missing gray wool"), while a pattern
  * WITHOUT replacement (exact single input) still rejects substitutes.
  *
- * <p><b>B1: groups are a CRAFTING-pattern feature.</b> AE2UEL encodes
+ * <p><b>Substitution groups are a CRAFTING-pattern feature.</b> AE2UEL encodes
  * {@code canSubstitute = isCrafting && nbt} (PatternHelper :87) and its CPU
  * consults substitutes in the {@code isCraftable()} branch only, so the
  * compiler registers substitute groups from CRAFTABLE patterns exclusively;
@@ -77,7 +76,7 @@ class FuzzyGroupRegistrationTest {
     }
 
     /**
-     * B1: the same substitute table on a PROCESSING pattern registers NO
+     * The same substitute table on a PROCESSING pattern registers NO
      * group — its slots are exact (PatternHelper :87), so white stock must
      * not satisfy the slot and the resolver's substitute-variant fallback
      * has nothing to resolve through.

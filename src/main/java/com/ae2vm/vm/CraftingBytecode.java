@@ -141,10 +141,6 @@ public class CraftingBytecode {
             return constantPool.size() - 1;
         }
 
-        public IAEItemStack getConstant(int index) {
-            return constantPool.get(index);
-        }
-
         public int addPattern(ICraftingPatternDetails pattern) {
             int existing = patternPool.indexOf(pattern);
             if (existing >= 0) {
@@ -190,16 +186,6 @@ public class CraftingBytecode {
             emitShort(constantIndex);
         }
 
-        public void emitRecordIngredient(int constantIndex) {
-            emit(Opcode.RECORD_INGREDIENT);
-            emitShort(constantIndex);
-        }
-
-        public void emitRecordMissing(int constantIndex) {
-            emit(Opcode.RECORD_MISSING);
-            emitShort(constantIndex);
-        }
-
         public void emitRecordOutput(int constantIndex) {
             emit(Opcode.RECORD_OUTPUT);
             emitShort(constantIndex);
@@ -227,12 +213,6 @@ public class CraftingBytecode {
 
         public void emitInsertOutput(int constantIndex) {
             emit(Opcode.INSERT_OUTPUT);
-            emitShort(constantIndex);
-        }
-
-        /** Records a one-time catalyst/container seed demand (pops the seed amount). */
-        public void emitCatalystSeed(int constantIndex) {
-            emit(Opcode.CATALYST_SEED);
             emitShort(constantIndex);
         }
 

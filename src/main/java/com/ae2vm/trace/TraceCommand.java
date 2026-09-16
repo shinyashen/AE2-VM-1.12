@@ -28,9 +28,9 @@ import java.util.stream.Stream;
 import com.ae2vm.Log;
 
 /**
- * /ae2vm trace ... — the Evidence entry points (design doc §5). The
+ * /ae2vm trace ... — the Evidence entry points. The
  * command is a SERVER command: vanilla clients can run it from chat, which
- * is exactly how players without the mod get their traces (§5.6 matrix).
+ * is exactly how players without the mod get their traces .
  * Visibility: players see only their own traces; ops see everything.
  * Upload is separately gated (public-by-URL leak point).
  */

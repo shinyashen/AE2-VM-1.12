@@ -36,7 +36,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * (FUZZY_SLOT marker) and only lets substitute-variant stock satisfy that portion;
  * same-item NBT variants (processing default fuzzy) remain usable by any slot.
  *
- * <p><b>B1 (2026-09-15): the substitute-slot parents here are CRAFTABLE
+ * <p><b>The substitute-slot parents here are CRAFTABLE
  * fakes.</b> AE2UEL's slot substitution is a crafting-pattern feature
  * (PatternHelper :87 {@code canSubstitute = isCrafting && nbt}; CPU consults
  * substitutes in the isCraftable() branch only), so a processing pattern with

@@ -91,7 +91,7 @@ public class CraftingVM {
     private final List<Bundle> ringNetBundles = new ArrayList<>();
 
     /**
-     * Faithful startup billing for folded rings (M6-B①): per member key,
+     * Faithful startup billing for folded rings: per member key,
      * max(net CPU draw, priming floor) — the inventory a real CPU must
      * withdraw at job start. Computed in {@link #solveRings}, consumed right
      * after the released stock reservations are restored (before any ring
@@ -2401,7 +2401,7 @@ public class CraftingVM {
             ringNetBundles.add(net);
         }
         if (!ringNetBundles.isEmpty()) {
-            // Faithful startup billing (M6-B①): a real CPU owns ONLY the
+            // Faithful startup billing: a real CPU owns ONLY the
             // job-start withdrawal (setJob extracts usedItems into its closed
             // local inventory), so the plan must bill each ring MEMBER key's
             // NET draw — gross consumption minus production that returns to
@@ -2462,21 +2462,6 @@ public class CraftingVM {
         return c;
     }
 
-    /** Per-craft typed inputs of one pattern (returned inputs excluded) — solver view. */
-    private static Map<IAEItemStack, BigInteger> perCraftInputs(ICraftingPatternDetails d) {
-        Map<IAEItemStack, BigInteger> in = new HashMap<>();
-        IAEItemStack[] ins = safeCondensedInputs(d);
-        if (ins != null) {
-            for (IAEItemStack i : ins) {
-                if (i == null || i.getStackSize() <= 0) continue;
-                if (PatternCompiler.detectReturnedInput(d, i) != null) continue;
-                IAEItemStack ik = i.copy().setStackSize(1);
-                ik.reset();
-                in.merge(ik, BigInteger.valueOf(i.getStackSize()), BigInteger::add);
-            }
-        }
-        return in;
-    }
 
     /**
      * Per-craft inputs INCLUDING returned/catalyst lines — the STARTUP probe's
@@ -2485,7 +2470,7 @@ public class CraftingVM {
      * the FIRST craft still consumes it before any return lands, so a
      * catalyst-only pattern (pure conversion rings) must be primed with one
      * unit of its seed — excluding it here is exactly how the seed evaporated
-     * from the bill (VM-AUDIT.md B4).
+     * from the bill.
      */
     private static Map<IAEItemStack, BigInteger> perCraftPrimings(ICraftingPatternDetails d) {
         Map<IAEItemStack, BigInteger> in = new HashMap<>();

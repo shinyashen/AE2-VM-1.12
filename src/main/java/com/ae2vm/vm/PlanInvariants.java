@@ -12,7 +12,7 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Plan invariants (design doc §6.3) — cheap, always-on assertions over
+ * Plan invariants — cheap, always-on assertions over
  * every produced plan. Each rule is shaped by a real production bug:
  *
  * - OUTPUT-MISMATCH : plan delivers something other than the request

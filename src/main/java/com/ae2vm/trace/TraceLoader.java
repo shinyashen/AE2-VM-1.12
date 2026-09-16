@@ -13,7 +13,7 @@ import java.util.zip.GZIPInputStream;
 import java.util.zip.ZipException;
 
 /**
- * Hardened trace reader (design doc §3.1): verifies the per-event chain
+ * Hardened trace reader: verifies the per-event chain
  * and the payload hash; on the first bad event keeps the verified prefix
  * and flags the truncation point instead of failing the whole file
  * (SQLite WAL bad-frame semantics). Unknown event types / unknown members

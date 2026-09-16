@@ -13,7 +13,7 @@ import java.util.Map;
 import com.ae2vm.Log;
 
 /**
- * Live stall watchdog (design doc §7.4, DEFAULT OFF): AE2UEL's {@code
+ * Live stall watchdog (DEFAULT OFF): AE2UEL's {@code
  * waiting} flag resets every tick and nothing ever detects a stuck CPU.
  * The watchdog fingerprints each CPU per tick (task count + waitingFor
  * summary); when the fingerprint holds for {@code stallWatchdogTicks}

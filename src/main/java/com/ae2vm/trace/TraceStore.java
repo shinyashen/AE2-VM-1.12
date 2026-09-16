@@ -12,7 +12,7 @@ import java.util.stream.Stream;
 import com.ae2vm.Log;
 
 /**
- * Trace file home and retention (design doc §5.5): files live under
+ * Trace file home and retention: files live under
  * {@code aevm/traces} under the running server's game dir; retention is LAZY —
  * enforced on every write and on server start — never by a background
  * task. {@code vault.json} lives one level up and is never touched by

@@ -8,7 +8,7 @@ import com.google.gson.JsonObject;
  * reaches a trace file. {@code token} is an opaque vault token ("i#0f3c")
  * substituting the registry/fluid name, {@code nbtToken} ("n#5d2") the
  * opaque substitute for the NBT payload; real names never enter the trace
- * (design doc §5.5). Damage is preserved verbatim: it is part of identity
+ *. Damage is preserved verbatim: it is part of identity
  * but carries no naming information.
  *
  * <p>Immutable and count-free — quantities live in {@link StackEntry}.

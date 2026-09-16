@@ -4,7 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * One lifecycle phase of an order's trace (design doc §2): CALC (the VM
+ * One lifecycle phase of an order's trace: CALC (the VM
  * calculation), START (setJob extraction/scheduling), AUDIT (invariants,
  * watchdog notes, completion stamps). Segments partition the event
  * timeline; the chained hash runs across all segments in order.

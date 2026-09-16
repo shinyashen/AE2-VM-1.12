@@ -42,7 +42,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * The VM previously reported the byproduct as a false missing leaf; these tests pin the
  * correct feasibility + missing domain/amount for all three material modes.
  *
- * <p><b>Planner ⇔ runtime agreement (M6-B①).</b> Folded ring plans are billed so a
+ * <p><b>Planner ⇔ runtime agreement.</b> Folded ring plans are billed so a
  * real AE2UEL CPU can execute them: the delivery is CRAFTED (a job plans against an
  * inventory that ignores the requested item's own stock — CraftingJob.run), and every
  * member key's NET CPU draw plus a priming floor lands in usedItems (the CPU owns

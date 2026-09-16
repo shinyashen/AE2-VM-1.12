@@ -37,13 +37,13 @@ import appeng.api.networking.crafting.ICraftingPatternDetails;
 public interface ICraftingPatternItem
 {
 
-	/**
-	 * Access Details about a pattern
-	 *
-	 * @param is pattern
-	 * @param w crafting world
-	 *
-	 * @return details of pattern
-	 */
-	ICraftingPatternDetails getPatternForItem( ItemStack is, World w );
+    /**
+     * Access Details about a pattern
+     *
+     * @param is pattern
+     * @param w crafting world
+     *
+     * @return details of pattern
+     */
+    ICraftingPatternDetails getPatternForItem( ItemStack is, World w );
 }

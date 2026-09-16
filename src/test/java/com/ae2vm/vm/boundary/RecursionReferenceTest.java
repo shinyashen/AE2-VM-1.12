@@ -40,7 +40,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * 10^12) replicate ThunderboltReferenceScenarios#addRecursionAmplifier and
  * #addRecursionEssenceCatalyst exactly.
  *
- * <p><b>Planner vs runtime (M5 finding).</b> The amplifier's net-growth key A is
+ * <p><b>Planner vs runtime.</b> The amplifier's net-growth key A is
  * ALSO the requested output: a real AE2UEL CPU delivers finalOutput returns
  * (CraftingCPUCluster :265) instead of circulating them into inventory, so after
  * the pre-extracted seed is spent the amplifier starves — a faithful S2 the

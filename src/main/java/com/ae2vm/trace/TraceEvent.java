@@ -8,7 +8,7 @@ import java.util.TreeMap;
 
 /**
  * One decision-point record inside a trace segment. Events carry only
- * stringly-typed structured fields (design doc §4.3 discipline: free-text
+ * stringly-typed structured fields (discipline: free-text
  * reasons must be pre-rendered through the codec, never raw exception
  * messages — they embed real item names).
  *

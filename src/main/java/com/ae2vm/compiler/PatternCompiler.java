@@ -25,13 +25,13 @@ import java.util.concurrent.ConcurrentHashMap;
  *   consults substitutes inside the {@code isCraftable()} branch only
  *   (CraftingCPUCluster.executeCrafting); processing patterns extract their
  *   exact condensed inputs, so compiling a substitute slot for one produces
- *   plans the real engine can never execute (VM-AUDIT.md B1)
+ *   plans the real engine can never execute
  * - catalyst: a condensed output that returns the input (same key, amount ≥ the
  *   per-craft consumption) — the 1.12 analogue of IInput.getRemainingKey()==input
  * - durability: same-item different-damage output transitions compile as an
  *   ordinary gross input (the worn output is a plain byproduct) — the upstream
  *   ceil(times/uses) amortization is unusable on the AE2UEL CPU (exact
- *   processing extraction; see local/VM-AUDIT.md B3)
+ *   processing extraction)
  * - processing-recipe default fuzzy: every input of a !isCraftable() pattern
  */
 public final class PatternCompiler {
@@ -129,9 +129,6 @@ public final class PatternCompiler {
         return key != null && contains(PROCESSING_INPUT_KEYS, key);
     }
 
-    public static void clearProcessingInputKeys() {
-        PROCESSING_INPUT_KEYS.clear();
-    }
 
     public static Set<IAEItemStack> getFuzzyGroup(IAEItemStack key) {
         for (var e : FUZZY_GROUPS.entrySet()) {
@@ -213,7 +210,7 @@ public final class PatternCompiler {
     }
 
     /**
-     * Replay support (trace design doc §6.1): pre-populate the compiled
+     * Replay support: pre-populate the compiled
      * cache from a trace's embedded sub-pattern bytecodes, so offline CALL
      * execution is served entirely from the cache and never touches the
      * live compiler (no PatternHelper, recipes or World).

@@ -16,7 +16,7 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * The server-local token vault (design doc §5.5): a persistent singleton
+ * The server-local token vault: a persistent singleton
  * mapping REAL identities to opaque tokens. Created once (loaded at server
  * startup, created if absent) and appended lazily as new identities show
  * up; every trace on this server shares one vault so the operator can map

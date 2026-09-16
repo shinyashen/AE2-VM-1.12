@@ -8,7 +8,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * System-classloader stub for offline replay (design doc §6.0): builds an
+ * System-classloader stub for offline replay: builds an
  * isolated classloader over {@code --deps} jars PLUS this jar itself, then
  * reflectively enters {@link ReplayMain} inside it. Nothing here loads
  * game classes; Forge never touches this class.

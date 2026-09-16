@@ -52,7 +52,7 @@ public class AE2VM {
 
     @Mod.EventHandler
     public void serverStarting(FMLServerStartingEvent event) {
-        // diagnostics Evidence layer (design doc §5): command entry points,
+        // diagnostics Evidence layer: command entry points,
         // lazy-retention startup sweep, config-driven chat language
         com.ae2vm.trace.TraceChannel.init();
         event.registerServerCommand(new com.ae2vm.trace.TraceCommand());

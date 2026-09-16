@@ -66,7 +66,7 @@ public final class ReplayMain {
             if (recordedVersion != null && !recordedVersion.equals(Tags.VERSION)) {
                 System.out.println("note: recorded by AE2-VM " + recordedVersion
                         + ", replaying with " + Tags.VERSION
-                        + " — differences are evidence, not verdicts (design doc §6.4).");
+                        + " — differences are evidence, not verdicts.");
             }
             ReplayCore.Report report = ReplayCore.replay(f, simulate);
             System.out.println("replay: patterns=" + report.replayedPlan.getPatternTimes().size()

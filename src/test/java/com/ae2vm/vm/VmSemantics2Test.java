@@ -186,7 +186,7 @@ class VmSemantics2Test {
     }
 
     // The chained durability closed-form test was removed with DURABILITY_TOOL
-    // (see local/VM-AUDIT.md B3; tools compile as ordinary gross inputs now).
+    // Tools compile as ordinary gross inputs now.
 
     private static VMPlan vmRun(BenchPatternDetails root, long amount, BenchSimulationState sim) {
         for (var p : Bench.PATTERNS.values()) {

@@ -7,8 +7,7 @@ import com.ae2vm.vm.VMPlan;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /**
- * Bridges the plan-level tests to the M5 CPU-lifecycle simulator (design
- * doc §7): a plan is no longer "correct" merely because its schedule and
+ * Bridges the plan-level tests to the CPU-lifecycle simulator: a plan is no longer "correct" merely because its schedule and
  * balances are right — it must also SURVIVE the virtual CPU.
  *
  * <p>Semantics: {@code complete} runs the instant provider and asserts the

@@ -1,7 +1,7 @@
 package com.ae2vm.trace;
 
 /**
- * Identity → token substitution boundary (design doc §5.5). Everything
+ * Identity → token substitution boundary. Everything
  * that enters a trace passes through here at the recorder boundary, so
  * every artifact derived from a session — file, chat summary, upload,
  * client downlink — is pseudonymous by construction.

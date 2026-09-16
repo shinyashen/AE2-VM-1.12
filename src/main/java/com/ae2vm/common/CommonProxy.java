@@ -9,7 +9,7 @@ import net.minecraftforge.fml.common.event.FMLPreInitializationEvent;
 public class CommonProxy {
     public void preInit(FMLPreInitializationEvent event) {
         // both sides register the trace channel so the S2C discriminator
-        // tables match (client handlers are side-guarded, design doc §5.2)
+        // tables match (client handlers are side-guarded)
         com.ae2vm.trace.TraceChannel.init();
         AE2VM.LOGGER.info("[AE2-VM] AE2 VM 1.12 loaded (stack-based VM crafting engine, ported from NeoForge 1.21)");
     }

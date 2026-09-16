@@ -5,13 +5,11 @@ import com.ae2vm.test.fakes.BenchSimulationState;
 import com.ae2vm.test.fakes.BenchPatternDetails;
 import com.ae2vm.test.fakes.BenchAEItemStack;
 
-import appeng.api.storage.data.IAEItemStack;
 import com.ae2vm.vm.VMPlan;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import static com.ae2vm.test.fakes.BenchPatternDetails.custom;
 import static com.ae2vm.test.fakes.BenchPatternDetails.key;
 import static com.ae2vm.test.fakes.BenchPatternDetails.processing;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -124,10 +122,10 @@ class VmSemanticsTest {
     }
 
     // The durability-tool closed-form test was removed with the DURABILITY_TOOL
-    // feature (2026-09-14): the amortization's premise — damage-fuzzy re-consumption
+    // feature: the amortization's premise — damage-fuzzy re-consumption
     // of the worn return — does not hold on the AE2UEL CPU (exact processing
     // extraction, CraftingCPUCluster :694). Degrading tools now compile as
-    // ordinary gross inputs; see local/VM-AUDIT.md B3.
+    // ordinary gross inputs.
 
     /**
      * Stock-aware SUB-craft: a stocked child item is consumed from the network

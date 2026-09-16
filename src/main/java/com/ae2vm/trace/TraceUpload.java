@@ -19,7 +19,7 @@ import java.util.zip.GZIPInputStream;
 import com.ae2vm.Log;
 
 /**
- * Optional mclo.gs upload (design doc §5.4): async POST of the
+ * Optional mclo.gs upload: async POST of the
  * (already pseudonymous) trace text, chat-delivered short URL. The
  * upload is OFF by default (op-gated); the primary channel remains the
  * trace FILE itself.

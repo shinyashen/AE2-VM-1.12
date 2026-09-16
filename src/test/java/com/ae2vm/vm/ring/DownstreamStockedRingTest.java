@@ -54,7 +54,7 @@ class DownstreamStockedRingTest {
             assertTrue(plan.getEmittedItems().isEmpty(),
                     "a fully stocked chain produces no surplus");
             assertFalse(plan.isSimulation(), "nothing is missing");
-            // M5 bridge: an executable (non-simulation) plan must survive the CPU
+            // Bridge: an executable (non-simulation) plan must survive the CPU
             CpuLifecycleAssert.complete(plan,
                     com.ae2vm.compat.PatternCompat.getPrimaryOutput(x), 1000);
             return plan;

@@ -13,7 +13,7 @@ import java.util.zip.GZIPOutputStream;
 /**
  * Serializes a trace: stamps the per-event chain, hashes the payload
  * subtree, writes gzip atomically (tmp + ATOMIC_MOVE so a crash never
- * leaves half a trace under the final name — design doc §5.5).
+ * leaves half a trace under the final name).
  */
 public final class TraceWriter {
 

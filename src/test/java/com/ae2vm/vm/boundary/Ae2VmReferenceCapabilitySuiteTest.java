@@ -65,7 +65,7 @@ class Ae2VmReferenceCapabilitySuiteTest {
      * on the faithful CPU; a stall is a live t=0 deadlock the user would hit.
      * Simulation plans are refused before any CPU exists, so their forced-run
      * verdict is informational only. The allowlist below is the closed set of
-     * M5 faithful divergences this port accepts, each with its AE2UEL
+     * faithful divergences this port accepts, each with its AE2UEL
      * citation; an executable plan stalling anywhere else fails the gate, and
      * an allowlisted scenario that stalls with a DIFFERENT class fails too
      * (the divergence moved — re-adjudicate it).
@@ -83,15 +83,15 @@ class Ae2VmReferenceCapabilitySuiteTest {
                     + "scheduled, so nothing ever arrives",
             "cycle/conversion-ring/minimum",
             "S2 — at the shipping default (solver gate off) the cycle's "
-                    + "catalyst seed evaporates in the propagation net (VM-AUDIT "
-                    + "B4); with ringSolverEnabled=true the fold bills the seed "
+                    + "catalyst seed evaporates in the propagation net; with "
+                    + "ringSolverEnabled=true the fold bills the seed "
                     + "and the job is honestly refused",
             "cycle/conversion-ring/unbounded",
             "S2 — at the shipping default (solver gate off) the cycle's "
-                    + "catalyst seed evaporates in the propagation net (VM-AUDIT "
-                    + "B4); with ringSolverEnabled=true the fold bills the seed "
+                    + "catalyst seed evaporates in the propagation net; with "
+                    + "ringSolverEnabled=true the fold bills the seed "
                     + "and the job is honestly refused"));
-    // single-dag/fibonacci/unbounded left the table (P0): the CONSTRUCTED
+    // single-dag/fibonacci/unbounded left the table: the CONSTRUCTED
     // task order (TaskOrdering) is producers-first for this 32-deep DAG and
     // the faithful CPU completes it — the old entry masked a discovery-order
     // stall that the construction obsoleted.

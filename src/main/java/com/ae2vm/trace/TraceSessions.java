@@ -13,7 +13,7 @@ import java.util.UUID;
 import com.ae2vm.Log;
 
 /**
- * Armed-session state machine (design doc §4.1): traces exist ONLY when a
+ * Armed-session state machine: traces exist ONLY when a
  * human armed the recorder. {@code NEXT} records the arming player's next
  * player-sourced order (consumed once); {@code WINDOW} (op) records
  * everything until disarmed. Unarmed = no recorder, no events, no vault

@@ -30,7 +30,7 @@ public class AE2VMConfig {
     @Config.RequiresMcRestart
     public static boolean ringSolverEnabled = false;
 
-    // ---- diagnostics traces (design doc §4.2/§5.5) ----
+    // ---- diagnostics traces ----
 
     @Config.Comment({"Per-session event cap for armed trace recording.",
             "Oldest events are dropped first and the trace is marked truncated."})

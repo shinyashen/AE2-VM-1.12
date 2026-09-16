@@ -14,8 +14,7 @@ import java.util.Map;
  * (standalone replay, CI): a dummy Item per stack token and a dummy NBT
  * payload per NBT token. The VM needs identity only — the same
  * (token, damage, nbtToken) always materializes an equal stack, different
- * ones never collide, and no real name is ever required (design doc §6.0
- * "哑注册表垫片").
+ * ones never collide, and no real name is ever required.
  */
 public final class HeadlessStackFactory {
 

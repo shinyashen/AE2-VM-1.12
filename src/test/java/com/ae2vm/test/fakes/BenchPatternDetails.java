@@ -7,7 +7,6 @@ import net.minecraft.item.ItemStack;
 import net.minecraft.world.World;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 
@@ -19,7 +18,7 @@ import java.util.Map;
  * produce the crafting-pattern shape needed to exercise the substitute-slot
  * machinery (AE2UEL encodes substitution as a crafting-pattern feature —
  * PatternHelper :87 — so a processing fake with slot substitutes no longer
- * compiles fuzzy slots: VM-AUDIT.md B1).
+ * compiles fuzzy slots).
  */
 public final class BenchPatternDetails implements ICraftingPatternDetails {
     private final IAEItemStack[] condensedInputs;

@@ -318,7 +318,7 @@ public final class Ae2VmReferencePlanner implements ReferencePlanner {
                 // tool recipe (Ingredient data 32767 / ZenScript `:*` /
                 // OreDictionary.WILDCARD_VALUE) — the pattern inherits the
                 // recipe's matching stacks via getSubstituteInputs
-                // (PatternHelper :289). B1 (2026-09-15) correctly stopped
+                // (PatternHelper :289). The processing-exactness rule correctly stops
                 // the compiler from honoring these tables on PROCESSING
                 // patterns (the old translation stalled at t=0 on a real
                 // CPU); translating the fixture as craftable keeps the

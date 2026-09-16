@@ -8,7 +8,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * The serialized compiled bytecode (design doc §3.3): flat opcode bytes +
+ * The serialized compiled bytecode: flat opcode bytes +
  * constant pool + pattern pool. Carrying the compilation product in the
  * trace is what lets the standalone replay jar execute the order with no
  * pattern resolution, recipe lookup or World at all; the closure table

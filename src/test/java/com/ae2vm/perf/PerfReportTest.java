@@ -1,5 +1,4 @@
 package com.ae2vm.perf;
-import com.ae2vm.test.harness.Bench;
 import com.ae2vm.test.fakes.BenchSimulationState;
 import com.ae2vm.test.fakes.BenchPatternDetails;
 import com.ae2vm.test.fakes.BenchAEItemStack;
@@ -10,7 +9,6 @@ import com.ae2vm.vm.CraftingBytecode;
 import com.ae2vm.vm.CraftingVM;
 import com.ae2vm.vm.DeadCycleGuard;
 import com.ae2vm.vm.VMPlan;
-import com.moakiee.thunderbolt.core.planner.reference.ReferencePlanner;
 import com.moakiee.thunderbolt.core.planner.reference.ReferenceScenario;
 import com.moakiee.thunderbolt.core.planner.reference.ThunderboltReferenceScenarios;
 import appeng.api.networking.crafting.ICraftingPatternDetails;
@@ -211,7 +209,7 @@ class PerfReportTest {
                 "the conversion-ring scenario must complete, missing=" + cold.missing());
         // Faithful runtime divergence at the SHIPPING configuration (the ring
         // solver gate is OFF here): the cycle's catalyst seed evaporates in
-        // the propagation net (VM-AUDIT B4), so the plan schedules crafts the
+        // the propagation net, so the plan schedules crafts the
         // CPU cannot feed — a real AE2UEL job deadlocks at t=0 (:694 exact
         // extraction, :265 delivery). With ringSolverEnabled=true the fold
         // bills the seed as priming and the job is honestly REFUSED instead

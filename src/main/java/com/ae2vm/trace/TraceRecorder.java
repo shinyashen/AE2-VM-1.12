@@ -17,7 +17,7 @@ import java.util.TreeMap;
 import com.ae2vm.Log;
 
 /**
- * One armed session (design doc §4): owns the in-memory trace document,
+ * One armed session: owns the in-memory trace document,
  * mints tokenized events at the engine's decision points, and writes the
  * file at phase boundaries. Events carry token ids only; the CALC-phase
  * recorder is reachable from engine internals via the thread-local
@@ -26,7 +26,7 @@ import com.ae2vm.Log;
  * <p>Write policy: the file lands as soon as the calculation ends (an
  * abandoned confirm screen must not lose the evidence) and is REWRITTEN
  * when START lands; {@code finish} stamps COMMIT and frees the session.
- * The engine's free-text rule (§4.3): exception messages embed real item
+ * The engine's free-text rule: exception messages embed real item
  * names — record exception CLASS names, never messages.
  */
 public final class TraceRecorder {
@@ -326,7 +326,7 @@ public final class TraceRecorder {
     }
 
     /**
-     * Schema v2 (design doc §6.1): walk the root pattern pool and embed each
+     * Schema v2: walk the root pattern pool and embed each
      * pattern's compiled bytecode (harvested from the compiler cache — every
      * CALLed pattern is compiled by execution time), recursively. Uncalled
      * patterns have no bytecode and stay null: the VM never CALLs them, so
@@ -458,7 +458,7 @@ public final class TraceRecorder {
                 "patterns", Integer.toString(plan.getPatternTimes().size())));
     }
 
-    /** Invariant checker verdicts (design doc §6.3), one event per violation. */
+    /** Invariant checker verdicts, one event per violation. */
     public void invariantViolations(java.util.List<String> violations) {
         for (String v : violations) {
             emit(TraceSegment.AUDIT, "INVARIANT_VIOLATION", Collections.singletonMap("rule", v));

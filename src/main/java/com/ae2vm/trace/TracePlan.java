@@ -8,8 +8,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * The plan summary that ends the CALC segment (design doc §4.3
- * PLAN_RESULT): the four maps a replay diff compares — patternTimes,
+ * The plan summary that ends the CALC segment (the PLAN_RESULT event): the four maps a replay diff compares — patternTimes,
  * used, missing, emitted — plus the simulation flag. Pattern references
  * are indices into {@link TraceBytecode#patterns}.
  */

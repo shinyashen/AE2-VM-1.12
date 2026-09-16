@@ -24,7 +24,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Offline replay core (design doc §6.1): rebuild the world from the
+ * Offline replay core: rebuild the world from the
  * trace — tokenized stock, root bytecode, embedded sub-pattern bytecodes
  * — seed the compiler cache and execute with the CURRENT engine. The
  * recorded plan (token-keyed) and the replayed plan (factory-reverse
@@ -44,7 +44,7 @@ public final class ReplayCore {
         /** Per-key comparison lines; empty when the plans are identical. */
         public final List<String> differences;
         public final boolean identical;
-        /** CPU lifecycle simulation verdict (design doc §7.2); null with --no-simulate. */
+        /** CPU lifecycle simulation verdict; null with --no-simulate. */
         public final VirtualCPUCluster.Verdict verdict;
 
         Report(VMPlan replayedPlan, List<String> differences, VirtualCPUCluster.Verdict verdict) {
@@ -87,7 +87,7 @@ public final class ReplayCore {
 
         List<String> differences = diff(trace.plan, plan, factory, patternIndices);
 
-        // CPU lifecycle simulation (design doc §7.2, instant tier): the
+        // CPU lifecycle simulation (instant tier): the
         // snapshot stock PRE-execution is the S3 reference
         VirtualCPUCluster.Verdict verdict = null;
         if (simulate && trace.plan != null && trace.snapshot != null) {

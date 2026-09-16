@@ -16,7 +16,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * M5 acceptance: the virtual CPU reproduces live AE2 semantics — delivery
+ * Acceptance: the virtual CPU reproduces live AE2 semantics — delivery
  * completes on a sound plan (instant and lagged providers), the gross-
  * emitable shape is flagged S1 (delivery done, CPU busy forever), input
  * starvation is S2 with the blocked input, and the extraction gap is S3.

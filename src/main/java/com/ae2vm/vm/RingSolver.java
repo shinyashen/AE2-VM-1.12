@@ -51,7 +51,7 @@ import java.util.function.Function;
  *
  * <p>Runtime faithfulness: the folded plan must EXECUTE on a real CPU, whose
  * local inventory is exactly the plan's job-start withdrawal. Two rules
- * follow (M6-B①, the ring-family reopening gate). (1) The delivery must be
+ * follow. (1) The delivery must be
  * CRAFTED — a real job plans against an inventory that ignores the requested
  * item's own stock (AE2UEL CraftingJob.run), so the root key's stock may not
  * cover {@code rootDeliver}; stock still spares rounds for non-root members'

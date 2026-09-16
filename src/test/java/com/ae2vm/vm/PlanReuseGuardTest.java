@@ -1,12 +1,10 @@
 package com.ae2vm.vm;
 import com.ae2vm.test.harness.CpuLifecycleAssert;
-import com.ae2vm.test.harness.Bench;
 import com.ae2vm.test.fakes.BenchSimulationState;
 import com.ae2vm.test.fakes.BenchPatternDetails;
 import com.ae2vm.test.fakes.BenchAEItemStack;
 
 import com.ae2vm.compiler.PatternCompiler;
-import com.ae2vm.vm.CraftingBytecode;
 import com.ae2vm.vm.CraftingVM;
 import com.ae2vm.vm.VMCounter;
 import com.ae2vm.vm.VMPlan;
@@ -25,7 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * P2 plan-memoization guards: the stock re-validation
+ * Plan-memoization guards: the stock re-validation
  * ({@link VMPlan#planMatchesStock}) and the pattern-set-version
  * invalidation ({@link CraftingVM#invalidateCaches}) that together allow
  * same-request replays to return instantly without ever serving a stale

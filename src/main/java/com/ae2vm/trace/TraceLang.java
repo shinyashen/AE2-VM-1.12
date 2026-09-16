@@ -10,7 +10,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Properties;
 
 /**
- * Server-side chat localization (design doc §5.7): ONE configured
+ * Server-side chat localization: ONE configured
  * language for the whole server ({@code language} config, default
  * en_us), rendered as literal strings — translation keys would show up
  * raw on vanilla clients without the mod, so the lang files are read

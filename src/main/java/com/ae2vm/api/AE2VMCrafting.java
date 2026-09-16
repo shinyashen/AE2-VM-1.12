@@ -120,7 +120,7 @@ public final class AE2VMCrafting {
     /**
      * Recorder-aware core: {@code rec} is null on the unarmed fast path
      * (a couple of branch checks, zero recording). Events follow the
-     * design doc §4.3 catalog; free-text discipline — exception CLASS
+     * trace event catalog; free-text discipline — exception CLASS
      * names only, never messages (they embed real item names).
      */
     public static VMPlan calculate(IGrid grid, World world,
@@ -256,7 +256,7 @@ public final class AE2VMCrafting {
         }
         VMPlan fixed = applyIgnoreFix(grid, what, plan);
         if (fixed != null) {
-            // Always-on plan assertions (design doc §6.3): violations log
+            // Always-on plan assertions: violations log
             // unconditionally and land as INVARIANT_VIOLATION events when
             // recording. The plan is still served — invariants are evidence,
             // not a veto.
@@ -490,7 +490,7 @@ public final class AE2VMCrafting {
         // stocked nor craftable — schedule the variant's craft and let the
         // fuzzy slot consume its output. (Upstream fixed the same gap in its
         // resolve(); gated on the slot's substitute group so the variant
-        // space stays finite and explicit.) B1: groups exist for CRAFTABLE
+        // space stays finite and explicit.) Groups exist for CRAFTABLE
         // patterns only (PatternHelper :87), so demand whose only consumers
         // are processing slots never resolves through here — their slots are
         // exact and stay exact.
