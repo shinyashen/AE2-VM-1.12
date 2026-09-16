@@ -307,14 +307,22 @@ public final class Ae2VmReferencePlanner implements ReferencePlanner {
             }
             if (input.reusableStockSource() != null) {
                 // Host-owned reusable stock: the slot accepts any candidate
-                // variant. B1 (2026-09-15): the translated patterns are
-                // PROCESSING (machine recipes), and AE2UEL slot substitution
-                // is a crafting-pattern feature (PatternHelper :87) — the
-                // compiler ignores these tables, so the fuzzy/variant-route
-                // MINIMUM/UNBOUNDED modes (feasible only through the
-                // damaged_tool variant) report the exact key as missing for
-                // this engine (FALSE_NEGATIVE in the measurement suite; the
-                // upstream capability stays Thunderbolt-only).
+                // variant. The 1.12-expressible shape for variant-tolerant
+                // reusable tools is a CRAFTING pattern with substitution
+                // enabled: the CPU consults slot substitutes in the
+                // craftable branch only (CraftingCPUCluster :656-692 —
+                // substitutes expanded via findFuzzy IGNORE_ALL, judged by
+                // a real recipe re-match in isValidItemForSlot :211-254),
+                // while processing slots extract exact keys (:694). The
+                // matching real-world declaration is a wildcard-durability
+                // tool recipe (Ingredient data 32767 / ZenScript `:*` /
+                // OreDictionary.WILDCARD_VALUE) — the pattern inherits the
+                // recipe's matching stacks via getSubstituteInputs
+                // (PatternHelper :289). B1 (2026-09-15) correctly stopped
+                // the compiler from honoring these tables on PROCESSING
+                // patterns (the old translation stalled at t=0 on a real
+                // CPU); translating the fixture as craftable keeps the
+                // scenario executable-faithful instead.
                 List<IAEItemStack> variants = new ArrayList<>();
                 for (String candidate : routes.getOrDefault(input, List.of())) {
                     if (candidate.equals(input.key())) {
@@ -337,7 +345,7 @@ public final class Ae2VmReferencePlanner implements ReferencePlanner {
         if (slotSubs.isEmpty()) {
             return base;
         }
-        return BenchPatternDetails.withSlotVariants(base, slotSubs);
+        return BenchPatternDetails.withSlotVariants(base.asCraftable(), slotSubs);
     }
 
     private static BenchAEItemStack damaged(String id, int damage, int maxDamage, long amount) {

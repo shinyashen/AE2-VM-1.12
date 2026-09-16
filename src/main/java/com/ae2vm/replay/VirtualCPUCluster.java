@@ -339,6 +339,26 @@ public final class VirtualCPUCluster {
     }
 
     /**
+     * The craftable-branch slot-fill view. The injected hook wins; otherwise
+     * the pattern's own {@code getSubstituteInputs} — the same source the
+     * real CPU reads (PatternHelper :289: the user's grid stack first, then
+     * the recipe ingredient's matching stacks). Processing patterns never
+     * reach this: both call sites gate on {@code craftable} (B1 — slot
+     * substitution is a crafting-pattern feature, PatternHelper :87).
+     */
+    private java.util.Collection<IAEItemStack> substitutesOf(ICraftingPatternDetails d, int slot) {
+        if (alternates != null) {
+            return alternates.alternates(d, slot);
+        }
+        try {
+            final List<IAEItemStack> subs = d.getSubstituteInputs(slot);
+            return subs == null ? java.util.Collections.emptyList() : subs;
+        } catch (Throwable t) {
+            return java.util.Collections.emptyList();
+        }
+    }
+
+    /**
      * canCraft :444, generalized from a boolean to HOW MANY crafts fit.
      * Processing branch: exact SIMULATE extract of every condensed input —
      * a craft fits when every slot's available pool covers its per-craft
@@ -370,8 +390,8 @@ public final class VirtualCPUCluster {
                 continue;
             }
             long available = inventory.amountOf(in);
-            if (craftable && alternates != null) {
-                for (IAEItemStack alt : alternates.alternates(d, slot)) {
+            if (craftable) {
+                for (IAEItemStack alt : substitutesOf(d, slot)) {
                     if (alt != null) {
                         available += inventory.amountOf(alt);
                     }
@@ -411,8 +431,8 @@ public final class VirtualCPUCluster {
             }
             long left = fires * in.getStackSize();
             left -= inventory.extract(in, left);
-            if (left > 0 && craftable && alternates != null) {
-                for (IAEItemStack alt : alternates.alternates(d, slot)) {
+            if (left > 0 && craftable) {
+                for (IAEItemStack alt : substitutesOf(d, slot)) {
                     if (alt == null || left <= 0) {
                         continue;
                     }
