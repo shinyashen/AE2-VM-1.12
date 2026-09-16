@@ -304,21 +304,33 @@ public final class VirtualCPUCluster {
         // strictly IN TASK ORDER (the first craftable task absorbs the
         // budget; later tasks only see leftovers), so the faithful limit is
         // priority scheduling — each pass fires the tasks in map order, each
-        // repeatedly until its inputs run dry, with returns landing next pass.
+        // repeatedly until its inputs run dry, with returns landing next
+        // pass. WITHIN one pass the inventory only shrinks (returns land
+        // next pass), so each task's stopping point is computable in one
+        // shot — fires = min(remaining, min over slots floor(avail / need))
+        // — and firing that batch is VERDICT-IDENTICAL to the per-craft
+        // loop: same extraction preference, same waitingFor/pending totals
+        // (addition is associative mod 2^64), same injection gating. It
+        // turns O(total crafts) replays into O(tasks x passes): a
+        // 3.5M-craft fibonacci plan replays in microseconds instead of ~1s.
         for (Map.Entry<ICraftingPatternDetails, Long> e : new LinkedHashMap<>(tasks).entrySet()) {
             long remaining = e.getValue();
-            while (remaining > 0 && canCraft(e.getKey())) {
-                extractInputs(e.getKey());
-                remaining--;
-                changeStamp++;
-                int due = step + Math.max(1, lag); // pushPattern :726 — the provider returns next tick // pushPattern :726 — the provider returns next tick
-                for (IAEItemStack out : outputsOf(e.getKey())) {
-                    // :730 — a successful push records EXPECTED outputs in waitingFor
-                    waitingFor.add(out, out.getStackSize());
-                    scheduleReturn(out, due);
-                }
+            ICraftingPatternDetails d = e.getKey();
+            long fires = firesBeforeInputsRunDry(d, remaining);
+            if (fires <= 0) {
+                continue;
             }
-            tasks.put(e.getKey(), remaining);
+            extractInputs(d, fires);
+            remaining -= fires;
+            changeStamp++;
+            int due = step + Math.max(1, lag); // pushPattern :726 — the provider returns next tick
+            for (IAEItemStack out : outputsOf(d)) {
+                // :730 — a successful push records EXPECTED outputs in waitingFor
+                long amount = saturatedMultiply(fires, out.getStackSize());
+                waitingFor.add(out, amount);
+                scheduleReturn(out, amount, due);
+            }
+            tasks.put(d, remaining);
         }
 
         if (delivered >= finalAmount) {
@@ -327,16 +339,23 @@ public final class VirtualCPUCluster {
     }
 
     /**
-     * canCraft :444. Processing branch: exact SIMULATE extract of every
-     * condensed input. Craftable branch (:454-516): availability counts the
-     * slot's alternates — simplified to per-condensed-slot totals (the real
-     * code reserves per non-condensed slot to bound shared substitutes, which
-     * only matters when two slots share an alternate; no fixture does).
+     * canCraft :444, generalized from a boolean to HOW MANY crafts fit.
+     * Processing branch: exact SIMULATE extract of every condensed input —
+     * a craft fits when every slot's available pool covers its per-craft
+     * need, and within a pass nothing refills the inventory, so the per-
+     * craft loop's stopping point is the min over slots of floor(available
+     * / needed), capped by the remaining count. Craftable branch (:454-516):
+     * a slot's pool sums its alternates exactly as canCraft did (plain
+     * addition, so the one-craft verdict matches bit-for-bit); extraction
+     * still drains the exact key first (see {@link #extractInputs}).
+     * Simplified from the real code's per-non-condensed-slot reservation,
+     * which only matters when two slots share an alternate; no fixture does.
+     * Inputs-less patterns answer "all of them".
      */
-    private boolean canCraft(ICraftingPatternDetails d) {
+    private long firesBeforeInputsRunDry(ICraftingPatternDetails d, long remaining) {
         IAEItemStack[] inputs = d.getCondensedInputs();
         if (inputs == null) {
-            return true;
+            return remaining;
         }
         boolean craftable;
         try {
@@ -344,7 +363,8 @@ public final class VirtualCPUCluster {
         } catch (Throwable t) {
             craftable = false;
         }
-        for (int slot = 0; slot < inputs.length; slot++) {
+        long fires = remaining;
+        for (int slot = 0; slot < inputs.length && fires > 0; slot++) {
             IAEItemStack in = inputs[slot];
             if (in == null || in.getStackSize() <= 0) {
                 continue;
@@ -357,15 +377,23 @@ public final class VirtualCPUCluster {
                     }
                 }
             }
-            if (available < in.getStackSize()) {
-                return false;
+            long bySlot = available / in.getStackSize();
+            if (bySlot < fires) {
+                fires = bySlot;
             }
         }
-        return true;
+        return fires;
     }
 
-    /** Extracts this craft's inputs: exact keys; alternates only for craftable patterns. */
-    private void extractInputs(ICraftingPatternDetails d) {
+    /**
+     * Extracts {@code fires} crafts' inputs: exact keys first, alternates
+     * (craftable branch :656-692, findFuzzy + isValidItemForSlot) for
+     * whatever the exact pool cannot cover — the same preference the
+     * per-craft loop produced, applied to the batch total. fires x need
+     * cannot overflow: {@link #firesBeforeInputsRunDry} bounded fires by
+     * every slot's availability.
+     */
+    private void extractInputs(ICraftingPatternDetails d, long fires) {
         IAEItemStack[] inputs = d.getCondensedInputs();
         if (inputs == null) {
             return;
@@ -381,11 +409,9 @@ public final class VirtualCPUCluster {
             if (in == null || in.getStackSize() <= 0) {
                 continue;
             }
-            long left = in.getStackSize();
+            long left = fires * in.getStackSize();
             left -= inventory.extract(in, left);
             if (left > 0 && craftable && alternates != null) {
-                // craftable branch :656-692: findFuzzy over the slot's
-                // substitutes, each validated by isValidItemForSlot
                 for (IAEItemStack alt : alternates.alternates(d, slot)) {
                     if (alt == null || left <= 0) {
                         continue;
@@ -410,10 +436,20 @@ public final class VirtualCPUCluster {
         return outs;
     }
 
-    private void scheduleReturn(IAEItemStack out, int due) {
+    /** Schedules a return of {@code amount} units to arrive at {@code due}. */
+    private void scheduleReturn(IAEItemStack out, long amount, int due) {
         pendingKeys.add(out);
-        pendingAmounts.add(out.getStackSize());
+        pendingAmounts.add(amount);
         pendingDue.add(due);
+    }
+
+    /** fires x perCraft, saturated — amounts beyond Long.MAX_VALUE cap there. */
+    private static long saturatedMultiply(long a, long b) {
+        if (a <= 0 || b <= 0) {
+            return 0;
+        }
+        long r = a * b;
+        return r / b == a ? r : Long.MAX_VALUE;
     }
 
     /**
