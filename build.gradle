@@ -419,9 +419,11 @@ spotless {
 
 checkstyle {
     toolVersion = '11.1.0'
-    // single curated ruleset for all source sets; keep it green-first:
-    // any new rule must pass on the current tree before it may block `check`
+    // single curated ruleset; keep it green-first: any new rule must pass on
+    // the current tree before it may block `check`. PatchedMc (RFG's full
+    // patched Minecraft/Forge source tree) is excluded — never our code.
     configFile = file('config/checkstyle/checkstyle.xml')
+    sourceSets = [project.sourceSets.main, project.sourceSets.test, project.sourceSets.shim]
 }
 
 tasks.named('check') {
