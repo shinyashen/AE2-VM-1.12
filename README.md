@@ -30,7 +30,7 @@ Full details: [Features](https://github.com/shinyashen/AE2-VM-1.12/wiki/Features
 
 ## Performance
 
-All 39 reference-suite scenarios × 3 stock modes are **SUPPORTED** with zero flakiness; the deep-chain micro-benchmark plans a Fibonacci-32 chain at 10^9 scale in **~0.6 ms** (hot median). Every release automatically publishes fresh benchmarks to the wiki:
+All 36 reference-suite scenarios × 3 stock modes are **SUPPORTED** with zero flakiness; the deep-chain micro-benchmark plans a Fibonacci-32 chain at 10^9 scale in **~0.6 ms** (hot median). Every release automatically publishes fresh benchmarks to the wiki:
 
 **[Performance & benchmarks →](https://github.com/shinyashen/AE2-VM-1.12/wiki/Performance-en)**
 

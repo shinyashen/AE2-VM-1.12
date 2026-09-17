@@ -55,7 +55,7 @@ class Ae2VmReferenceCapabilitySuiteTest {
         for (ReferenceScenario scenario : scenarios) {
             tests.add(DynamicTest.dynamicTest(scenario.id(), () -> runOne(scenario)));
         }
-        // Trailing summary: prints aggregate status counts + total elapsed across all 33 cases.
+        // Trailing summary: prints aggregate status counts + total elapsed across all 36 cases.
         tests.add(DynamicTest.dynamicTest("summary", () -> printSummary()));
         return tests.stream();
     }
