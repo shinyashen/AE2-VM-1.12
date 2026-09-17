@@ -93,7 +93,10 @@ public final class VMRootNode extends CraftingTreeNode {
             }
             return requestedOutput.copy().setStackSize(amount);
         } catch (CraftBranchFailure failure) {
-            // simulate-retry re-enters request(): keep an open session alive
+            // simulate-retry re-enters request(): keep an open session alive.
+            // This narrow catch must stay ahead of the Throwable handler below:
+            // the bare rethrow is what keeps branch failure out of the
+            // native-fallback path.
             throw failure;
         } catch (Throwable failure) {
             nativeFallback = true;

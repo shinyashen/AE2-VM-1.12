@@ -1134,7 +1134,7 @@ public class CraftingVM {
             }
         }
         this.selfAdjacentKeys = computeSelfKeys(total);
-        if (selfAdjacentKeys != null && !selfAdjacentKeys.isEmpty()) {
+        if (!selfAdjacentKeys.isEmpty()) {
             correctRecursion(total, initialStock);
         }
         // The ring family is feature-gated (hard-off while the live-server
@@ -2601,9 +2601,9 @@ public class CraftingVM {
         if (!patternTimes.isEmpty()) {
             StringBuilder sb = new StringBuilder("[AE2-VM DIAG-PATS]");
             for (var e : patternTimes.entrySet()) {
+                var out = PatternCompat.getPrimaryOutput(e.getKey());
                 sb.append(" ").append(e.getValue()).append("x").append(
-                        PatternCompat.getPrimaryOutput(e.getKey()) == null
-                                ? "?" : PatternCompat.getPrimaryOutput(e.getKey()).getDefinition());
+                        out == null ? "?" : out.getDefinition());
             }
             Log.LOG.debug(sb.toString());
         }

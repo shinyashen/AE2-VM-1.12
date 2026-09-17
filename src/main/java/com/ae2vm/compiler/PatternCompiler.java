@@ -455,8 +455,14 @@ public final class PatternCompiler {
 
     private static CraftingBytecode compilePattern(ICraftingPatternDetails pattern) {
         registerFuzzyGroups(pattern);
-        CraftingBytecode.Builder builder = new CraftingBytecode.Builder();
         IAEItemStack primaryOutput = PatternCompat.getPrimaryOutput(pattern);
+        if (primaryOutput == null) {
+            // Malformed pattern without a usable output: leave it uncached —
+            // computeIfAbsent maps a null return to "absent", and callers
+            // already treat missing bytecode as an unschedulable leaf.
+            return null;
+        }
+        CraftingBytecode.Builder builder = new CraftingBytecode.Builder();
         IAEItemStack outputKey = AE2FCCompat.normalizeFluidItem(primaryOutput);
         if (outputKey == null) {
             outputKey = primaryOutput;
