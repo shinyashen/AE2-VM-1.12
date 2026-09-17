@@ -28,8 +28,8 @@ import com.ae2vm.trace.TraceStore;
     dependencies = "required-after:mixinbooter@[8.0,);after:appliedenergistics2;after:ae2fc;")
 public class AE2VM {
     public static final String MOD_ID = "ae2_vm_112";
-    public static final String CLIENT_PROXY = "ClientProxy";
-    public static final String COMMON_PROXY = "CommonProxy";
+    public static final String CLIENT_PROXY = "com.ae2vm.client.ClientProxy";
+    public static final String COMMON_PROXY = "com.ae2vm.common.CommonProxy";
 
     public static final Logger LOGGER = LogManager.getLogger(Tags.MOD_NAME);
 
