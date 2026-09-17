@@ -6,9 +6,6 @@ import com.ae2vm.test.fakes.BenchPatternDetails;
 import com.ae2vm.test.fakes.BenchAEItemStack;
 
 import appeng.api.storage.data.IAEItemStack;
-import com.ae2vm.vm.CraftingBytecode;
-import com.ae2vm.vm.CraftingVM;
-import com.ae2vm.vm.VMPlan;
 import com.ae2vm.compiler.PatternCompiler;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -17,7 +14,6 @@ import org.junit.jupiter.api.Test;
 import java.util.HashMap;
 import java.util.Map;
 
-import static com.ae2vm.test.fakes.BenchPatternDetails.custom;
 import static com.ae2vm.test.fakes.BenchPatternDetails.processing;
 import static com.ae2vm.test.fakes.BenchPatternDetails.withSubstitute;
 import static org.junit.jupiter.api.Assertions.assertEquals;

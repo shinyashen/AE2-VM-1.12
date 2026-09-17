@@ -176,4 +176,3 @@ public final class BenchPatternDetails implements ICraftingPatternDetails {
     }
 
 }
-

@@ -24,11 +24,9 @@
 package appeng.api.storage;
 
 
-import java.io.IOException;
 
 
 
-import net.minecraft.item.ItemStack;
 
 import appeng.api.storage.data.IAEStack;
 import appeng.api.storage.data.IItemList;

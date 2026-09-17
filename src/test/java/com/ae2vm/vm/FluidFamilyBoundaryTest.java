@@ -6,7 +6,6 @@ import com.ae2vm.compat.AE2FCCompat;
 import com.glodblock.github.common.item.ItemFluidDrop;
 import com.glodblock.github.common.item.fake.FakeFluids;
 import com.glodblock.github.loader.FCItems;
-import net.minecraft.init.Bootstrap;
 import net.minecraftforge.fluids.FluidRegistry;
 import net.minecraftforge.fluids.FluidStack;
 import org.junit.jupiter.api.BeforeAll;

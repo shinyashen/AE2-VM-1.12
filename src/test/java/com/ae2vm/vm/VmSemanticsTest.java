@@ -5,7 +5,6 @@ import com.ae2vm.test.fakes.BenchSimulationState;
 import com.ae2vm.test.fakes.BenchPatternDetails;
 import com.ae2vm.test.fakes.BenchAEItemStack;
 
-import com.ae2vm.vm.VMPlan;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

@@ -4,7 +4,6 @@ import com.ae2vm.test.fakes.BenchAEItemStack;
 
 import appeng.api.storage.data.IAEFluidStack;
 import appeng.api.storage.data.IAEItemStack;
-import com.ae2vm.compat.AE2FCCompat;
 import com.ae2vm.compiler.PatternCompiler;
 import com.ae2vm.vm.CraftingBytecode;
 import com.ae2vm.vm.CraftingVM;

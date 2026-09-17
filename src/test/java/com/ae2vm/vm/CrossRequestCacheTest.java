@@ -7,10 +7,6 @@ import com.ae2vm.test.fakes.BenchAEItemStack;
 
 import appeng.api.storage.data.IAEItemStack;
 import com.ae2vm.compiler.PatternCompiler;
-import com.ae2vm.vm.CraftingBytecode;
-import com.ae2vm.vm.CraftingVM;
-import com.ae2vm.vm.VMCounter;
-import com.ae2vm.vm.VMPlan;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

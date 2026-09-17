@@ -4,9 +4,6 @@ import com.ae2vm.test.harness.Bench;
 import com.ae2vm.test.fakes.BenchSimulationState;
 import com.ae2vm.test.fakes.BenchPatternDetails;
 
-import com.ae2vm.vm.CraftingBytecode;
-import com.ae2vm.vm.CraftingVM;
-import com.ae2vm.vm.VMPlan;
 import com.ae2vm.compiler.PatternCompiler;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;

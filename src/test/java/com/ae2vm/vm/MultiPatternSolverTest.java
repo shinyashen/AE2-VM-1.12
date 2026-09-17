@@ -5,10 +5,6 @@ import com.ae2vm.test.fakes.BenchAEItemStack;
 import com.ae2vm.vm.boundary.Ae2VmReferencePlanner;
 
 import com.ae2vm.compiler.PatternCompiler;
-import com.ae2vm.vm.CraftingBytecode;
-import com.ae2vm.vm.CraftingVM;
-import com.ae2vm.vm.PatternChoiceRepair;
-import com.ae2vm.vm.VMPlan;
 import com.moakiee.thunderbolt.core.planner.reference.ReferenceCapabilityRunner;
 import com.moakiee.thunderbolt.core.planner.reference.ReferencePlanner;
 import com.moakiee.thunderbolt.core.planner.reference.ReferenceRunResult;

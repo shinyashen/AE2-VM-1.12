@@ -1,7 +1,5 @@
 package com.ae2vm.vm;
 
-import com.ae2vm.vm.CraftingBytecode;
-import com.ae2vm.vm.Opcode;
 import org.junit.jupiter.api.Test;
 
 import static com.ae2vm.test.harness.Bench.k;

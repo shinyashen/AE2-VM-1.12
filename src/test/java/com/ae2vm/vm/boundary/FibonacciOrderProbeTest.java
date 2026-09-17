@@ -3,7 +3,6 @@ package com.ae2vm.vm.boundary;
 import appeng.api.networking.crafting.ICraftingPatternDetails;
 import appeng.api.storage.data.IAEItemStack;
 import com.ae2vm.test.fakes.BenchAEItemStack;
-import com.ae2vm.test.fakes.BenchPatternDetails;
 import com.moakiee.thunderbolt.core.planner.reference.ReferenceScenario;
 import com.moakiee.thunderbolt.core.planner.reference.ThunderboltReferenceScenarios;
 import org.junit.jupiter.api.BeforeAll;

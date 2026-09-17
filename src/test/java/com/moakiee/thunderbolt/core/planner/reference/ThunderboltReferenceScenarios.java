@@ -12,7 +12,6 @@ import com.moakiee.thunderbolt.core.planner.CraftGraph;
 import com.moakiee.thunderbolt.core.planner.CraftInput;
 import com.moakiee.thunderbolt.core.planner.CraftOutput;
 import com.moakiee.thunderbolt.core.planner.CraftPlan;
-import com.moakiee.thunderbolt.core.planner.CraftPattern;
 import com.moakiee.thunderbolt.core.planner.ReusableStockSource;
 
 /** Canonical offline cases from the author-facing reference standard. */
