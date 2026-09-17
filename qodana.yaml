@@ -1,0 +1,13 @@
+# Qodana Community for JVM — pilot (P0). Report-only mode: no failureConditions,
+# so the scan never blocks; results are triaged manually against the spotless /
+# checkstyle / PMD gates before any replace-or-keep decision.
+version: "1.0"
+ide: QDJVM
+projectJDK: "25"
+
+# RFG's decompiled/patched Minecraft tree lives under build/ — generated code,
+# never reviewable source. Keep it out of indexing entirely.
+exclude:
+  - name: All
+    paths:
+      - build
