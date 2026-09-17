@@ -20,6 +20,8 @@ import java.util.TreeMap;
 import static com.ae2vm.test.fakes.BenchPatternDetails.custom;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import appeng.api.networking.crafting.ICraftingPatternDetails;
+import net.minecraft.init.Bootstrap;
 
 /**
  * Port of the original ProcessingDefaultFuzzyTest — processing recipes (处理配方)
@@ -42,7 +44,7 @@ class ProcessingDefaultFuzzyTest {
 
     @BeforeAll
     static void bootstrap() {
-        net.minecraft.init.Bootstrap.register();
+        Bootstrap.register();
     }
 
     @BeforeEach
@@ -59,7 +61,7 @@ class ProcessingDefaultFuzzyTest {
     private static VMPlan run(long amount, BenchSimulationState sim) {
         BenchPatternDetails pattern = processingPattern();
         Bench.register(pattern);
-        for (appeng.api.networking.crafting.ICraftingPatternDetails p : Bench.PATTERNS.values()) {
+        for (ICraftingPatternDetails p : Bench.PATTERNS.values()) {
             PatternCompiler.compileIfAbsent(p);
         }
         CraftingBytecode req = PatternCompiler.compileRequest(pattern, amount);
@@ -120,7 +122,7 @@ class ProcessingDefaultFuzzyTest {
         BenchPatternDetails pattern = custom(new IAEItemStack[]{encoded},
                 new IAEItemStack[]{new BenchAEItemStack("lumen_bead", 1)});
         Bench.register(pattern);
-        for (appeng.api.networking.crafting.ICraftingPatternDetails p : Bench.PATTERNS.values()) {
+        for (ICraftingPatternDetails p : Bench.PATTERNS.values()) {
             PatternCompiler.compileIfAbsent(p);
         }
         CraftingBytecode req = PatternCompiler.compileRequest(pattern, 5);

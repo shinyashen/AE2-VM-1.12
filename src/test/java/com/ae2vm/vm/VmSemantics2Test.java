@@ -19,6 +19,7 @@ import static com.ae2vm.test.fakes.BenchPatternDetails.withSubstitute;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import net.minecraft.init.Bootstrap;
 
 /**
  * Ported benchmark families round 2: exponential chains (Fibonacci),
@@ -34,7 +35,7 @@ class VmSemantics2Test {
     static void bootstrap() {
         // Forge guards Items/Blocks behind Bootstrap; vanilla registration is
         // self-contained and safe to run inside a plain JVM.
-        net.minecraft.init.Bootstrap.register();
+        Bootstrap.register();
     }
 
     @BeforeEach

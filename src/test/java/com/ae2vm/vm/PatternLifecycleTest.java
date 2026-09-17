@@ -17,6 +17,7 @@ import static com.ae2vm.test.harness.Bench.k;
 import static com.ae2vm.test.harness.Bench.pat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import net.minecraft.init.Bootstrap;
 
 /**
  * Pattern-lifecycle invalidation guard (1.12 port of the upstream
@@ -34,7 +35,7 @@ class PatternLifecycleTest {
 
     @BeforeAll
     static void bootstrap() {
-        net.minecraft.init.Bootstrap.register();
+        Bootstrap.register();
     }
 
     /** Mutable-view VM: the map IS the resolver (changes take effect live). */

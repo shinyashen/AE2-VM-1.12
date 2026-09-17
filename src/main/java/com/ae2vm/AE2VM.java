@@ -9,6 +9,10 @@ import net.minecraftforge.fml.common.event.FMLPreInitializationEvent;
 import net.minecraftforge.fml.common.event.FMLServerStartingEvent;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import com.ae2vm.trace.TraceChannel;
+import com.ae2vm.trace.TraceCommand;
+import com.ae2vm.trace.TraceLang;
+import com.ae2vm.trace.TraceStore;
 
 /**
  * AE2 VM 1.12 — stack-based VM crafting calculator for AE2UEL.
@@ -24,8 +28,8 @@ import org.apache.logging.log4j.Logger;
     dependencies = "required-after:mixinbooter@[8.0,);after:appliedenergistics2;after:ae2fc;")
 public class AE2VM {
     public static final String MOD_ID = "ae2_vm_112";
-    public static final String CLIENT_PROXY = "com.ae2vm.client.ClientProxy";
-    public static final String COMMON_PROXY = "com.ae2vm.common.CommonProxy";
+    public static final String CLIENT_PROXY = "ClientProxy";
+    public static final String COMMON_PROXY = "CommonProxy";
 
     public static final Logger LOGGER = LogManager.getLogger(Tags.MOD_NAME);
 
@@ -54,9 +58,9 @@ public class AE2VM {
     public void serverStarting(FMLServerStartingEvent event) {
         // diagnostics Evidence layer: command entry points,
         // lazy-retention startup sweep, config-driven chat language
-        com.ae2vm.trace.TraceChannel.init();
-        event.registerServerCommand(new com.ae2vm.trace.TraceCommand());
-        com.ae2vm.trace.TraceLang.reload();
-        com.ae2vm.trace.TraceStore.enforceRetention();
+        TraceChannel.init();
+        event.registerServerCommand(new TraceCommand());
+        TraceLang.reload();
+        TraceStore.enforceRetention();
     }
 }

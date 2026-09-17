@@ -15,6 +15,15 @@ import java.util.IdentityHashMap;
 import java.util.Map;
 import java.util.TreeMap;
 import com.ae2vm.Log;
+import appeng.api.networking.crafting.ICraftingPatternDetails;
+import com.ae2vm.Tags;
+import com.ae2vm.compat.PatternCompat;
+import com.ae2vm.compiler.PatternCompiler;
+import com.ae2vm.vm.VMCounter;
+import java.util.Base64;
+import java.util.List;
+import java.util.UUID;
+import net.minecraftforge.fml.common.Loader;
 
 /**
  * One armed session: owns the in-memory trace document,
@@ -56,8 +65,8 @@ public final class TraceRecorder {
         this.file = new TraceFile();
         this.file.traceId = traceId;
         this.file.vaultId = vault.getVaultId();
-        this.file.meta.put("aevm", com.ae2vm.Tags.VERSION);
-        this.file.meta.put("mc", net.minecraftforge.fml.common.Loader.MC_VERSION);
+        this.file.meta.put("aevm", Tags.VERSION);
+        this.file.meta.put("mc", Loader.MC_VERSION);
         this.file.meta.put("side", "SERVER");
         this.baseDir = baseDir;
         this.cap = Math.max(1000, cap);
@@ -164,7 +173,7 @@ public final class TraceRecorder {
     // ------------------------------------------------------------------
     // stamped decision points (CALC)
 
-    public void stampRequest(IActionSource source, java.util.UUID player,
+    public void stampRequest(IActionSource source, UUID player,
                              IAEItemStack what, long amount, boolean simulate) {
         Map<String, String> f = new TreeMap<>();
         f.put("what", codec.toSpec(McStackAdapter.identityOf(what)).token);
@@ -246,12 +255,12 @@ public final class TraceRecorder {
     }
 
     public void patternResolved(IAEItemStack key, String tier,
-                                appeng.api.networking.crafting.ICraftingPatternDetails chosen,
+                                ICraftingPatternDetails chosen,
                                 int candidates) {
         String chosenToken = "none";
         long perCraft = 0;
         if (chosen != null) {
-            appeng.api.storage.data.IAEItemStack out = com.ae2vm.compat.PatternCompat.getPrimaryOutput(chosen);
+            IAEItemStack out = PatternCompat.getPrimaryOutput(chosen);
             if (out != null) {
                 chosenToken = token(out);
                 perCraft = out.getStackSize();
@@ -269,12 +278,12 @@ public final class TraceRecorder {
      * choice was made from.
      */
     public void repairChoice(IAEItemStack key,
-                             appeng.api.networking.crafting.ICraftingPatternDetails chosen,
+                             ICraftingPatternDetails chosen,
                              int alternatives, boolean synthesized) {
         String chosenToken = "none";
         if (chosen != null) {
-            appeng.api.storage.data.IAEItemStack out =
-                    com.ae2vm.compat.PatternCompat.getPrimaryOutput(chosen);
+            IAEItemStack out =
+                    PatternCompat.getPrimaryOutput(chosen);
             if (out != null) {
                 chosenToken = token(out);
             }
@@ -299,7 +308,7 @@ public final class TraceRecorder {
         fill(p.used, plan.getUsedItems());
         fill(p.missing, plan.getMissingItems());
         fill(p.emitted, plan.getEmittedItems());
-        for (Map.Entry<appeng.api.networking.crafting.ICraftingPatternDetails, Long> e
+        for (Map.Entry<ICraftingPatternDetails, Long> e
                 : plan.getPatternTimes().entrySet()) {
             Integer idx = e.getKey() == null || file.bytecode == null ? null
                     : patternIndices.get(e.getKey());
@@ -341,7 +350,7 @@ public final class TraceRecorder {
      * it. Appending keeps every existing pool index valid.
      */
     private int registerRuntimePattern(
-            appeng.api.networking.crafting.ICraftingPatternDetails d) {
+            ICraftingPatternDetails d) {
         TracePattern tp = new TracePattern(d.isCraftable(), d.canSubstitute(),
                 d.getPriority());
         for (IAEItemStack s : d.getCondensedInputs()) {
@@ -354,7 +363,7 @@ public final class TraceRecorder {
                 tp.condensedOutputs.add(BytecodeTraceCodec.entryOf(s, codec));
             }
         }
-        CraftingBytecode sub = com.ae2vm.compiler.PatternCompiler.getCompiled(d);
+        CraftingBytecode sub = PatternCompiler.getCompiled(d);
         if (sub != null) {
             tp.compiled = buildNested(sub);
         }
@@ -367,13 +376,13 @@ public final class TraceRecorder {
     /** The replay-servable compiled form of one sub-pattern bytecode. */
     private TraceBytecode buildNested(CraftingBytecode sub) {
         TraceBytecode nested = new TraceBytecode();
-        nested.code = java.util.Base64.getEncoder().encodeToString(sub.getCode());
+        nested.code = Base64.getEncoder().encodeToString(sub.getCode());
         for (IAEItemStack s : sub.getConstantPool()) {
             nested.pool.add(BytecodeTraceCodec.entryOf(s, codec));
         }
         nested.outputIndex = sub.getOutputIndex();
         nested.perCraft = Long.toString(sub.getOutputAmountPerCraft());
-        for (appeng.api.networking.crafting.ICraftingPatternDetails d : sub.getPatternPool()) {
+        for (ICraftingPatternDetails d : sub.getPatternPool()) {
             TracePattern ntp = new TracePattern(d.isCraftable(), d.canSubstitute(), d.getPriority());
             for (IAEItemStack s : d.getCondensedInputs()) {
                 ntp.condensedInputs.add(BytecodeTraceCodec.entryOf(s, codec));
@@ -389,20 +398,20 @@ public final class TraceRecorder {
     private void stampOne(TraceBytecode t, CraftingBytecode bc) {
         Object[] pool = bc.getPatternPool();
         for (int i = 0; i < pool.length && i < t.patterns.size(); i++) {
-            CraftingBytecode sub = com.ae2vm.compiler.PatternCompiler.getCompiled(
-                    (appeng.api.networking.crafting.ICraftingPatternDetails) pool[i]);
+            CraftingBytecode sub = PatternCompiler.getCompiled(
+                    (ICraftingPatternDetails) pool[i]);
             if (sub == null) {
                 continue;
             }
             TracePattern tp = t.patterns.get(i);
             TraceBytecode nested = new TraceBytecode();
-            nested.code = java.util.Base64.getEncoder().encodeToString(sub.getCode());
+            nested.code = Base64.getEncoder().encodeToString(sub.getCode());
             for (IAEItemStack s : sub.getConstantPool()) {
                 nested.pool.add(BytecodeTraceCodec.entryOf(s, codec));
             }
             nested.outputIndex = sub.getOutputIndex();
             nested.perCraft = Long.toString(sub.getOutputAmountPerCraft());
-            for (appeng.api.networking.crafting.ICraftingPatternDetails d : sub.getPatternPool()) {
+            for (ICraftingPatternDetails d : sub.getPatternPool()) {
                 TracePattern ntp = new TracePattern(d.isCraftable(), d.canSubstitute(), d.getPriority());
                 for (IAEItemStack s : d.getCondensedInputs()) {
                     ntp.condensedInputs.add(BytecodeTraceCodec.entryOf(s, codec));
@@ -417,7 +426,7 @@ public final class TraceRecorder {
         }
     }
 
-    private void fill(java.util.List<StackEntry> into, com.ae2vm.vm.VMCounter counter) {
+    private void fill(List<StackEntry> into, VMCounter counter) {
         for (Map.Entry<IAEItemStack, Long> e : counter.entrySet()) {
             if (e.getKey() == null || e.getValue() == null || e.getValue() <= 0L) {
                 continue;
@@ -459,7 +468,7 @@ public final class TraceRecorder {
     }
 
     /** Invariant checker verdicts, one event per violation. */
-    public void invariantViolations(java.util.List<String> violations) {
+    public void invariantViolations(List<String> violations) {
         for (String v : violations) {
             emit(TraceSegment.AUDIT, "INVARIANT_VIOLATION", Collections.singletonMap("rule", v));
         }

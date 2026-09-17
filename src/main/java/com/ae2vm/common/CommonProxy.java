@@ -5,12 +5,13 @@ import com.ae2vm.compiler.PatternCompiler;
 import com.ae2vm.config.AE2VMConfig;
 import net.minecraftforge.fml.common.Loader;
 import net.minecraftforge.fml.common.event.FMLPreInitializationEvent;
+import com.ae2vm.trace.TraceChannel;
 
 public class CommonProxy {
     public void preInit(FMLPreInitializationEvent event) {
         // both sides register the trace channel so the S2C discriminator
         // tables match (client handlers are side-guarded)
-        com.ae2vm.trace.TraceChannel.init();
+        TraceChannel.init();
         AE2VM.LOGGER.info("[AE2-VM] AE2 VM 1.12 loaded (stack-based VM crafting engine, ported from NeoForge 1.21)");
     }
 

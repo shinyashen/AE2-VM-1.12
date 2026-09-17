@@ -15,6 +15,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
+import java.util.Collections;
+import java.util.Iterator;
 
 /**
  * Solver for net-amplifying mutual recipe rings ("gaia loops":
@@ -183,7 +185,7 @@ final class RingSolver {
         }
         for (int ci = 0; ci < n; ci++) {
             for (IAEItemStack u : rings.get(ci)) {
-                for (IAEItemStack v : deps.getOrDefault(u, java.util.Collections.<IAEItemStack>emptySet())) {
+                for (IAEItemStack v : deps.getOrDefault(u, Collections.<IAEItemStack>emptySet())) {
                     int pi = ringOf.getOrDefault(v, -1);
                     if (pi >= 0 && pi != ci) {
                         producers.get(ci).add(pi);
@@ -811,7 +813,7 @@ final class RingSolver {
         for (IAEItemStack root : nodes) {
             if (index.containsKey(root)) continue;
             Deque<Object[]> frames = new ArrayDeque<>();
-            frames.push(new Object[]{root, deps.getOrDefault(root, java.util.Collections.<IAEItemStack>emptySet()).iterator()});
+            frames.push(new Object[]{root, deps.getOrDefault(root, Collections.<IAEItemStack>emptySet()).iterator()});
             index.put(root, counter[0]);
             low.put(root, counter[0]);
             counter[0]++;
@@ -821,7 +823,7 @@ final class RingSolver {
                 Object[] frame = frames.peek();
                 IAEItemStack v = (IAEItemStack) frame[0];
                 @SuppressWarnings("unchecked")
-                java.util.Iterator<IAEItemStack> it = (java.util.Iterator<IAEItemStack>) frame[1];
+                Iterator<IAEItemStack> it = (Iterator<IAEItemStack>) frame[1];
                 boolean descended = false;
                 while (it.hasNext()) {
                     IAEItemStack w = it.next();
@@ -832,7 +834,7 @@ final class RingSolver {
                         counter[0]++;
                         stack.add(w);
                         onStack.put(w, true);
-                        frames.push(new Object[]{w, deps.getOrDefault(w, java.util.Collections.<IAEItemStack>emptySet()).iterator()});
+                        frames.push(new Object[]{w, deps.getOrDefault(w, Collections.<IAEItemStack>emptySet()).iterator()});
                         descended = true;
                         break;
                     } else if (onStack.getOrDefault(w, false)) {

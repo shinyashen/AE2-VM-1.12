@@ -10,6 +10,8 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.stream.Stream;
 import com.ae2vm.Log;
+import java.util.ArrayList;
+import net.minecraft.server.MinecraftServer;
 
 /**
  * Trace file home and retention: files live under
@@ -26,7 +28,7 @@ public final class TraceStore {
     /** Server data directory, or null outside a running server (tests). */
     public static Path serverRoot() {
         try {
-            net.minecraft.server.MinecraftServer server =
+            MinecraftServer server =
                     FMLCommonHandler.instance().getMinecraftServerInstance();
             return server == null ? null : server.getDataDirectory().toPath();
         } catch (Throwable t) {
@@ -79,7 +81,7 @@ public final class TraceStore {
         int maxCount = Math.max(1, AE2VMConfig.traceRetentionCount);
         long maxBytes = Math.max(1024L, AE2VMConfig.traceRetentionMaxBytes);
         try (Stream<Path> files = Files.list(dir)) {
-            List<Path> traces = new java.util.ArrayList<>();
+            List<Path> traces = new ArrayList<>();
             files.filter(p -> p.getFileName().toString().endsWith(".aevmtrace.json.gz"))
                     .forEach(traces::add);
             traces.sort(Comparator.comparingLong(p -> p.toFile().lastModified()));

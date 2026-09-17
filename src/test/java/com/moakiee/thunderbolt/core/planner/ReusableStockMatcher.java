@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
+import java.util.Arrays;
 
 /** Long-capacity bipartite matcher for overlapping reusable/fuzzy seed variants. */
 public final class ReusableStockMatcher {
@@ -131,7 +132,7 @@ public final class ReusableStockMatcher {
 
         private boolean buildLevels(int source, int sink) {
             level = new int[graph.size()];
-            java.util.Arrays.fill(level, -1);
+            Arrays.fill(level, -1);
             level[source] = 0;
             var queue = new ArrayDeque<Integer>();
             queue.add(source);

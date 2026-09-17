@@ -8,6 +8,9 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import com.ae2vm.Log;
+import java.util.Collection;
+import java.util.Collections;
 
 /**
  * Offline replica of AE2UEL's crafting-CPU state machine,
@@ -168,7 +171,7 @@ public final class VirtualCPUCluster {
      * exact keys only.
      */
     public interface SlotAlternates {
-        java.util.Collection<IAEItemStack> alternates(ICraftingPatternDetails d, int slot);
+        Collection<IAEItemStack> alternates(ICraftingPatternDetails d, int slot);
     }
 
     private final Map<ICraftingPatternDetails, Long> tasks = new LinkedHashMap<>();
@@ -251,7 +254,7 @@ public final class VirtualCPUCluster {
             }
         }
         sb.append("} pending=").append(pendingKeys.size()).append(" refused=").append(refused);
-        com.ae2vm.Log.LOG.debug("{}", sb);
+        Log.LOG.debug("{}", sb);
     }
 
     public Verdict run(int maxSteps, int providerLag) {
@@ -346,15 +349,15 @@ public final class VirtualCPUCluster {
      * reach this: both call sites gate on {@code craftable} (slot
      * substitution is a crafting-pattern feature, PatternHelper :87).
      */
-    private java.util.Collection<IAEItemStack> substitutesOf(ICraftingPatternDetails d, int slot) {
+    private Collection<IAEItemStack> substitutesOf(ICraftingPatternDetails d, int slot) {
         if (alternates != null) {
             return alternates.alternates(d, slot);
         }
         try {
             final List<IAEItemStack> subs = d.getSubstituteInputs(slot);
-            return subs == null ? java.util.Collections.emptyList() : subs;
+            return subs == null ? Collections.emptyList() : subs;
         } catch (Throwable t) {
-            return java.util.Collections.emptyList();
+            return Collections.emptyList();
         }
     }
 

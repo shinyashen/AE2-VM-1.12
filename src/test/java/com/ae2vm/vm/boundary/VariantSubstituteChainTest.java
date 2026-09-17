@@ -22,6 +22,7 @@ import static com.ae2vm.test.fakes.BenchPatternDetails.withSlotSubstitute;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import net.minecraft.init.Bootstrap;
 
 /**
  * Long/multi replacement-chain guards (1.12 port of the upstream
@@ -47,7 +48,7 @@ class VariantSubstituteChainTest {
 
     @BeforeAll
     static void bootstrap() {
-        net.minecraft.init.Bootstrap.register();
+        Bootstrap.register();
     }
 
     private static boolean hasMissing(VMPlan plan, String id) {

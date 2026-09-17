@@ -5,6 +5,9 @@ import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicReference;
+import com.moakiee.thunderbolt.core.planner.CraftPlan;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /** Runs one author reference case with a hard deadline and classifies the production path.
  *
@@ -81,7 +84,7 @@ public final class ReferenceCapabilityRunner {
             ReferenceSupportStatus status,
             long started,
             double missingOverhead,
-            com.moakiee.thunderbolt.core.planner.CraftPlan<String> plan,
+            CraftPlan<String> plan,
             Throwable failure) {
         return new ReferenceRunResult(
                 scenario, status, Math.max(0L, System.nanoTime() - started),
@@ -106,8 +109,8 @@ public final class ReferenceCapabilityRunner {
         worker.setName("thunderbolt-reference-capability");
         worker.start();
         try {
-            return Invocation.completed(future.get(deadline.toNanos(), java.util.concurrent.TimeUnit.NANOSECONDS));
-        } catch (java.util.concurrent.TimeoutException timeout) {
+            return Invocation.completed(future.get(deadline.toNanos(), TimeUnit.NANOSECONDS));
+        } catch (TimeoutException timeout) {
             worker.interrupt();
             try {
                 long graceNanos = cancellationGrace.toNanos();

@@ -12,6 +12,9 @@ import net.minecraftforge.fml.common.network.simpleimpl.MessageContext;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import com.ae2vm.client.trace.ClientTraceReceiver;
+import java.nio.charset.StandardCharsets;
+import net.minecraftforge.fml.common.FMLCommonHandler;
 
 /**
  * Server → client trace delivery: gzip bytes chunked
@@ -127,7 +130,7 @@ public final class TraceDownload {
     }
 
     private static void writeString(ByteBuf buf, String s) {
-        byte[] b = s.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        byte[] b = s.getBytes(StandardCharsets.UTF_8);
         buf.writeInt(b.length);
         buf.writeBytes(b);
     }
@@ -135,7 +138,7 @@ public final class TraceDownload {
     private static String readString(ByteBuf buf) {
         byte[] b = new byte[buf.readInt()];
         buf.readBytes(b);
-        return new String(b, java.nio.charset.StandardCharsets.UTF_8);
+        return new String(b, StandardCharsets.UTF_8);
     }
 
     // ------------------------------------------------------------------
@@ -146,10 +149,10 @@ public final class TraceDownload {
     public static final class BeginHandler implements IMessageHandler<Begin, IMessage> {
         @Override
         public IMessage onMessage(Begin msg, MessageContext ctx) {
-            if (!net.minecraftforge.fml.common.FMLCommonHandler.instance().getSide().isClient()) {
+            if (!FMLCommonHandler.instance().getSide().isClient()) {
                 return null;
             }
-            com.ae2vm.client.trace.ClientTraceReceiver.begin(msg.name, msg.chunks);
+            ClientTraceReceiver.begin(msg.name, msg.chunks);
             return null;
         }
     }
@@ -157,10 +160,10 @@ public final class TraceDownload {
     public static final class ChunkHandler implements IMessageHandler<Chunk, IMessage> {
         @Override
         public IMessage onMessage(Chunk msg, MessageContext ctx) {
-            if (!net.minecraftforge.fml.common.FMLCommonHandler.instance().getSide().isClient()) {
+            if (!FMLCommonHandler.instance().getSide().isClient()) {
                 return null;
             }
-            com.ae2vm.client.trace.ClientTraceReceiver.chunk(msg.name, msg.total, msg.index, msg.data);
+            ClientTraceReceiver.chunk(msg.name, msg.total, msg.index, msg.data);
             return null;
         }
     }

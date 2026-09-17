@@ -24,6 +24,8 @@ import static com.ae2vm.test.harness.Bench.patEx;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import com.ae2vm.config.AE2VMConfig;
+import net.minecraft.init.Bootstrap;
 
 /**
  * Feedback-loop scenario tests. A catalyst feedback loop produces a byproduct that
@@ -58,7 +60,7 @@ class CatalystFeedbackLoopTest {
 
     @BeforeAll
     static void bootstrap() {
-        net.minecraft.init.Bootstrap.register();
+        Bootstrap.register();
     }
 
     @BeforeEach
@@ -94,12 +96,12 @@ class CatalystFeedbackLoopTest {
     @BeforeAll
     static void enableRingFamily() {
         // The ring family is feature-gated off by default; these tests pin its behavior.
-        com.ae2vm.config.AE2VMConfig.ringSolverEnabled = true;
+        AE2VMConfig.ringSolverEnabled = true;
     }
 
     @AfterAll
     static void restoreRingFamilyGate() {
-        com.ae2vm.config.AE2VMConfig.ringSolverEnabled = false;
+        AE2VMConfig.ringSolverEnabled = false;
     }
 
     @Test

@@ -28,6 +28,9 @@ import static com.ae2vm.test.harness.Bench.pat;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import java.util.Collection;
+import java.util.Collections;
+import net.minecraft.init.Bootstrap;
 
 /**
  * Performance baseline (informational — always green). Exercises the engine's
@@ -54,7 +57,7 @@ class PerfReportTest {
 
     @BeforeAll
     static void bootstrap() {
-        net.minecraft.init.Bootstrap.register();
+        Bootstrap.register();
     }
 
     // ------------------------------------------------------------------
@@ -246,7 +249,7 @@ class PerfReportTest {
             ringP[i] = pat("A" + i, 1, "A" + ((i + 1) % 10), 1L);
             ring.put(k("A" + i), List.of(ringP[i]));
         }
-        Function<IAEItemStack, java.util.Collection<ICraftingPatternDetails>> ringLookup = ring::get;
+        Function<IAEItemStack, Collection<ICraftingPatternDetails>> ringLookup = ring::get;
         Function<IAEItemStack, Long> noStock = key -> 0L;
         // Warm + verify the guard actually detects the ring.
         assertTrue(DeadCycleGuard.wouldCloseDeadRing(ringLookup, ringP[0], k("A0"), noStock));
@@ -260,7 +263,7 @@ class PerfReportTest {
         }
         chainP[23] = pat("C23", 1, "LEAF", 1L);
         chain.put(k("C23"), List.of(chainP[23]));
-        Function<IAEItemStack, java.util.Collection<ICraftingPatternDetails>> chainLookup = chain::get;
+        Function<IAEItemStack, Collection<ICraftingPatternDetails>> chainLookup = chain::get;
         assertFalse(DeadCycleGuard.wouldCloseDeadRing(chainLookup, chainP[0], k("C0"), noStock));
 
         // Pooled samples over ROUNDS rounds.
@@ -290,7 +293,7 @@ class PerfReportTest {
 
     private static double median(List<Double> xs) {
         List<Double> copy = new ArrayList<>(xs);
-        java.util.Collections.sort(copy);
+        Collections.sort(copy);
         return copy.get(copy.size() / 2);
     }
 

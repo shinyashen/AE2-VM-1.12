@@ -16,6 +16,8 @@ import java.util.TreeMap;
 
 import static com.ae2vm.test.harness.Bench.pat;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import appeng.api.networking.crafting.ICraftingPatternDetails;
+import net.minecraft.init.Bootstrap;
 
 /**
  * Port of the original FluidBucketBoundaryTest — reproduces the player report:
@@ -29,7 +31,7 @@ class FluidBucketBoundaryTest {
 
     @BeforeAll
     static void bootstrap() {
-        net.minecraft.init.Bootstrap.register();
+        Bootstrap.register();
     }
 
     @BeforeEach
@@ -46,7 +48,7 @@ class FluidBucketBoundaryTest {
     }
 
     private static VMPlan run(BenchPatternDetails target, long amount, BenchSimulationState sim) {
-        for (appeng.api.networking.crafting.ICraftingPatternDetails p : Bench.PATTERNS.values()) {
+        for (ICraftingPatternDetails p : Bench.PATTERNS.values()) {
             PatternCompiler.compileIfAbsent(p);
         }
         CraftingBytecode req = PatternCompiler.compileRequest(target, amount);

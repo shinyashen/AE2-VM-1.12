@@ -11,6 +11,9 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import com.ae2vm.compat.PatternCompat;
+import com.ae2vm.config.AE2VMConfig;
+import net.minecraft.init.Bootstrap;
 
 /**
  * Downstream item whose chain contains the ring product, with the ring
@@ -27,9 +30,9 @@ class DownstreamStockedRingTest {
     private static final boolean GATE_OFF = false;
 
     private static VMPlan run(boolean gate) {
-        net.minecraft.init.Bootstrap.register();
+        Bootstrap.register();
         Bench.reset();
-        com.ae2vm.config.AE2VMConfig.ringSolverEnabled = gate;
+        AE2VMConfig.ringSolverEnabled = gate;
         try {
             // ring: B (1 ingot -> 12 spirits), A (1 terrasteel + 4 spirits -> 1 ingot)
             BenchPatternDetails b = Bench.pat("S", 12, "I", 1L);
@@ -56,10 +59,10 @@ class DownstreamStockedRingTest {
             assertFalse(plan.isSimulation(), "nothing is missing");
             // Bridge: an executable (non-simulation) plan must survive the CPU
             CpuLifecycleAssert.complete(plan,
-                    com.ae2vm.compat.PatternCompat.getPrimaryOutput(x), 1000);
+                    PatternCompat.getPrimaryOutput(x), 1000);
             return plan;
         } finally {
-            com.ae2vm.config.AE2VMConfig.ringSolverEnabled = false;
+            AE2VMConfig.ringSolverEnabled = false;
         }
     }
 

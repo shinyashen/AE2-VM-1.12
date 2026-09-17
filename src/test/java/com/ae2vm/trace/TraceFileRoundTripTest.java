@@ -12,6 +12,7 @@ import java.util.TreeMap;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import com.google.gson.JsonParser;
 
 /** M0 acceptance: a full trace document survives write(gzip, atomic) → load with intact integrity. */
 class TraceFileRoundTripTest {
@@ -37,7 +38,7 @@ class TraceFileRoundTripTest {
     @Test
     void payloadHashCoversSnapshotBytecodeAndPlan() throws IOException {
         TraceFile f = sample();
-        JsonObject root = new com.google.gson.JsonParser()
+        JsonObject root = new JsonParser()
                 .parse(new String(TraceWriter.jsonBytes(f), StandardCharsets.UTF_8))
                 .getAsJsonObject();
         assertTrue(root.has("payload"), "payload subtree must be present");

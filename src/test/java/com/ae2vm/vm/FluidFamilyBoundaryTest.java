@@ -14,6 +14,9 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import appeng.fluids.util.AEFluidStack;
+import appeng.util.item.ItemList;
+import net.minecraft.init.Bootstrap;
 
 /**
  * AE2FC fluid-key contract behind the fuzzy-family fix: every fluid packs to
@@ -32,7 +35,7 @@ class FluidFamilyBoundaryTest {
 
     @BeforeAll
     static void bootstrap() throws Exception {
-        net.minecraft.init.Bootstrap.register();
+        Bootstrap.register();
         // Same ae2fc test setup as AE2FCCompatTest: the ObjectHolder fields are
         // only populated by the Forge registry, so hand them live fake items.
         // init() may already have run in another test class this JVM.
@@ -49,9 +52,9 @@ class FluidFamilyBoundaryTest {
     @Test
     void fluidKeysHaveNoFamily() {
         IAEItemStack water = AE2FCCompat.packFluid(
-                appeng.fluids.util.AEFluidStack.fromFluidStack(new FluidStack(FluidRegistry.WATER, 1000)));
+                AEFluidStack.fromFluidStack(new FluidStack(FluidRegistry.WATER, 1000)));
         IAEItemStack lava = AE2FCCompat.packFluid(
-                appeng.fluids.util.AEFluidStack.fromFluidStack(new FluidStack(FluidRegistry.LAVA, 1000)));
+                AEFluidStack.fromFluidStack(new FluidStack(FluidRegistry.LAVA, 1000)));
         assertNotNull(water, "packing water must produce a fake drop");
         assertNotNull(lava, "packing lava must produce a fake drop");
         assertTrue(AE2FCCompat.isFluidFakeItem(water), "the drop must be recognized as a fluid key");
@@ -66,7 +69,7 @@ class FluidFamilyBoundaryTest {
     }
 
     private static NetworkCraftingSandbox sandbox() {
-        IItemList<IAEItemStack> list = new appeng.util.item.ItemList();
+        IItemList<IAEItemStack> list = new ItemList();
         return new NetworkCraftingSandbox(list);
     }
 }

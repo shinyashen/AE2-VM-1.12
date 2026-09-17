@@ -14,6 +14,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Function;
 
 /**
  * Multi-pattern allocation solver — closes the last unsolved engine issue
@@ -485,7 +486,7 @@ public final class PatternChoiceRepair {
         // shape inputs/outputs), isSameType-merged; stock read once per key.
         List<IAEItemStack> globalKeys = new ArrayList<>();
         Map<IAEItemStack, Integer> globalIndex = new HashMap<>();
-        java.util.function.Function<IAEItemStack, Integer> intern = k -> {
+        Function<IAEItemStack, Integer> intern = k -> {
             if (k == null) {
                 return -1;
             }

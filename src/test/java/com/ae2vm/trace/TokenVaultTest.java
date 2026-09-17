@@ -9,6 +9,8 @@ import java.nio.file.Path;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import java.nio.file.Files;
+import java.util.UUID;
 
 /** M0 acceptance: vault tokens stable per identity, distinct across axes, persistent. */
 class TokenVaultTest {
@@ -37,7 +39,7 @@ class TokenVaultTest {
 
         assertTrue(v.tokenForStack(platinum).matches("i#[0-9a-f]{4}"));
         assertTrue(v.tokenForNbt("{a:1}").matches("n#[0-9a-f]{4}"));
-        String p = v.tokenForPlayer(new java.util.UUID(1L, 2L), "shinya");
+        String p = v.tokenForPlayer(new UUID(1L, 2L), "shinya");
         assertTrue(p.matches("p#[0-9a-f]{4}"));
         assertEquals("shinya", v.playerNameForToken(p));
         String d = v.tokenForDevice("somemod", "overworld:10,20,30");
@@ -66,7 +68,7 @@ class TokenVaultTest {
     void freshVaultFileIsCreatedOnFirstOpen() throws IOException {
         Path file = dir.resolve("fresh.json");
         TokenVault v = TokenVault.open(file);
-        assertTrue(java.nio.file.Files.exists(file), "first open must materialize the vault");
+        assertTrue(Files.exists(file), "first open must materialize the vault");
         assertEquals(v.getVaultId(), TokenVault.open(file).getVaultId());
     }
 }

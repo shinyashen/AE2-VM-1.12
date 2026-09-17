@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Curated green-first PMD ruleset. Single rule by policy: inline
+     fully-qualified type names are a code-style violation — import the
+     type instead (TaskOrdering/CraftingVM cleanup, 2026-09-17). The only
+     sanctioned FQNs are genuine same-simple-name collisions
+     (VirtualPatternDetails exists in com.ae2vm.trace AND com.ae2vm.vm).
+     Add rules only after verifying they pass on the current tree. -->
+<ruleset name="ae2vm-codestyle"
+         xmlns="http://pmd.sourceforge.net/ruleset/2.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://pmd.sourceforge.net/ruleset/2.0.0 https://pmd.sourceforge.io/ruleset_2_0_0.xsd">
+    <description>AE2-VM curated code-style rules</description>
+    <rule ref="category/java/codestyle.xml/UnnecessaryFullyQualifiedName"/>
+</ruleset>

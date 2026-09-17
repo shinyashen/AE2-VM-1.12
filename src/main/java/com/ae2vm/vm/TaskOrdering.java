@@ -12,6 +12,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
+import java.util.Arrays;
+import java.util.Iterator;
 
 /**
  * Constructs the plan's task order instead of searching for one.
@@ -204,11 +206,11 @@ final class TaskOrdering {
         int[] low = new int[n];
         int[] comp = new int[n];
         boolean[] onStack = new boolean[n];
-        java.util.Arrays.fill(index, -1);
-        java.util.Arrays.fill(comp, -1);
+        Arrays.fill(index, -1);
+        Arrays.fill(comp, -1);
         List<Integer> sccStack = new ArrayList<>();
         List<Integer> frameNode = new ArrayList<>();
-        List<java.util.Iterator<Integer>> frameIter = new ArrayList<>();
+        List<Iterator<Integer>> frameIter = new ArrayList<>();
         int counter = 0;
         int components = 0;
         for (int root = 0; root < n; root++) {
@@ -222,7 +224,7 @@ final class TaskOrdering {
             frameIter.add(adj.get(root).iterator());
             while (!frameIter.isEmpty()) {
                 int v = frameNode.get(frameNode.size() - 1);
-                java.util.Iterator<Integer> it = frameIter.get(frameIter.size() - 1);
+                Iterator<Integer> it = frameIter.get(frameIter.size() - 1);
                 if (it.hasNext()) {
                     int w = it.next();
                     if (index[w] < 0) {

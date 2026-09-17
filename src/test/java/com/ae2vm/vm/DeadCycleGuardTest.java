@@ -22,6 +22,7 @@ import static com.ae2vm.test.harness.Bench.pat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import net.minecraft.init.Bootstrap;
 
 /**
  * Dead-ring pattern pruning ({@link DeadCycleGuard}) — the 1.12 port of the
@@ -39,7 +40,7 @@ class DeadCycleGuardTest {
 
     @BeforeAll
     static void bootstrap() {
-        net.minecraft.init.Bootstrap.register();
+        Bootstrap.register();
     }
 
     private static BenchPatternDetails custom(String out, long outAmt, Object... inPairs) {

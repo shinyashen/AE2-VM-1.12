@@ -16,6 +16,8 @@ import static com.ae2vm.test.harness.Bench.k;
 import static com.ae2vm.test.harness.Bench.pat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import appeng.api.networking.crafting.ICraftingPatternDetails;
+import net.minecraft.init.Bootstrap;
 
 /**
  * Port of the original StockAwareSubCraftReproTest — reproduces the reported bug
@@ -39,7 +41,7 @@ class StockAwareSubCraftReproTest {
 
     @BeforeAll
     static void bootstrap() {
-        net.minecraft.init.Bootstrap.register();
+        Bootstrap.register();
     }
 
     @BeforeEach
@@ -77,7 +79,7 @@ class StockAwareSubCraftReproTest {
                 .seed("circuit_board", boardStock)
                 .seed("fluid_x", fluidStock);
 
-        for (appeng.api.networking.crafting.ICraftingPatternDetails p : Bench.PATTERNS.values()) {
+        for (ICraftingPatternDetails p : Bench.PATTERNS.values()) {
             PatternCompiler.compileIfAbsent(p);
         }
         CraftingBytecode req = PatternCompiler.compileRequest(blank, n);

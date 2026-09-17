@@ -17,6 +17,8 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import com.ae2vm.config.AE2VMConfig;
+import net.minecraft.init.Bootstrap;
 
 /**
  * Live-report gaia ring: 1 terrasteel + 4 spirits -> 1 gaia ingot; 1 gaia
@@ -32,17 +34,17 @@ class GaiaRingLiveReproTest {
     @BeforeAll
     static void enableRingFamily() {
         // The ring family is experimental and off by default; these tests pin its behavior.
-        com.ae2vm.config.AE2VMConfig.ringSolverEnabled = true;
+        AE2VMConfig.ringSolverEnabled = true;
     }
 
     @AfterAll
     static void restoreRingFamilyGate() {
-        com.ae2vm.config.AE2VMConfig.ringSolverEnabled = false;
+        AE2VMConfig.ringSolverEnabled = false;
     }
 
     @Test
     void gaiaRingFoldsAndOutOfRingIngredientSchedules() throws Exception {
-        net.minecraft.init.Bootstrap.register();
+        Bootstrap.register();
         Bench.reset();
         // A: terrasteel(T) + 4 spirits(S) -> gaia ingot(I)
         BenchPatternDetails recycle = Bench.pat("I", 1, "T", 1L, "S", 4L);
@@ -82,7 +84,7 @@ class GaiaRingLiveReproTest {
 
     @Test
     void gaiaRingCompletesWithFullCapital() throws Exception {
-        net.minecraft.init.Bootstrap.register();
+        Bootstrap.register();
         Bench.reset();
         BenchPatternDetails recycle = Bench.pat("I", 1, "T", 1L, "S", 4L);
         BenchPatternDetails craft = Bench.patEx(new String[]{"S", "D"}, new long[]{12, 1}, "I", 1L);

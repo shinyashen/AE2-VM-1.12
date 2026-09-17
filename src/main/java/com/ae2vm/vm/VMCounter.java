@@ -5,6 +5,8 @@ import appeng.api.storage.data.IAEItemStack;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import com.ae2vm.Log;
+import java.util.AbstractMap;
 
 /**
  * 1.12 replacement for AE2 1.21's KeyCounter: a mutable key -> long multiset.
@@ -67,7 +69,7 @@ public final class VMCounter {
                        .append(st[i].getLineNumber()).append(' ');
                 }
             }
-            com.ae2vm.Log.LOG.debug("[LEDGER] {} {} {} -> {}  | {}",
+            Log.LOG.debug("[LEDGER] {} {} {} -> {}  | {}",
                     traceTag, e.key, (amount > 0 ? "+" : "") + amount, e.value, who);
         }
     }
@@ -152,7 +154,7 @@ public final class VMCounter {
                     @Override
                     public Map.Entry<IAEItemStack, Long> next() {
                         Entry e = it.next();
-                        return new java.util.AbstractMap.SimpleImmutableEntry<>(e.key, e.value);
+                        return new AbstractMap.SimpleImmutableEntry<>(e.key, e.value);
                     }
 
                     @Override

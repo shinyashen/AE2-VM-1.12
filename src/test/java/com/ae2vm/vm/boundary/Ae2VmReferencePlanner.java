@@ -26,6 +26,8 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import com.ae2vm.replay.VirtualCPUCluster;
+import com.ae2vm.vm.VMPlan;
 
 /**
  * 1.12 port of the reference-suite translation layer: drives the ported VM engine
@@ -54,13 +56,13 @@ import java.util.Set;
 public final class Ae2VmReferencePlanner implements ReferencePlanner {
 
     /** Faithful CPU verdict for the most recent plan (informational probe). */
-    public com.ae2vm.replay.VirtualCPUCluster.Verdict lastRuntimeVerdict;
+    public VirtualCPUCluster.Verdict lastRuntimeVerdict;
 
     /** Whether the most recent plan claimed executable (job would be accepted). */
     public boolean lastPlanExecutable;
 
     /** The most recent final plan (diagnostics: task order + counters). */
-    public com.ae2vm.vm.VMPlan lastPlan;
+    public VMPlan lastPlan;
 
 
     /** Replay budget for the multi-pattern choice repair (see PatternChoiceRepair). */
@@ -226,10 +228,10 @@ public final class Ae2VmReferencePlanner implements ReferencePlanner {
             BenchSimulationState sim = simulationFrom(stock);
             // To trace per-craft consumption for one scenario, wrap `sim` in
             // TraceSimulationState (test-source diagnostic tool) here.
-            com.ae2vm.vm.VMPlan p = vm.execute(passCode, sim);
+            VMPlan p = vm.execute(passCode, sim);
             return new PatternChoiceRepair.PassResult(p, passChoices, stockView);
         };
-        com.ae2vm.vm.VMPlan plan = PatternChoiceRepair.repair(pass, REPAIR_EXTRA_PASSES);
+        VMPlan plan = PatternChoiceRepair.repair(pass, REPAIR_EXTRA_PASSES);
         // Faithful runtime probe on the FINAL plan only — the repair loop's
         // intermediate passes produce throwaway plans whose cluster verdict is
         // meaningless (and repair passes intentionally over-order). The verdict
@@ -239,7 +241,7 @@ public final class Ae2VmReferencePlanner implements ReferencePlanner {
         lastPlanExecutable = plan != null && !plan.isSimulation();
         lastPlan = plan;
         lastRuntimeVerdict = plan == null ? null
-                : new com.ae2vm.replay.VirtualCPUCluster(plan, plan.getOutputKey(),
+                : new VirtualCPUCluster(plan, plan.getOutputKey(),
                         plan.getDeliverAmount()).run(10_000, 0);
 
         // 6) Map the VM plan back to the Thunderbolt CraftPlan<String>.

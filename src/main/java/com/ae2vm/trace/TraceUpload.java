@@ -17,6 +17,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.zip.GZIPInputStream;
 import com.ae2vm.Log;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 
 /**
  * Optional mclo.gs upload: async POST of the
@@ -82,13 +84,13 @@ public final class TraceUpload {
     }
 
     private static String gunzip(byte[] gz) throws IOException {
-        try (InputStream in = new GZIPInputStream(new java.io.ByteArrayInputStream(gz))) {
+        try (InputStream in = new GZIPInputStream(new ByteArrayInputStream(gz))) {
             return readAll(in);
         }
     }
 
     private static String readAll(InputStream in) throws IOException {
-        java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
         byte[] buf = new byte[8192];
         int n;
         while ((n = in.read(buf)) > 0) {

@@ -16,6 +16,9 @@ import java.util.TreeMap;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import appeng.api.networking.crafting.ICraftingPatternDetails;
+import java.util.HashMap;
+import net.minecraft.init.Bootstrap;
 
 /**
  * Port of the original CrossRequestCacheTest: cross-request cache tests for the
@@ -39,7 +42,7 @@ class CrossRequestCacheTest {
 
     @BeforeAll
     static void bootstrap() {
-        net.minecraft.init.Bootstrap.register();
+        Bootstrap.register();
     }
 
     @BeforeEach
@@ -66,9 +69,9 @@ class CrossRequestCacheTest {
 
     /** A<-B+C ; B<-D+E ; C<-F+G. B is CRAFTABLE and STOCKED (the stock-aware decision point). */
     private static final class StockedMidFixture {
-        final Map<IAEItemStack, appeng.api.networking.crafting.ICraftingPatternDetails> byOutput =
-                new java.util.HashMap<>();
-        final Map<String, Long> stock = new java.util.HashMap<>();
+        final Map<IAEItemStack, ICraftingPatternDetails> byOutput =
+                new HashMap<>();
+        final Map<String, Long> stock = new HashMap<>();
         final BenchPatternDetails a = pat("A", 1, "B", 1, "C", 1);
         final BenchPatternDetails b = pat("B", 1, "D", 1, "E", 1);
         final BenchPatternDetails c = pat("C", 1, "F", 1, "G", 1);
@@ -104,8 +107,8 @@ class CrossRequestCacheTest {
 
     /** A <- X ; X <- B + C ; B <- D + E ; C <- F + G — deeper chain with stocked mid B. */
     private static final class DeepFixture {
-        final Map<IAEItemStack, appeng.api.networking.crafting.ICraftingPatternDetails> byOutput =
-                new java.util.HashMap<>();
+        final Map<IAEItemStack, ICraftingPatternDetails> byOutput =
+                new HashMap<>();
         final BenchPatternDetails a = pat("A", 1, "X", 1);
         final BenchPatternDetails x = pat("X", 1, "B", 1, "C", 1);
         final BenchPatternDetails b = pat("B", 1, "D", 1, "E", 1);
@@ -135,8 +138,8 @@ class CrossRequestCacheTest {
      */
     private static final class FibonacciFixture {
         final Map<String, BenchPatternDetails> byId = new TreeMap<>();
-        final Map<IAEItemStack, appeng.api.networking.crafting.ICraftingPatternDetails> byOutput =
-                new java.util.HashMap<>();
+        final Map<IAEItemStack, ICraftingPatternDetails> byOutput =
+                new HashMap<>();
         final int levels;
 
         FibonacciFixture(int levels) {
@@ -159,8 +162,8 @@ class CrossRequestCacheTest {
 
     /** A <- P + Q ; P <- B + C ; Q <- B + D — diamond: B is shared by P and Q, and stocked. */
     private static final class DiamondFixture {
-        final Map<IAEItemStack, appeng.api.networking.crafting.ICraftingPatternDetails> byOutput =
-                new java.util.HashMap<>();
+        final Map<IAEItemStack, ICraftingPatternDetails> byOutput =
+                new HashMap<>();
         final BenchPatternDetails a = pat("A", 1, "P", 1, "Q", 1);
         final BenchPatternDetails p = pat("P", 1, "B", 1, "C", 1);
         final BenchPatternDetails q = pat("Q", 1, "B", 1, "D", 1);
@@ -210,7 +213,7 @@ class CrossRequestCacheTest {
 
     private static TreeMap<String, Long> patternTimes(VMPlan p) {
         TreeMap<String, Long> out = new TreeMap<>();
-        for (Map.Entry<appeng.api.networking.crafting.ICraftingPatternDetails, Long> e
+        for (Map.Entry<ICraftingPatternDetails, Long> e
                 : p.getPatternTimes().entrySet()) {
             out.put(((BenchAEItemStack) e.getKey().getOutputs()[0]).id, e.getValue());
         }

@@ -8,6 +8,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 import java.util.Map;
+import net.minecraft.init.Bootstrap;
 
 /**
  * Port of the original FalsePositiveDiagnosticTest: runs every reference scenario
@@ -21,7 +22,7 @@ class FalsePositiveDiagnosticTest {
 
     @BeforeAll
     static void bootstrap() {
-        net.minecraft.init.Bootstrap.register();
+        Bootstrap.register();
     }
 
     @Test

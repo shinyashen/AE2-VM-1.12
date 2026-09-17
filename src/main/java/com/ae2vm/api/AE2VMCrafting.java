@@ -34,6 +34,11 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
+import appeng.util.item.AEItemStack;
+import com.ae2vm.AE2VM;
+import com.ae2vm.trace.TraceSegment;
+import com.ae2vm.vm.PlanInvariants;
+import java.util.Collections;
 
 /**
  * Public entry point of the VM engine — the 1.12 port of the original's
@@ -163,8 +168,8 @@ public final class AE2VMCrafting {
             Function<IAEItemStack, Long> stock = liveStockLookup(grid);
             if (stock != null && entry.plan.planMatchesStock(stock)) {
                 if (rec != null) {
-                    rec.emit(com.ae2vm.trace.TraceSegment.CALC, "PLAN_CACHE_HIT",
-                            java.util.Collections.<String, String>emptyMap());
+                    rec.emit(TraceSegment.CALC, "PLAN_CACHE_HIT",
+                            Collections.<String, String>emptyMap());
                     rec.planResult(entry.plan);
                     rec.writeNow();
                 }
@@ -260,10 +265,10 @@ public final class AE2VMCrafting {
             // unconditionally and land as INVARIANT_VIOLATION events when
             // recording. The plan is still served — invariants are evidence,
             // not a veto.
-            java.util.List<String> violations =
-                    com.ae2vm.vm.PlanInvariants.check(fixed, what, amount, stockView.stockView());
+            List<String> violations =
+                    PlanInvariants.check(fixed, what, amount, stockView.stockView());
             if (!violations.isEmpty()) {
-                com.ae2vm.AE2VM.LOGGER.warn("[AE2-VM] plan invariant violations {}: {}",
+                AE2VM.LOGGER.warn("[AE2-VM] plan invariant violations {}: {}",
                         what.getDefinition(), violations);
                 if (rec != null) {
                     rec.invariantViolations(violations);
@@ -542,7 +547,7 @@ public final class AE2VMCrafting {
         try {
             Item item = key.getItem();
             if (item != null) {
-                IAEItemStack pureKey = appeng.util.item.AEItemStack.fromItemStack(
+                IAEItemStack pureKey = AEItemStack.fromItemStack(
                         new ItemStack(item, 1, 0));
                 if (pureKey != null && !pureKey.isSameType(key)) {
                     subs = craftingGrid.getCraftingFor(pureKey, null, -1, world);

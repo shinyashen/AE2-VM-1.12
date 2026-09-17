@@ -21,6 +21,8 @@ import static com.ae2vm.test.fakes.BenchPatternDetails.withSlotSubstitute;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import appeng.api.networking.crafting.ICraftingPatternDetails;
+import net.minecraft.init.Bootstrap;
 
 /**
  * Port of the original VideoFuzzyReplacementReproTest — regression test for the
@@ -48,7 +50,7 @@ class VideoFuzzyReplacementReproTest {
 
     @BeforeAll
     static void bootstrap() {
-        net.minecraft.init.Bootstrap.register();
+        Bootstrap.register();
     }
 
     @BeforeEach
@@ -57,7 +59,7 @@ class VideoFuzzyReplacementReproTest {
     }
 
     private static VMPlan run(BenchPatternDetails target, long amount, BenchSimulationState sim) {
-        for (appeng.api.networking.crafting.ICraftingPatternDetails p : Bench.PATTERNS.values()) {
+        for (ICraftingPatternDetails p : Bench.PATTERNS.values()) {
             PatternCompiler.compileIfAbsent(p);
         }
         CraftingBytecode req = PatternCompiler.compileRequest(target, amount);
@@ -66,7 +68,7 @@ class VideoFuzzyReplacementReproTest {
     }
 
     private static long timesFor(VMPlan plan, String outputId) {
-        for (Map.Entry<appeng.api.networking.crafting.ICraftingPatternDetails, Long> e
+        for (Map.Entry<ICraftingPatternDetails, Long> e
                 : plan.getPatternTimes().entrySet()) {
             if (((BenchAEItemStack) e.getKey().getOutputs()[0]).id.equals(outputId)) {
                 return e.getValue();

@@ -11,6 +11,7 @@ import java.util.TreeMap;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import java.util.List;
 
 /** M1: the in-memory session ring — cap evicts the OLDEST events and marks the trace truncated. */
 class TraceRecorderCapTest {
@@ -42,7 +43,7 @@ class TraceRecorderCapTest {
         // the ring, so it squeezes out i=500 as well. Surviving GEN = 501..1499.
         assertEquals("501", r.file.segment(TraceSegment.CALC).events.get(0).f.get("i"),
                 "the OLDEST events leave first");
-        java.util.List<TraceEvent> calc = r.file.segment(TraceSegment.CALC).events;
+        List<TraceEvent> calc = r.file.segment(TraceSegment.CALC).events;
         assertEquals("1499", calc.get(calc.size() - 1).f.get("i"));
         assertEquals("COMMIT", r.file.segment(TraceSegment.AUDIT).events.get(0).type);
     }

@@ -21,6 +21,7 @@ import static com.ae2vm.test.harness.Bench.pat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import net.minecraft.init.Bootstrap;
 
 /**
  * Partial-stock chain guard (port of the upstream IntermediateCraftableMissingTest
@@ -34,7 +35,7 @@ class PartialStockChainTest {
 
     @BeforeAll
     static void bootstrap() {
-        net.minecraft.init.Bootstrap.register();
+        Bootstrap.register();
     }
 
     private static boolean hasMissing(VMPlan plan, String id) {

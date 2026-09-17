@@ -23,6 +23,14 @@ import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
 import com.ae2vm.Log;
+import appeng.api.AEApi;
+import appeng.api.networking.storage.IStorageGrid;
+import appeng.api.storage.IMEMonitor;
+import com.ae2vm.compat.AE2FCCompat;
+import com.ae2vm.compat.PatternCompat;
+import com.ae2vm.config.AE2VMConfig;
+import com.ae2vm.replay.VirtualCPUCluster;
+import com.ae2vm.trace.TraceRecorder;
 
 /**
  * Stack-based VM crafting calculator, ported from AE2-VM 1.21.1 (NeoForge).
@@ -112,7 +120,7 @@ public class CraftingVM {
     private final Set<IAEItemStack> cyclicCraftKeys = new HashSet<>();
     private final Set<IAEItemStack> jitFailCache = new HashSet<>();
     /** Pattern-set version this VM's caches were built against (see invalidateCaches). */
-    private volatile long patternVersion = com.ae2vm.compiler.PatternCompiler.patternSetVersion();
+    private volatile long patternVersion = PatternCompiler.patternSetVersion();
     /** Merged fuzzy families (substitution group ∪ NBT family), per key. */
     private final Map<IAEItemStack, List<IAEItemStack>> fuzzyFamilyCache = new HashMap<>();
     /** Lazily snapshotted live network stock (an IItemList supports findFuzzy). */
@@ -357,12 +365,12 @@ public class CraftingVM {
         cyclicCraftKeys.clear();
         fuzzyFamilyCache.clear();
         realStockCache = null;
-        patternVersion = com.ae2vm.compiler.PatternCompiler.patternSetVersion();
+        patternVersion = PatternCompiler.patternSetVersion();
     }
 
     /** True when this VM's caches pre-date the current pattern set. */
     public boolean cachesStale() {
-        return patternVersion != com.ae2vm.compiler.PatternCompiler.patternSetVersion();
+        return patternVersion != PatternCompiler.patternSetVersion();
     }
 
     public VMPlan execute(CraftingBytecode requestBytecode, SimulationState simulation) {
@@ -490,7 +498,7 @@ public class CraftingVM {
                     // Processing-recipe default fuzzy: same-item NBT variants satisfy the slot.
                     if (got < needed && PatternCompiler.isProcessingInput(key)) {
                         long remaining = needed - got;
-                        com.ae2vm.trace.TraceRecorder _rec = com.ae2vm.trace.TraceRecorder.current();
+                        TraceRecorder _rec = TraceRecorder.current();
                         for (IAEItemStack variant : nbtFamilyOf(key)) {
                             if (variant.isSameType(key)) continue;
                             long vgot = simulation.extract(variant, remaining, false);
@@ -555,7 +563,7 @@ public class CraftingVM {
                     // longer knows the key, treat the craft like any
                     // un-patterned key: consume stock, report the shortfall.
                     if (!isRoot && patternResolver != null && pat != null) {
-                        IAEItemStack outKey = com.ae2vm.compat.PatternCompat.getPrimaryOutput(pat);
+                        IAEItemStack outKey = PatternCompat.getPrimaryOutput(pat);
                         if (outKey != null && patternResolver.apply(outKey) == null) {
                             long got = simulation.extract(outKey, ct, false);
                             if (got > 0) usedItems.add(outKey, got);
@@ -1039,7 +1047,7 @@ public class CraftingVM {
                                 // AE2FC fluid keys have no NBT family: the NBT is
                                 // the fluid identity — any-family would let water
                                 // back a molten-platinum demand.
-                                && !com.ae2vm.compat.AE2FCCompat.isFluidFakeItem(c)) {
+                                && !AE2FCCompat.isFluidFakeItem(c)) {
                             ensureRealStockSnapshot();
                             if (realStockCache != null) {
                                 for (IAEItemStack v : realStockCache.findFuzzy(c, FuzzyMode.IGNORE_ALL)) {
@@ -1133,7 +1141,7 @@ public class CraftingVM {
         // stalls are triaged): with the gate closed, ringNetBundles stays
         // empty and every post-solve block below degrades to no-ops, so the
         // plain propagation plan drives the whole aggregation.
-        if (com.ae2vm.config.AE2VMConfig.ringSolverEnabled) {
+        if (AE2VMConfig.ringSolverEnabled) {
             solveRings(total, itemDemand);
         }
         // the released stock reservations of stripped ring keys go back into
@@ -1989,12 +1997,12 @@ public class CraftingVM {
             IItemList<IAEItemStack> snap = null;
             try {
                 if (networkKey instanceof IGrid g) {
-                    appeng.api.networking.storage.IStorageGrid sg =
-                            g.getCache(appeng.api.networking.storage.IStorageGrid.class);
+                    IStorageGrid sg =
+                            g.getCache(IStorageGrid.class);
                     if (sg != null) {
-                        IItemStorageChannel channel = appeng.api.AEApi.instance().storage()
+                        IItemStorageChannel channel = AEApi.instance().storage()
                                 .getStorageChannel(IItemStorageChannel.class);
-                        appeng.api.storage.IMEMonitor<IAEItemStack> inv = sg.getInventory(channel);
+                        IMEMonitor<IAEItemStack> inv = sg.getInventory(channel);
                         if (inv != null) {
                             snap = channel.createList();
                             inv.getAvailableItems(snap);
@@ -2051,7 +2059,7 @@ public class CraftingVM {
      */
     private boolean isUnseededSelfLoop(ICraftingPatternDetails pattern) {
         if (pattern == null) return false;
-        IAEItemStack primary = com.ae2vm.compat.PatternCompat.getPrimaryOutput(pattern);
+        IAEItemStack primary = PatternCompat.getPrimaryOutput(pattern);
         if (primary == null) return false;
         IAEItemStack out = primary.copy().setStackSize(1);
         out.reset();
@@ -2527,7 +2535,7 @@ public class CraftingVM {
             candidates.add(constructed);
             candidates.add(new LinkedHashMap<>(patternTimes)); // discovery order
             LinkedHashMap<ICraftingPatternDetails, Long> reversed = new LinkedHashMap<>();
-            java.util.Deque<Map.Entry<ICraftingPatternDetails, Long>> stack = new java.util.ArrayDeque<>();
+            Deque<Map.Entry<ICraftingPatternDetails, Long>> stack = new ArrayDeque<>();
             for (var e : patternTimes.entrySet()) stack.push(e);
             for (var e : stack) reversed.put(e.getKey(), e.getValue());
             candidates.add(reversed);
@@ -2544,16 +2552,16 @@ public class CraftingVM {
             long deliverNow = requestedAmount.compareTo(BIG_MAX_LONG) > 0
                     ? Long.MAX_VALUE : requestedAmount.longValue();
             LinkedHashMap<ICraftingPatternDetails, Long> chosen = constructed;
-            com.ae2vm.replay.VirtualCPUCluster.Verdict closestStall = null;
+            VirtualCPUCluster.Verdict closestStall = null;
             if (totalCrafts <= VERIFY_CRAFT_BUDGET) {
                 for (LinkedHashMap<ICraftingPatternDetails, Long> cand : candidates) {
                     patternTimes.clear();
                     patternTimes.putAll(cand);
-                    com.ae2vm.replay.VirtualCPUCluster.Verdict v = new com.ae2vm.replay.VirtualCPUCluster(
+                    VirtualCPUCluster.Verdict v = new VirtualCPUCluster(
                             new VMPlan(outputKey, deliverNow, bytesNow, false, usedItems,
                                     missingItems, emittedItems, new LinkedHashMap<>(patternTimes)),
                             outputKey, deliverNow).run(10_000, 0);
-                    if (v.status == com.ae2vm.replay.VirtualCPUCluster.Verdict.Status.COMPLETE) {
+                    if (v.status == VirtualCPUCluster.Verdict.Status.COMPLETE) {
                         chosen = cand;
                         closestStall = null;
                         break;
@@ -2594,8 +2602,8 @@ public class CraftingVM {
             StringBuilder sb = new StringBuilder("[AE2-VM DIAG-PATS]");
             for (var e : patternTimes.entrySet()) {
                 sb.append(" ").append(e.getValue()).append("x").append(
-                        com.ae2vm.compat.PatternCompat.getPrimaryOutput(e.getKey()) == null
-                                ? "?" : com.ae2vm.compat.PatternCompat.getPrimaryOutput(e.getKey()).getDefinition());
+                        PatternCompat.getPrimaryOutput(e.getKey()) == null
+                                ? "?" : PatternCompat.getPrimaryOutput(e.getKey()).getDefinition());
             }
             Log.LOG.debug(sb.toString());
         }

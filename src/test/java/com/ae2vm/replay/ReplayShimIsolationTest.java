@@ -22,6 +22,13 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import appeng.api.storage.data.IAEItemStack;
+import appeng.util.item.AEItemStack;
+import com.ae2vm.vm.CraftingBytecode;
+import net.minecraft.init.Bootstrap;
+import net.minecraft.init.Items;
+import net.minecraft.item.ItemStack;
+import org.junit.jupiter.api.BeforeAll;
 
 /**
  * The shim-isolation gate (the dummy-registry shim): the offline
@@ -33,11 +40,11 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
  */
 class ReplayShimIsolationTest {
 
-    @org.junit.jupiter.api.BeforeAll
+    @BeforeAll
     static void bootstrapFixtureSide() {
         // the FIXTURE is built against the real (dev) registry — the child
         // loader that runs the replay gets the shim instead
-        net.minecraft.init.Bootstrap.register();
+        Bootstrap.register();
     }
 
     /** Same fixture shape as ReplayCoreTest.trace (PUSH_ITEM x1000; INSERT_OUTPUT; HALT). */
@@ -47,15 +54,15 @@ class ReplayShimIsolationTest {
         f.vaultId = "ff00";
         f.meta.put("aevm", "test-1.0");
 
-        appeng.api.storage.data.IAEItemStack stoneStack =
-                appeng.util.item.AEItemStack.fromItemStack(new net.minecraft.item.ItemStack(net.minecraft.init.Items.COAL));
-        com.ae2vm.vm.CraftingBytecode.Builder b = new com.ae2vm.vm.CraftingBytecode.Builder();
+        IAEItemStack stoneStack =
+                AEItemStack.fromItemStack(new ItemStack(Items.COAL));
+        CraftingBytecode.Builder b = new CraftingBytecode.Builder();
         int stoneIdx = b.addConstant(stoneStack);
         b.setOutput(stoneIdx, 1000);
         b.emitPushLong(1000);
         b.emitPushItem(stoneIdx, 1);
         b.emitInsertOutput(stoneIdx);
-        com.ae2vm.vm.CraftingBytecode real = b.build();
+        CraftingBytecode real = b.build();
 
         StackSpec stone = new StackSpec(false, "i#0001", 0, null);
         TraceBytecode tb = new TraceBytecode();

@@ -9,6 +9,9 @@ import net.minecraft.world.World;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import com.ae2vm.replay.VirtualCPUCluster;
+import java.util.Collections;
+import java.util.HashMap;
 
 /**
  * ICraftingPatternDetails fake backed by plain recipe lines: condensed inputs
@@ -28,7 +31,7 @@ public final class BenchPatternDetails implements ICraftingPatternDetails {
     private final boolean craftable;
 
     private BenchPatternDetails(IAEItemStack[] condensedInputs, IAEItemStack[] outputs) {
-        this(condensedInputs, outputs, java.util.Collections.emptyMap(), false);
+        this(condensedInputs, outputs, Collections.emptyMap(), false);
     }
 
     private BenchPatternDetails(IAEItemStack[] condensedInputs, IAEItemStack[] outputs,
@@ -61,9 +64,9 @@ public final class BenchPatternDetails implements ICraftingPatternDetails {
 
     /** Enables the substitute id on exactly the given condensed input slots. */
     public static BenchPatternDetails withSlotSubstitute(BenchPatternDetails base, int[] slots, String subId) {
-        Map<Integer, List<IAEItemStack>> slotSubs = new java.util.HashMap<>();
+        Map<Integer, List<IAEItemStack>> slotSubs = new HashMap<>();
         for (int slot : slots) {
-            slotSubs.put(slot, java.util.Collections.singletonList(
+            slotSubs.put(slot, Collections.singletonList(
                     (IAEItemStack) new BenchAEItemStack(subId, 1)));
         }
         return new BenchPatternDetails(base.condensedInputs, base.outputs, slotSubs, base.craftable);
@@ -73,7 +76,7 @@ public final class BenchPatternDetails implements ICraftingPatternDetails {
     public static BenchPatternDetails withSlotVariants(BenchPatternDetails base,
                                                        Map<Integer, List<IAEItemStack>> slotSubs) {
         return new BenchPatternDetails(base.condensedInputs, base.outputs,
-                new java.util.HashMap<>(slotSubs), base.craftable);
+                new HashMap<>(slotSubs), base.craftable);
     }
 
     /** inputs: {id, amount} pairs; outputs: first is primary, rest are byproducts. */
@@ -134,7 +137,7 @@ public final class BenchPatternDetails implements ICraftingPatternDetails {
     @Override
     public List<IAEItemStack> getSubstituteInputs(int slot) {
         List<IAEItemStack> subs = slotSubs.get(slot);
-        return subs == null ? java.util.Collections.<IAEItemStack>emptyList() : subs;
+        return subs == null ? Collections.<IAEItemStack>emptyList() : subs;
     }
 
     @Override
@@ -161,7 +164,7 @@ public final class BenchPatternDetails implements ICraftingPatternDetails {
     public void setPriority(int priority) {
     }
     /** Slot-substitute table for lifecycle-simulation hooks (slot → alternates). */
-    public Map<Integer, java.util.List<IAEItemStack>> getSlotSubstitutes() {
+    public Map<Integer, List<IAEItemStack>> getSlotSubstitutes() {
         return slotSubs;
     }
 
@@ -170,9 +173,9 @@ public final class BenchPatternDetails implements ICraftingPatternDetails {
      * table (the offline counterpart of {@code getSubstituteInputs} +
      * {@code findFuzzy}); null-safe per slot.
      */
-    public com.ae2vm.replay.VirtualCPUCluster.SlotAlternates slotAlternates() {
+    public VirtualCPUCluster.SlotAlternates slotAlternates() {
         return (d, slot) -> slotSubs.getOrDefault(slot,
-                java.util.Collections.<IAEItemStack>emptyList());
+                Collections.<IAEItemStack>emptyList());
     }
 
 }

@@ -10,6 +10,11 @@ import org.junit.jupiter.api.Test;
 
 import java.util.Map;
 import java.util.TreeMap;
+import com.ae2vm.replay.VirtualCPUCluster;
+import java.util.ArrayDeque;
+import java.util.Deque;
+import java.util.LinkedHashMap;
+import net.minecraft.init.Bootstrap;
 
 /**
  * Diagnostic probe for the fibonacci/minimum order stall: dumps the final
@@ -20,7 +25,7 @@ class FibonacciOrderProbeTest {
 
     @BeforeAll
     static void bootstrap() {
-        net.minecraft.init.Bootstrap.register();
+        Bootstrap.register();
     }
 
     @Test
@@ -65,13 +70,13 @@ class FibonacciOrderProbeTest {
                 + " patterns=" + plan.getPatternTimes().size());
         // re-run the replica on the final order, then on its reversal
         long tRep = System.nanoTime();
-        var vFinal = new com.ae2vm.replay.VirtualCPUCluster(plan, plan.getOutputKey(),
+        var vFinal = new VirtualCPUCluster(plan, plan.getOutputKey(),
                 plan.getDeliverAmount()).run(10_000, 0);
         long repMs = (System.nanoTime() - tRep) / 1_000_000L;
         System.out.println("[probe] replica(final order) = " + vFinal
                 + "  [" + repMs + " ms]");
-        java.util.LinkedHashMap<ICraftingPatternDetails, Long> reversed = new java.util.LinkedHashMap<>();
-        java.util.Deque<Map.Entry<ICraftingPatternDetails, Long>> stack = new java.util.ArrayDeque<>();
+        LinkedHashMap<ICraftingPatternDetails, Long> reversed = new LinkedHashMap<>();
+        Deque<Map.Entry<ICraftingPatternDetails, Long>> stack = new ArrayDeque<>();
         for (var e : plan.getPatternTimes().entrySet()) {
             stack.push(e);
         }

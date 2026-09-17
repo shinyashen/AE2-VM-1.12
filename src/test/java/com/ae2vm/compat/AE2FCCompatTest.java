@@ -28,6 +28,15 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import appeng.api.networking.crafting.ICraftingPatternDetails;
+import appeng.fluids.util.AEFluidStack;
+import appeng.util.item.AEItemStack;
+import com.glodblock.github.common.item.fake.FakeItemRegister;
+import java.util.List;
+import net.minecraft.init.Items;
+import net.minecraft.item.Item;
+import net.minecraft.item.ItemStack;
+import net.minecraftforge.fluids.Fluid;
 
 /**
  * Fluid-compat tests against the REAL AE2 Fluid Craft Rework classes (the
@@ -74,17 +83,17 @@ class AE2FCCompatTest {
         assertNotNull(waterDrop, "packing a fluid must produce a fake drop");
     }
 
-    private static IAEItemStack realItem(net.minecraft.item.Item item) {
-        IAEItemStack stack = appeng.util.item.AEItemStack.fromItemStack(
-                new net.minecraft.item.ItemStack(item));
+    private static IAEItemStack realItem(Item item) {
+        IAEItemStack stack = AEItemStack.fromItemStack(
+                new ItemStack(item));
         assertNotNull(stack);
         return stack.copy();
     }
 
-    private static IAEFluidStack fluid(net.minecraftforge.fluids.Fluid fluid, int amount) {
+    private static IAEFluidStack fluid(Fluid fluid, int amount) {
         // AEFluidStack directly: AEApi's static init needs the Forge registry and
         // cannot run in a plain JVM, but the fluid stack impl is self-contained.
-        IAEFluidStack stack = appeng.fluids.util.AEFluidStack.fromFluidStack(
+        IAEFluidStack stack = AEFluidStack.fromFluidStack(
                 new FluidStack(fluid, amount));
         assertNotNull(stack, "fluid stack must create for " + fluid.getName());
         return stack;
@@ -96,7 +105,7 @@ class AE2FCCompatTest {
         assertEquals(1000L, waterDrop.getStackSize(), "drop AE size is the mB amount");
         // identity decodes back to the same fluid at ItemStack count granularity
         IAEItemStack probe = waterDrop.copy().setStackSize(1L);
-        FluidStack decoded = com.glodblock.github.common.item.fake.FakeItemRegister.getStack(probe.createItemStack());
+        FluidStack decoded = FakeItemRegister.getStack(probe.createItemStack());
         assertNotNull(decoded, "drop must decode through FakeItemRegister");
         assertEquals(1, decoded.amount, "ItemStack count is the decode granularity");
         assertEquals(FluidRegistry.WATER, decoded.getFluid());
@@ -137,7 +146,7 @@ class AE2FCCompatTest {
         assertNotNull(packet, "a drop with a positive amount hint must pack a packet");
         assertFalse(packet.isSameType(waterDrop), "packet and drop are distinct key forms");
         // the packet decodes to exactly 500 mB through the real register
-        FluidStack decoded = com.glodblock.github.common.item.fake.FakeItemRegister.getStack(packet.createItemStack());
+        FluidStack decoded = FakeItemRegister.getStack(packet.createItemStack());
         assertNotNull(decoded);
         assertEquals(500, decoded.amount, "packet NBT carries the encoded amount");
     }
@@ -185,9 +194,9 @@ class AE2FCCompatTest {
         // Every non-fluid key must be a REAL AE item stack too: AEItemStack's
         // isSameType bridge casts its argument, so real and fake key types
         // must never mix within one graph (in game they never do).
-        IAEItemStack raw = realItem(net.minecraft.init.Items.IRON_INGOT);
-        IAEItemStack boardOut = realItem(net.minecraft.init.Items.GOLD_INGOT);
-        IAEItemStack blankOut = realItem(net.minecraft.init.Items.DIAMOND);
+        IAEItemStack raw = realItem(Items.IRON_INGOT);
+        IAEItemStack boardOut = realItem(Items.GOLD_INGOT);
+        IAEItemStack blankOut = realItem(Items.DIAMOND);
 
         BenchPatternDetails board = BenchPatternDetails.custom(
                 new IAEItemStack[]{raw.copy()},
@@ -200,7 +209,7 @@ class AE2FCCompatTest {
                         fluidX.copy().setStackSize(1000)},
                 new IAEItemStack[]{blankOut.copy()});
 
-        Map<IAEItemStack, appeng.api.networking.crafting.ICraftingPatternDetails> byOutput =
+        Map<IAEItemStack, ICraftingPatternDetails> byOutput =
                 new LinkedHashMap<>();
         byOutput.put(board.getOutputs()[0], board);
         byOutput.put(makeFluid.getOutputs()[0], makeFluid);
@@ -277,12 +286,12 @@ class AE2FCCompatTest {
         }
 
         @Override
-        public java.util.List<IAEItemStack> findFuzzyFamily(IAEItemStack key) {
-            return java.util.List.of();
+        public List<IAEItemStack> findFuzzyFamily(IAEItemStack key) {
+            return List.of();
         }
 
         @Override
-        public void addCrafting(appeng.api.networking.crafting.ICraftingPatternDetails pattern, long times) {
+        public void addCrafting(ICraftingPatternDetails pattern, long times) {
         }
 
         @Override

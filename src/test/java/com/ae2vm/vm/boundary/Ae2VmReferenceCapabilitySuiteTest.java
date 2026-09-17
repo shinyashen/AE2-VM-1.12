@@ -19,6 +19,7 @@ import java.util.Map;
 import java.util.TreeMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.stream.Stream;
+import net.minecraft.init.Bootstrap;
 
 /**
  * 1.12 port of the reference capability suite: runs the ported VM engine through
@@ -44,7 +45,7 @@ class Ae2VmReferenceCapabilitySuiteTest {
     static void bootstrap() {
         // The 1.12 fakes touch the vanilla registry (createItemStack); the
         // runner's worker threads need the registry initialized class-wide.
-        net.minecraft.init.Bootstrap.register();
+        Bootstrap.register();
     }
 
     @TestFactory

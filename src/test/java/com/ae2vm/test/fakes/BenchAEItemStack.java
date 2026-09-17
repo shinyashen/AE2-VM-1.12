@@ -5,6 +5,12 @@ import appeng.api.storage.data.IAEItemStack;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NBTTagCompound;
+import appeng.api.storage.IStorageChannel;
+import io.netty.buffer.ByteBuf;
+import java.io.IOException;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Objects;
 
 /**
  * Minimal IAEItemStack fake for VM semantics tests — no Minecraft bootstrap.
@@ -17,7 +23,7 @@ import net.minecraft.nbt.NBTTagCompound;
  * durability detection.
  */
 public final class BenchAEItemStack implements IAEItemStack {
-    private static final java.util.Map<Integer, Item> ITEMS = new java.util.HashMap<>();
+    private static final Map<Integer, Item> ITEMS = new HashMap<>();
 
     public final String id;
     public final int damage;
@@ -63,7 +69,7 @@ public final class BenchAEItemStack implements IAEItemStack {
     @Override
     public boolean isSameType(IAEItemStack other) {
         return other instanceof BenchAEItemStack b && b.id.equals(id)
-                && b.damage == damage && java.util.Objects.equals(b.nbt, nbt);
+                && b.damage == damage && Objects.equals(b.nbt, nbt);
     }
 
     @Override
@@ -78,7 +84,7 @@ public final class BenchAEItemStack implements IAEItemStack {
 
     @Override
     public int hashCode() {
-        return id.hashCode() * 31 + damage * 7 + java.util.Objects.hashCode(nbt);
+        return id.hashCode() * 31 + damage * 7 + Objects.hashCode(nbt);
     }
 
     @Override
@@ -167,7 +173,7 @@ public final class BenchAEItemStack implements IAEItemStack {
     }
 
     @Override
-    public void writeToPacket(io.netty.buffer.ByteBuf buf) throws java.io.IOException {
+    public void writeToPacket(ByteBuf buf) throws IOException {
     }
 
     @Override
@@ -191,7 +197,7 @@ public final class BenchAEItemStack implements IAEItemStack {
     }
 
     @Override
-    public appeng.api.storage.IStorageChannel getChannel() {
+    public IStorageChannel getChannel() {
         // not exercised by the VM path; avoid touching the AE2 registry
         return null;
     }

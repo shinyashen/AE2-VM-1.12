@@ -9,6 +9,7 @@ plugins {
     id 'java'
     id 'java-library'
     id 'checkstyle'
+    id 'pmd'
     id 'com.diffplug.spotless' version '7.2.1'
     id 'org.jetbrains.gradle.plugin.idea-ext' version '1.1.9'
     id 'com.gtnewhorizons.retrofuturagradle' version '2.0.2'
@@ -424,6 +425,33 @@ checkstyle {
     // patched Minecraft/Forge source tree) is excluded — never our code.
     configFile = file('config/checkstyle/checkstyle.xml')
     sourceSets = [project.sourceSets.main, project.sourceSets.test, project.sourceSets.shim]
+}
+
+// Code style rule that spotless/checkstyle cannot express: type references
+// must be imported, not written as inline fully-qualified names. Genuine
+// same-simple-name collisions (VirtualPatternDetails in trace AND vm) stay
+// exempt — PMD skips FQNs whose import would be ambiguous only if the type
+// is already imported; for the rest, import it.
+pmd {
+    toolVersion = '7.27.0'
+    consoleOutput = true
+    incrementalAnalysis = true
+    rulesMinimumPriority = 2
+    sourceSets = [project.sourceSets.main, project.sourceSets.test, project.sourceSets.shim]
+    ruleSets = []
+    ruleSetFiles = files('config/pmd/pmd.xml')
+}
+
+// RFG injects the full decompiled Minecraft/Forge tree into
+// sourceSets.main.java (build/rfg/minecraft-src); lint our code only.
+def lintExclude = {
+    it.file.path.contains('build' + File.separator + 'rfg') || it.file.path.contains('build/rfg')
+}
+tasks.withType(Checkstyle).configureEach {
+    exclude lintExclude
+}
+tasks.withType(Pmd).configureEach {
+    exclude lintExclude
 }
 
 tasks.named('check') {

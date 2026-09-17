@@ -16,6 +16,7 @@ import static com.ae2vm.test.harness.Bench.k;
 import static com.ae2vm.test.harness.Bench.pat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import net.minecraft.init.Bootstrap;
 
 /**
  * Port of the original JitReuseTest — cross-request JIT bundleCache reuse: the SAME
@@ -28,7 +29,7 @@ class JitReuseTest {
 
     @BeforeAll
     static void bootstrap() {
-        net.minecraft.init.Bootstrap.register();
+        Bootstrap.register();
     }
 
     @BeforeEach

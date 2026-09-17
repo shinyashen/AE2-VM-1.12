@@ -18,6 +18,7 @@ import static com.ae2vm.test.harness.Bench.k;
 import static com.ae2vm.test.harness.Bench.pat;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import net.minecraft.init.Bootstrap;
 
 /**
  * Plan-memoization guards: the stock re-validation
@@ -30,7 +31,7 @@ class PlanReuseGuardTest {
 
     @BeforeAll
     static void bootstrap() {
-        net.minecraft.init.Bootstrap.register();
+        Bootstrap.register();
     }
 
     private static VMPlan plan(Map<String, Long> used, Map<String, Long> missing) {

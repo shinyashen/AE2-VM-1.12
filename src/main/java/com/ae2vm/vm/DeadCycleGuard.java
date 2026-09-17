@@ -13,6 +13,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.Iterator;
 
 /**
  * Cycle-aware pattern pruning (1.12 port of the upstream GTL CYCLE-AWARE +
@@ -275,7 +278,7 @@ public final class DeadCycleGuard {
         }
         int[] index = new int[nodeCount];
         int[] low = new int[nodeCount];
-        java.util.Arrays.fill(index, -1);
+        Arrays.fill(index, -1);
         int[] counter = {0};
         List<Integer> stack = new ArrayList<>();
         boolean[] onStack = new boolean[nodeCount];
@@ -286,7 +289,7 @@ public final class DeadCycleGuard {
         }
         // Deadness filter: keep only components that are multi-member, unseeded
         // and not fed from outside.
-        java.util.Iterator<Set<Integer>> it = dead.iterator();
+        Iterator<Set<Integer>> it = dead.iterator();
         while (it.hasNext()) {
             Set<Integer> scc = it.next();
             if (scc.size() <= 1) {
@@ -352,7 +355,7 @@ public final class DeadCycleGuard {
         counter[0]++;
         stack.add(node);
         onStack[node] = true;
-        for (int w : graph.getOrDefault(node, java.util.Collections.emptySet())) {
+        for (int w : graph.getOrDefault(node, Collections.emptySet())) {
             if (index[w] < 0) {
                 tarjan(w, graph, index, low, counter, stack, onStack, out);
                 low[node] = Math.min(low[node], low[w]);
@@ -382,10 +385,10 @@ public final class DeadCycleGuard {
 
     private static List<IAEItemStack> safeLines(IAEItemStack[] lines) {
         try {
-            return lines == null ? java.util.Collections.<IAEItemStack>emptyList()
-                    : new ArrayList<>(java.util.Arrays.asList(lines));
+            return lines == null ? Collections.<IAEItemStack>emptyList()
+                    : new ArrayList<>(Arrays.asList(lines));
         } catch (Throwable ignored) {
-            return java.util.Collections.emptyList();
+            return Collections.emptyList();
         }
     }
 

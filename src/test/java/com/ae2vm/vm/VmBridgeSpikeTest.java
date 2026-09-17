@@ -13,6 +13,8 @@ import static com.ae2vm.test.harness.Bench.k;
 import static com.ae2vm.test.harness.Bench.pat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import appeng.api.networking.crafting.ICraftingPatternDetails;
+import net.minecraft.init.Bootstrap;
 
 /**
  * Port of the original VmBridgeSpikeTest — verifies the VM runs offline against a
@@ -23,7 +25,7 @@ class VmBridgeSpikeTest {
 
     @BeforeAll
     static void bootstrap() {
-        net.minecraft.init.Bootstrap.register();
+        Bootstrap.register();
     }
 
     @BeforeEach
@@ -44,7 +46,7 @@ class VmBridgeSpikeTest {
         BenchSimulationState sim = new BenchSimulationState()
                 .seed("D", 4).seed("E", 4).seed("F", 4).seed("G", 4);
 
-        for (appeng.api.networking.crafting.ICraftingPatternDetails p : Bench.PATTERNS.values()) {
+        for (ICraftingPatternDetails p : Bench.PATTERNS.values()) {
             PatternCompiler.compileIfAbsent(p);
         }
         CraftingBytecode req = PatternCompiler.compileRequest(a, 4);

@@ -17,6 +17,7 @@ import java.util.function.Function;
 import static com.ae2vm.test.fakes.BenchPatternDetails.processing;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import net.minecraft.init.Bootstrap;
 
 /**
  * The constructed task order (TaskOrdering): DAG producers before consumers,
@@ -29,7 +30,7 @@ class TaskOrderingTest {
 
     @BeforeAll
     static void bootstrap() {
-        net.minecraft.init.Bootstrap.register();
+        Bootstrap.register();
     }
 
     /** CraftingVM's priming view: all condensed inputs, per-craft, typed. */

@@ -16,6 +16,8 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import com.ae2vm.config.AE2VMConfig;
+import net.minecraft.init.Bootstrap;
 
 /**
  * Live-report scenario: a zero-stock amplification ring (1 ingot -> 12
@@ -30,17 +32,17 @@ class GaiaRingNoSeedTest {
     @BeforeAll
     static void enableRingFamily() {
         // The ring family is experimental and off by default; these tests pin its behavior.
-        com.ae2vm.config.AE2VMConfig.ringSolverEnabled = true;
+        AE2VMConfig.ringSolverEnabled = true;
     }
 
     @AfterAll
     static void restoreRingFamilyGate() {
-        com.ae2vm.config.AE2VMConfig.ringSolverEnabled = false;
+        AE2VMConfig.ringSolverEnabled = false;
     }
 
     @Test
     void zeroSeedAmplificationRingFolds() throws Exception {
-        net.minecraft.init.Bootstrap.register();
+        Bootstrap.register();
         Bench.reset();
         BenchPatternDetails makeSpirit = Bench.pat("S", 12, "I", 1L);
         BenchPatternDetails makeIngot = Bench.pat("I", 1, "S", 4L);

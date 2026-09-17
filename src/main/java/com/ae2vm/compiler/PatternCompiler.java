@@ -13,6 +13,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import appeng.util.item.AEItemStack;
+import java.util.concurrent.atomic.AtomicLong;
+import net.minecraft.item.ItemStack;
 
 /**
  * Pattern → bytecode compiler (1.12 port of AE2-VM's PatternCompiler).
@@ -43,8 +46,8 @@ public final class PatternCompiler {
      * memoization) latch the version they were built with and drop their
      * state when it moves.
      */
-    private static final java.util.concurrent.atomic.AtomicLong PATTERN_SET_VERSION =
-            new java.util.concurrent.atomic.AtomicLong(0);
+    private static final AtomicLong PATTERN_SET_VERSION =
+            new AtomicLong(0);
 
     /** Current pattern-set version (latch this alongside cached state). */
     public static long patternSetVersion() {
@@ -377,11 +380,11 @@ public final class PatternCompiler {
         //    container stays a plain consumed input (same as the original VM).
         if (!isProcessingPattern(pattern)) {
             try {
-                net.minecraft.item.ItemStack src = input.copy().setStackSize(1L).createItemStack();
+                ItemStack src = input.copy().setStackSize(1L).createItemStack();
                 if (src != null && !src.isEmpty() && src.getItem().hasContainerItem(src)) {
-                    net.minecraft.item.ItemStack cont = src.getItem().getContainerItem(src);
+                    ItemStack cont = src.getItem().getContainerItem(src);
                     IAEItemStack contAE = cont == null || cont.isEmpty()
-                            ? null : appeng.util.item.AEItemStack.fromItemStack(cont);
+                            ? null : AEItemStack.fromItemStack(cont);
                     if (contAE != null) {
                         if (contAE.isSameType(input)) {
                             return new long[]{0L, Long.MAX_VALUE};

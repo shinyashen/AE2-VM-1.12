@@ -17,6 +17,9 @@ import java.util.TreeMap;
 
 import static com.ae2vm.test.harness.Bench.pat;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import appeng.api.networking.crafting.ICraftingPatternDetails;
+import java.util.HashMap;
+import net.minecraft.init.Bootstrap;
 
 /**
  * Port of the original QuantityOneBoundaryTest — investigates the user report:
@@ -29,7 +32,7 @@ class QuantityOneBoundaryTest {
 
     @BeforeAll
     static void bootstrap() {
-        net.minecraft.init.Bootstrap.register();
+        Bootstrap.register();
     }
 
     @BeforeEach
@@ -46,7 +49,7 @@ class QuantityOneBoundaryTest {
     }
 
     private static VMPlan run(BenchPatternDetails target, long amount, BenchSimulationState sim) {
-        for (appeng.api.networking.crafting.ICraftingPatternDetails p : Bench.PATTERNS.values()) {
+        for (ICraftingPatternDetails p : Bench.PATTERNS.values()) {
             PatternCompiler.compileIfAbsent(p);
         }
         CraftingBytecode req = PatternCompiler.compileRequest(target, amount);
@@ -58,7 +61,7 @@ class QuantityOneBoundaryTest {
     @Test
     void fibOneVsTwoNoFalseMissing() {
         int levels = 12;
-        Map<String, BenchPatternDetails> byId = new java.util.HashMap<>();
+        Map<String, BenchPatternDetails> byId = new HashMap<>();
         for (int i = 2; i < levels; i++) {
             BenchPatternDetails p = pat("X" + i, 1, "X" + (i - 1), 1L, "X" + (i - 2), 1L);
             byId.put("X" + i, p);

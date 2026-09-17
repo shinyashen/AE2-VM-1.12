@@ -22,6 +22,9 @@ import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import com.ae2vm.trace.StackSpec;
+import com.ae2vm.vm.VMCounter;
+import java.util.TreeSet;
 
 /**
  * Offline replay core: rebuild the world from the
@@ -222,7 +225,7 @@ public final class ReplayCore {
         return m;
     }
 
-    private static Map<String, String> toSpecMap(com.ae2vm.vm.VMCounter counter, HeadlessStackFactory factory) {
+    private static Map<String, String> toSpecMap(VMCounter counter, HeadlessStackFactory factory) {
         Map<String, String> m = new LinkedHashMap<>();
         for (Map.Entry<IAEItemStack, Long> e : counter.entrySet()) {
             m.merge(specKey(e.getKey(), factory), Long.toString(e.getValue()), ReplayCore::sum);
@@ -235,7 +238,7 @@ public final class ReplayCore {
     }
 
     private static String specKey(IAEItemStack stack, HeadlessStackFactory factory) {
-        com.ae2vm.trace.StackSpec spec = factory.specOf(stack);
+        StackSpec spec = factory.specOf(stack);
         if (spec != null) {
             return specKey(spec.token, spec.damage, spec.nbtToken);
         }
@@ -248,7 +251,7 @@ public final class ReplayCore {
 
     private static void diffMaps(String label, Map<String, String> recorded, Map<String, String> replayed,
                                  List<String> out) {
-        java.util.TreeSet<String> keys = new java.util.TreeSet<>();
+        TreeSet<String> keys = new TreeSet<>();
         keys.addAll(recorded.keySet());
         keys.addAll(replayed.keySet());
         for (String k : keys) {
@@ -265,7 +268,7 @@ public final class ReplayCore {
     }
 
     private static void diffTimes(Map<Integer, Long> recorded, Map<Integer, Long> replayed, List<String> out) {
-        java.util.TreeSet<Integer> keys = new java.util.TreeSet<>();
+        TreeSet<Integer> keys = new TreeSet<>();
         keys.addAll(recorded.keySet());
         keys.addAll(replayed.keySet());
         for (Integer k : keys) {

@@ -15,6 +15,14 @@ import java.util.Base64;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import appeng.api.storage.data.IAEItemStack;
+import appeng.util.item.AEItemStack;
+import com.ae2vm.vm.CraftingBytecode;
+import net.minecraft.init.Bootstrap;
+import net.minecraft.init.Items;
+import net.minecraft.item.ItemStack;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.BeforeAll;
 
 /**
  * M4 acceptance: a trace rebuilds offline (dummy registry, embedded
@@ -24,10 +32,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class ReplayCoreTest {
 
-    @org.junit.jupiter.api.BeforeAll
+    @BeforeAll
     static void bootstrap() {
         // ItemStack construction is guarded until the vanilla registries exist
-        net.minecraft.init.Bootstrap.register();
+        Bootstrap.register();
     }
 
     /** PUSH_ITEM stone x1000; INSERT_OUTPUT stone; HALT — one pattern slot with a HALT-only nested bytecode. */
@@ -40,15 +48,15 @@ class ReplayCoreTest {
         // program built through the real Builder: PUSH_LONG 1000;
         // PUSH_ITEM stone x1 (pops the request, multiplies by per-craft);
         // INSERT_OUTPUT stone — mirrors the compiler's shape
-        appeng.api.storage.data.IAEItemStack stoneStack =
-                appeng.util.item.AEItemStack.fromItemStack(new net.minecraft.item.ItemStack(net.minecraft.init.Items.COAL));
-        com.ae2vm.vm.CraftingBytecode.Builder b = new com.ae2vm.vm.CraftingBytecode.Builder();
+        IAEItemStack stoneStack =
+                AEItemStack.fromItemStack(new ItemStack(Items.COAL));
+        CraftingBytecode.Builder b = new CraftingBytecode.Builder();
         int stoneIdx = b.addConstant(stoneStack);
         b.setOutput(stoneIdx, 1000); // deliver target = the requested amount (compileRequest semantics)
         b.emitPushLong(1000);
         b.emitPushItem(stoneIdx, 1);
         b.emitInsertOutput(stoneIdx);
-        com.ae2vm.vm.CraftingBytecode real = b.build();
+        CraftingBytecode real = b.build();
 
         StackSpec stone = new StackSpec(false, "i#0001", 0, null);
         TraceBytecode tb = new TraceBytecode();
@@ -102,7 +110,7 @@ class ReplayCoreTest {
         TraceFile f = new TraceFile();
         f.traceId = "pre-m4";
         IllegalArgumentException e =
-                org.junit.jupiter.api.Assertions.assertThrows(
+                Assertions.assertThrows(
                         IllegalArgumentException.class, () -> ReplayCore.replay(f));
         assertTrue(e.getMessage().contains("bytecode"));
     }

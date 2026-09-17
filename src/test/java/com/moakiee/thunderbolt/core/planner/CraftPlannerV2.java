@@ -12,6 +12,7 @@ import java.util.Map;
 import java.util.PriorityQueue;
 import java.util.Set;
 import java.util.function.ToLongFunction;
+import java.util.Collections;
 
 /**
  * v2 autocrafting planner: an iterative linear backbone plus conflict-directed anytime search over a
@@ -128,7 +129,7 @@ public final class CraftPlannerV2<K> {
     private List<ConservativeFeedbackAnalysis.Component<K>> conservativeFeedbackComponents = List.of();
     /** Component members that can obtain their first state from an acyclic producer. */
     private final Set<CraftPattern<K>> craftableConservativeFeedbackPatterns =
-            java.util.Collections.newSetFromMap(new IdentityHashMap<>());
+            Collections.newSetFromMap(new IdentityHashMap<>());
     private boolean requiresSeedOrderedPlanning;
     /** Ordinary unchanged catalysts may share one seed in the linear pass when no byproduct can feed it. */
     private final Set<K> ordinaryReturnedSeedKeys = new HashSet<>();
@@ -765,7 +766,7 @@ public final class CraftPlannerV2<K> {
 
         Map<K, Long> used = new HashMap<>(plan.usedStock());
         Map<K, Long> missing = new HashMap<>(plan.missing());
-        Set<Set<K>> handled = new java.util.HashSet<>();
+        Set<Set<K>> handled = new HashSet<>();
 
         for (CraftPattern<K> consumer : plan.firings().keySet()) {
             if (plan.firings().getOrDefault(consumer, 0L) <= 0) continue;
@@ -830,7 +831,7 @@ public final class CraftPlannerV2<K> {
             Map<K, Long> used,
             Map<K, Long> missing) {
         Set<CraftPattern<K>> handled =
-                java.util.Collections.newSetFromMap(new IdentityHashMap<>());
+                Collections.newSetFromMap(new IdentityHashMap<>());
         for (ConservativeFeedbackAnalysis.Component<K> component
                 : conservativeFeedbackComponents) {
             boolean active = true;
@@ -1873,7 +1874,7 @@ public final class CraftPlannerV2<K> {
         int maxIterations = (int) Math.min(64L, 4L + 2L * contended);
         Map<CraftPattern<K>, Long> caps = new IdentityHashMap<>();
         Set<CraftPattern<K>> ineffective =
-                java.util.Collections.newSetFromMap(new IdentityHashMap<>());
+                Collections.newSetFromMap(new IdentityHashMap<>());
         for (int i = 0; i < maxIterations; i++) {
             if (!searchBudget.tryConsume()) {
                 return null;

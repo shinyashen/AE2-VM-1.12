@@ -11,6 +11,8 @@ import java.util.Date;
 import java.util.IdentityHashMap;
 import java.util.Map;
 import com.ae2vm.Log;
+import net.minecraft.nbt.CompressedStreamTools;
+import net.minecraft.nbt.NBTTagCompound;
 
 /**
  * Live stall watchdog (DEFAULT OFF): AE2UEL's {@code
@@ -75,7 +77,7 @@ public final class StallWatchdog {
     }
 
     /** Writes the dumped NBT next to the traces; failures never propagate. */
-    public static void dump(Object cluster, net.minecraft.nbt.NBTTagCompound data) {
+    public static void dump(Object cluster, NBTTagCompound data) {
         try {
             Path root = TraceStore.serverRoot();
             if (root == null) {
@@ -86,7 +88,7 @@ public final class StallWatchdog {
             String name = "stall-" + STAMP.format(new Date())
                     + "-" + Integer.toHexString(System.identityHashCode(cluster)) + ".nbt";
             try (var out = Files.newOutputStream(dir.resolve(name))) {
-                net.minecraft.nbt.CompressedStreamTools.writeCompressed(data, out);
+                CompressedStreamTools.writeCompressed(data, out);
             }
             Log.LOG.warn("[AE2-VM] stall dump written: {}", dir.resolve(name));
         } catch (IOException | RuntimeException e) {

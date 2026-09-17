@@ -25,6 +25,7 @@ import static com.ae2vm.test.harness.Bench.k;
 import static com.ae2vm.test.harness.Bench.pat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import net.minecraft.init.Bootstrap;
 
 /**
  * Multi-pattern allocation solver ({@link PatternChoiceRepair}) — pins the fix
@@ -54,7 +55,7 @@ class MultiPatternSolverTest {
 
     @BeforeAll
     static void bootstrap() {
-        net.minecraft.init.Bootstrap.register();
+        Bootstrap.register();
     }
 
     private static void assertFamilySupported(String idPrefix) {

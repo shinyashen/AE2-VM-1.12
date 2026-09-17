@@ -20,6 +20,7 @@ import static com.ae2vm.test.harness.Bench.pat;
 import static com.ae2vm.test.harness.Bench.patEx;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import net.minecraft.init.Bootstrap;
 
 /**
  * Port of the original RecursionReferenceTest — simulated-scenario tests for the
@@ -52,7 +53,7 @@ class RecursionReferenceTest {
 
     @BeforeAll
     static void bootstrap() {
-        net.minecraft.init.Bootstrap.register();
+        Bootstrap.register();
     }
 
     @BeforeEach

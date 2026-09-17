@@ -7,6 +7,7 @@ import com.ae2vm.trace.TraceLoader;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import net.minecraft.init.Bootstrap;
 
 /**
  * The replay entry point. Two supported forms:
@@ -52,7 +53,7 @@ public final class ReplayMain {
         try {
             // vanilla registries must exist before any ItemStack is built
             // (no-op under the replay shim's virtual registry)
-            net.minecraft.init.Bootstrap.register();
+            Bootstrap.register();
             Path p = Paths.get(tracePath);
             TraceLoader.Result r = TraceLoader.load(p);
             TraceFile f = r.file;

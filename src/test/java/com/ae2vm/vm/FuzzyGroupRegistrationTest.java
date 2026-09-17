@@ -17,6 +17,7 @@ import static com.ae2vm.test.harness.Bench.pat;
 import static com.ae2vm.test.fakes.BenchPatternDetails.withSlotSubstitute;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import net.minecraft.init.Bootstrap;
 
 /**
  * Port of the original FuzzyGroupRegistrationTest — fuzzy / item-substitution group
@@ -37,7 +38,7 @@ class FuzzyGroupRegistrationTest {
 
     @BeforeAll
     static void bootstrap() {
-        net.minecraft.init.Bootstrap.register();
+        Bootstrap.register();
     }
 
     @BeforeEach

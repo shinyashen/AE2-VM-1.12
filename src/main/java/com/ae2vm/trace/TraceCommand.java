@@ -26,6 +26,7 @@ import java.util.List;
 import java.util.UUID;
 import java.util.stream.Stream;
 import com.ae2vm.Log;
+import java.util.Collections;
 
 /**
  * /ae2vm trace ... — the Evidence entry points. The
@@ -443,7 +444,7 @@ public final class TraceCommand extends CommandBase {
     }
 
     @Override
-    public java.util.List<String> getTabCompletions(MinecraftServer server, ICommandSender sender,
+    public List<String> getTabCompletions(MinecraftServer server, ICommandSender sender,
                                                     String[] args, @Nullable BlockPos pos) {
         if (args.length == 1) {
             return getListOfStringsMatchingLastWord(args, "trace");
@@ -457,6 +458,6 @@ public final class TraceCommand extends CommandBase {
         if (args.length == 3 && "list".equals(args[1]) && isOp(sender)) {
             return getListOfStringsMatchingLastWord(args, "all");
         }
-        return java.util.Collections.emptyList();
+        return Collections.emptyList();
     }
 }

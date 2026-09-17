@@ -13,6 +13,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import java.util.List;
 
 /**
  * Acceptance: the virtual CPU reproduces live AE2 semantics — delivery
@@ -84,7 +85,7 @@ class VirtualCPUClusterTest {
 
     @Test
     void extractionGapIsS3() {
-        java.util.List<String> gaps = VirtualCPUCluster.extractionGap(
+        List<String> gaps = VirtualCPUCluster.extractionGap(
                 plan(3000, 0), snapshotWith(2000));
         assertEquals(1, gaps.size());
         assertTrue(gaps.get(0).startsWith("S3"));

@@ -17,5 +17,15 @@
         <module name="EqualsHashCode"/>
         <module name="SimplifyBooleanExpression"/>
         <module name="OneTopLevelClass"/>
+        <!-- Inline fully-qualified type names must be imported instead.
+             Comments are exempt (ignoreComments); the sanctioned exception is
+             a genuine same-simple-name collision — none exists today. -->
+        <module name="RegexpSinglelineJava">
+            <property name="format"
+                      value="^\s+(?!\*|//).*(?&lt;![\w.&quot;])(?:java|javax|io|appeng|net\.minecraft|net\.minecraftforge|com\.ae2vm|com\.glodblock|com\.google|com\.moakiee)\.(?:[a-z0-9]+\.)*[A-Z]"/>
+            <property name="message"
+                      value="inline fully-qualified type: import it instead (sanctioned exception: same-simple-name collision)"/>
+            <property name="ignoreComments" value="true"/>
+        </module>
     </module>
 </module>

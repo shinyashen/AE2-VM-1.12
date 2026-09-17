@@ -14,6 +14,8 @@ import static com.ae2vm.test.fakes.BenchPatternDetails.processing;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import com.ae2vm.replay.VirtualCPUCluster;
+import net.minecraft.init.Bootstrap;
 
 /**
  * Ported semantics tests (original AE2-VM benchmark families).
@@ -27,7 +29,7 @@ class VmSemanticsTest {
     static void bootstrap() {
         // Forge guards Items/Blocks behind Bootstrap; vanilla registration is
         // self-contained and safe to run inside a plain JVM.
-        net.minecraft.init.Bootstrap.register();
+        Bootstrap.register();
     }
 
     @BeforeEach
@@ -57,7 +59,7 @@ class VmSemanticsTest {
                 .seed("A", 1)   // X seed (id 0)
                 .seed("B", 10); // ingredient A (id 1)
         VMPlan plan = Bench.run(marker, 5, sim);
-        com.ae2vm.replay.VirtualCPUCluster.TRACE = true;
+        VirtualCPUCluster.TRACE = true;
         CpuLifecycleAssert.auto(plan);
         assertFalse(plan.isSimulation(), "marker order must be feasible with 1 seed: missing=" + dump(plan));
         assertEquals(5L, plan.getPatternTimes().get(marker));
@@ -74,7 +76,7 @@ class VmSemanticsTest {
                 .seed("A", 1)
                 .seed("B", 3);
         VMPlan plan = Bench.run(amp, 4, sim);
-        com.ae2vm.replay.VirtualCPUCluster.TRACE = true;
+        VirtualCPUCluster.TRACE = true;
         // Faithful runtime divergence: A is finalOutput AND self-consumed — a real
         // CPU delivers finalOutput returns (CraftingCPUCluster :265) instead of
         // circulating them, so the run starves once the seed is spent
@@ -144,7 +146,7 @@ class VmSemanticsTest {
                 .seed("B", 12)   // raw input A
                 .seed("B", 2);    // producer raw input Y (id 1) - exactly the 2 crafts needed
         VMPlan plan = Bench.run(consumer, 12, sim);
-        com.ae2vm.replay.VirtualCPUCluster.TRACE = true;
+        VirtualCPUCluster.TRACE = true;
         CpuLifecycleAssert.auto(plan);
         assertFalse(plan.isSimulation(), "stock-aware: missing=" + dump(plan));
         // demand 12 X, 6 stocked -> deficit 6 -> 2 crafts of 4
@@ -160,7 +162,7 @@ class VmSemanticsTest {
         Bench.register(toB);
         BenchSimulationState sim = new BenchSimulationState();
         VMPlan plan = Bench.run(toB, 9, sim);
-        com.ae2vm.replay.VirtualCPUCluster.TRACE = true;
+        VirtualCPUCluster.TRACE = true;
         CpuLifecycleAssert.auto(plan);
         assertTrue(plan.isSimulation(), "seedless value-conserving ring must report missing");
     }
@@ -177,7 +179,7 @@ class VmSemanticsTest {
         Bench.register(producer);
         BenchSimulationState sim = new BenchSimulationState();
         VMPlan plan = Bench.run(producer, 8, sim);
-        com.ae2vm.replay.VirtualCPUCluster.TRACE = true;
+        VirtualCPUCluster.TRACE = true;
         CpuLifecycleAssert.auto(plan);
         assertTrue(plan.isSimulation());
         // 8 output needed -> 2 crafts (ceil(8/4)) -> 2 of input B (id 1) missing

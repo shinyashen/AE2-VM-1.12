@@ -8,6 +8,7 @@ import net.minecraft.nbt.NBTTagCompound;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.IdentityHashMap;
 
 /**
  * Trace → live stack for environments without the original registry
@@ -20,7 +21,7 @@ public final class HeadlessStackFactory {
 
     private final Map<String, Item> items = new HashMap<>();
     private final Map<String, NBTTagCompound> nbtTags = new HashMap<>();
-    private final Map<IAEItemStack, StackSpec> issued = new java.util.IdentityHashMap<>();
+    private final Map<IAEItemStack, StackSpec> issued = new IdentityHashMap<>();
 
     public IAEItemStack stack(StackSpec spec, long count) {
         Item item = items.get(spec.token);

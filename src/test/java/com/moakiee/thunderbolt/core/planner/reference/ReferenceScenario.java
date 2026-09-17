@@ -8,6 +8,7 @@ import java.util.function.Predicate;
 
 import com.moakiee.thunderbolt.core.planner.CraftGraph;
 import com.moakiee.thunderbolt.core.planner.CraftPlan;
+import java.util.stream.Collectors;
 
 /** One graph, inventory mode and expected semantic result. */
 public record ReferenceScenario(
@@ -37,7 +38,7 @@ public record ReferenceScenario(
             for (var candidate : minimalMissing) {
                 var clean = candidate.entrySet().stream()
                         .filter(entry -> entry.getValue() != null && entry.getValue() > 0)
-                        .collect(java.util.stream.Collectors.toUnmodifiableMap(
+                        .collect(Collectors.toUnmodifiableMap(
                                 Map.Entry::getKey, Map.Entry::getValue));
                 normalizedMissing.add(clean);
             }

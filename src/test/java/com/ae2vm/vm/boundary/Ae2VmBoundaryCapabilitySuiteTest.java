@@ -25,6 +25,12 @@ import java.util.stream.Stream;
 import static com.ae2vm.test.harness.Bench.pat;
 import static com.ae2vm.test.fakes.BenchPatternDetails.withSlotSubstitute;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import appeng.api.networking.crafting.ICraftingPatternDetails;
+import appeng.api.storage.data.IAEItemStack;
+import com.ae2vm.replay.VirtualCPUCluster;
+import java.util.Collections;
+import java.util.function.Consumer;
+import net.minecraft.init.Bootstrap;
 
 /**
  * 1.12 port of the BOUNDARY capability suite: the NAST server report —
@@ -46,7 +52,7 @@ class Ae2VmBoundaryCapabilitySuiteTest {
 
     /** One boundary case: id + target key + fixture builder + requested amount + expected feasibility. */
     private record BoundaryCase(
-            String id, String target, java.util.function.Consumer<Fixture> build,
+            String id, String target, Consumer<Fixture> build,
             long amount, boolean expectedFeasible) {
     }
 
@@ -60,7 +66,7 @@ class Ae2VmBoundaryCapabilitySuiteTest {
     @BeforeAll
     static void bootstrap() {
         // The 1.12 fakes touch the vanilla registry (createItemStack).
-        net.minecraft.init.Bootstrap.register();
+        Bootstrap.register();
     }
 
     /** Per-case fixture: patterns by primary output + network stock. */
@@ -106,7 +112,7 @@ class Ae2VmBoundaryCapabilitySuiteTest {
         PatternCompiler.clearCache(); // also resets the fuzzy groups
         // The VM resolver looks patterns up by OUTPUT STACK (type key), so index
         // the fixture's string-keyed patterns by their primary output here.
-        Map<appeng.api.storage.data.IAEItemStack, appeng.api.networking.crafting.ICraftingPatternDetails> patterns =
+        Map<IAEItemStack, ICraftingPatternDetails> patterns =
                 new LinkedHashMap<>();
         for (BenchPatternDetails p : fx.byOutput.values()) {
             PatternCompiler.compileIfAbsent(p);
@@ -139,11 +145,11 @@ class Ae2VmBoundaryCapabilitySuiteTest {
      * processing shape is pinned by the twins in VariantSubstituteChainTest /
      * FuzzyGroupRegistrationTest. Every executable case must COMPLETE.
      */
-    private static final com.ae2vm.replay.VirtualCPUCluster.SlotAlternates SLOT_ALTERNATES =
+    private static final VirtualCPUCluster.SlotAlternates SLOT_ALTERNATES =
             (d, slot) -> d instanceof BenchPatternDetails b
                     ? b.getSlotSubstitutes().getOrDefault(slot,
-                            java.util.Collections.<appeng.api.storage.data.IAEItemStack>emptyList())
-                    : java.util.Collections.<appeng.api.storage.data.IAEItemStack>emptyList();
+                            Collections.<IAEItemStack>emptyList())
+                    : Collections.<IAEItemStack>emptyList();
 
     private static void runCase(BoundaryCase c) {
         long start = System.nanoTime();

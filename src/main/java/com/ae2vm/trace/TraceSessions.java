@@ -11,6 +11,7 @@ import java.util.HashSet;
 import java.util.Set;
 import java.util.UUID;
 import com.ae2vm.Log;
+import net.minecraft.entity.player.EntityPlayer;
 
 /**
  * Armed-session state machine: traces exist ONLY when a
@@ -116,9 +117,9 @@ public final class TraceSessions {
      */
     public static TraceRecorder openFor(IActionSource source, IGrid grid,
                                         IAEItemStack what, long amount, boolean simulate) {
-        java.util.UUID player = null;
+        UUID player = null;
         if (source != null) {
-            player = source.player().map(net.minecraft.entity.player.EntityPlayer::getUniqueID)
+            player = source.player().map(EntityPlayer::getUniqueID)
                     .orElse(null);
         }
         if (!shouldRecord(player)) {
