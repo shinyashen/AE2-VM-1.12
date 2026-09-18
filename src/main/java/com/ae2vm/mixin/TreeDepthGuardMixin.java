@@ -12,7 +12,7 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
-import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 /**
  * Cycle guard over AE2UEL's native tree recursion — see {@link AE2VMTreeDepth}
@@ -42,7 +42,8 @@ public abstract class TreeDepthGuardMixin {
 
     @Inject(method = "request", at = @At("HEAD"), remap = false)
     private void ae2vm$depthEnter(final MECraftingInventory inv, long l,
-                                  final IActionSource src, final CallbackInfo ci) {
+                                  final IActionSource src,
+                                  final CallbackInfoReturnable<IAEItemStack> cir) {
         if (AE2VMTreeDepth.enter() > AE2VMTreeDepth.LIMIT) {
             AE2VMTreeDepth.reset();
             throw TreeDepthGuard.branchFailure(this.what, l);
@@ -50,7 +51,7 @@ public abstract class TreeDepthGuardMixin {
     }
 
     @Inject(method = "request", at = @At("RETURN"), remap = false)
-    private void ae2vm$depthExit(final CallbackInfo ci) {
+    private void ae2vm$depthExit(final CallbackInfoReturnable<IAEItemStack> cir) {
         AE2VMTreeDepth.exit();
     }
 }
