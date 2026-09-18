@@ -1,13 +1,15 @@
-package com.ae2vm.mixin;
+package appeng.crafting;
 
 import appeng.api.storage.data.IAEItemStack;
 
 import java.lang.reflect.Constructor;
 
 /**
- * Reflective factory + sneaky-throw bridge for appeng.crafting's
+ * Reflective factory + sneaky-throw bridge for this package's
  * package-private CraftBranchFailure, used by {@link TreeDepthGuardMixin}
- * (which cannot live in appeng.crafting — mixin packages hold mixins only).
+ * (com.ae2vm.mixin — which cannot reference this package-private type
+ * directly, and must not host the helper either: mixin packages hold mixins
+ * only, MixinBooter 11.x refuses every other class found in them).
  *
  * <p>Sneaky-throw is safe here: the JVM performs no checked-exception
  * validation at runtime, and the target method ({@code

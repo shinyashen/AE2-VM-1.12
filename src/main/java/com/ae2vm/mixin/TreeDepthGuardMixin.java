@@ -3,6 +3,7 @@ package com.ae2vm.mixin;
 import appeng.api.networking.security.IActionSource;
 import appeng.api.storage.data.IAEItemStack;
 import appeng.crafting.AE2VMTreeDepth;
+import appeng.crafting.TreeDepthGuard;
 import appeng.crafting.CraftingTreeNode;
 import appeng.crafting.MECraftingInventory;
 
@@ -20,10 +21,11 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * callers already handle (they convert it into the confirm screen's missing
  * list), so the plan degrades gracefully instead of the thread dying.
  *
- * <p>CraftBranchFailure is package-private in appeng.crafting, and this mixin
- * cannot live in that package (mixin config packages must contain only
- * mixins — see AE2VMEarlyMixinLoader's warning), so the exception is built
- * reflectively and sneaky-thrown: the runtime performs no checked-exception
+ * <p>CraftBranchFailure is package-private in appeng.crafting, so the
+ * exception is built reflectively and sneaky-thrown; the bridge class lives
+ * in appeng.crafting itself (com.ae2vm.mixin is a mixin package and refuses
+ * to load non-mixin classes — MixinBooter 11.x hard-crashes the client on
+ * it, regression 2026-09-18). the runtime performs no checked-exception
  * validation, and every frame above the target method already declares it.
  *
  * <p>Registered in {@code mixins.ae2_vm_112.json} (AE2 target → early loader
