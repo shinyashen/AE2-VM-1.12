@@ -5,6 +5,7 @@ import com.ae2vm.test.fakes.BenchPatternDetails;
 
 import com.ae2vm.compiler.PatternCompiler;
 import com.ae2vm.compat.PatternCompat;
+import com.ae2vm.test.fakes.BenchAEItemStack;
 import com.ae2vm.test.harness.CpuLifecycleAssert;
 import com.ae2vm.config.AE2VMConfig;
 import com.ae2vm.vm.VMPlan;
@@ -74,7 +75,7 @@ class GaiaCycleRideTest {
 
     private static boolean hasMissing(VMPlan plan, String id) {
         for (var key : plan.getMissingItems().keys()) {
-            if (((com.ae2vm.test.fakes.BenchAEItemStack) key).id.equals(id)) {
+            if (((BenchAEItemStack) key).id.equals(id)) {
                 return true;
             }
         }
@@ -83,7 +84,7 @@ class GaiaCycleRideTest {
 
     private static long missingOf(VMPlan plan, String id) {
         for (var key : plan.getMissingItems().keys()) {
-            if (((com.ae2vm.test.fakes.BenchAEItemStack) key).id.equals(id)) {
+            if (((BenchAEItemStack) key).id.equals(id)) {
                 return plan.getMissingItems().get(key);
             }
         }
