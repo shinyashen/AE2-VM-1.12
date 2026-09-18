@@ -17,7 +17,7 @@ import java.lang.reflect.Constructor;
  * {@code throws CraftBranchFailure}, so native callers handle it through
  * their normal missing-item paths.
  */
-final class TreeDepthGuard {
+public final class TreeDepthGuard {
 
     private static volatile Constructor<?> failureCtor;
 
@@ -25,7 +25,7 @@ final class TreeDepthGuard {
     }
 
     /** Always throws; the return type only appeases the compiler. */
-    static RuntimeException branchFailure(IAEItemStack what, long howMany) {
+    public static RuntimeException branchFailure(IAEItemStack what, long howMany) {
         throw sneaky(make(what, howMany));
     }
 
