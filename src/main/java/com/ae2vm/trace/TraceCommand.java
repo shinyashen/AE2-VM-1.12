@@ -201,9 +201,12 @@ public final class TraceCommand extends CommandBase {
         if (withSource) {
             sb.append(' ').append(sourceLabel(f, ownerToken));
         }
-        // main line: click pre-fills the summary command
+        // main line: click pre-fills the summary command; LIGHT_PURPLE keeps
+        // the summary readable on translucent chat backgrounds (black was
+        // nearly invisible there — live feedback 2026-09-19)
         TextComponentString root = new TextComponentString(sb.toString() + "  ");
         Style main = root.getStyle();
+        main.setColor(TextFormatting.LIGHT_PURPLE);
         main.setClickEvent(new ClickEvent(ClickEvent.Action.SUGGEST_COMMAND,
                 "/ae2vm trace show " + id));
         main.setHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT,
