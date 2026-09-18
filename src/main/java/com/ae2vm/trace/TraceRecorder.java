@@ -12,6 +12,7 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.util.Collections;
 import java.util.IdentityHashMap;
+import java.util.Set;
 import java.util.Map;
 import java.util.TreeMap;
 import com.ae2vm.Log;
@@ -151,6 +152,11 @@ public final class TraceRecorder {
             TraceStore.enforceRetention();
         } catch (IOException e) {
             Log.LOG.warn("[AE2-VM] trace {} could not be written", file.traceId, e);
+        } catch (Throwable e) {
+            // Serialization defects (defensive: cyclic webs, pathological
+            // payloads) must never fail the crafting order being recorded.
+            // The partial file is kept — the hash chain marks it unverified.
+            Log.LOG.error("[AE2-VM] trace {} serialization failed; partial file kept", file.traceId, e);
         }
     }
 
@@ -342,7 +348,8 @@ public final class TraceRecorder {
      * replay never needs them either.
      */
     private void stampSubBytecodes(CraftingBytecode bc) {
-        stampOne(file.bytecode, bc);
+        stampOne(file.bytecode, bc,
+                Collections.newSetFromMap(new IdentityHashMap<>()));
     }
 
     /**
@@ -395,7 +402,19 @@ public final class TraceRecorder {
         return nested;
     }
 
-    private void stampOne(TraceBytecode t, CraftingBytecode bc) {
+    /**
+     * @param stamped identity set of already-stamped bytecodes. CALL webs
+     *        are cyclic in the wild (a net-gain self-loop's compiled
+     *        bytecode contains its own pattern; mutual webs nest each
+     *        other) — without this set the embedding recurses until the
+     *        calculator thread dies with StackOverflowError and the whole
+     *        order fails (live regression 2026-09-18, gaia ring).
+     */
+    private void stampOne(TraceBytecode t, CraftingBytecode bc,
+                          Set<CraftingBytecode> stamped) {
+        if (!stamped.add(bc)) {
+            return; // cycle: this bytecode's nesting is already built
+        }
         Object[] pool = bc.getPatternPool();
         for (int i = 0; i < pool.length && i < t.patterns.size(); i++) {
             CraftingBytecode sub = PatternCompiler.getCompiled(
@@ -422,7 +441,7 @@ public final class TraceRecorder {
                 nested.patterns.add(ntp);
             }
             tp.compiled = nested;
-            stampOne(nested, sub);
+            stampOne(nested, sub, stamped);
         }
     }
 
