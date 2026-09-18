@@ -1,5 +1,6 @@
 package com.ae2vm.trace;
 
+import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import net.minecraft.command.ICommandSender;
@@ -16,15 +17,11 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
-import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import java.util.zip.GZIPInputStream;
 import com.ae2vm.Log;
-import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 
 /**
@@ -46,12 +43,17 @@ public final class TraceUpload {
         deliver(server, sender, TraceLang.format("aevm.trace.upload.start", name));
         Thread t = new Thread(() -> {
             try {
-                String json = gunzip(Files.readAllBytes(file));
-                if (json.length() > MAX_TEXT) {
+                TraceLoader.Result r = TraceLoader.load(file);
+                if (r == null || r.file == null) {
+                    deliver(server, sender, TraceLang.format("aevm.trace.upload.failed", "unreadable trace"));
+                    return;
+                }
+                String rendered = TraceLogText.render(r.file);
+                if (rendered.length() > MAX_TEXT) {
                     deliver(server, sender, TraceLang.format("aevm.trace.upload.too-big"));
                     return;
                 }
-                String url = post(json);
+                String url = post(rendered, r.file);
                 deliver(server, sender, url == null
                         ? TraceLang.format("aevm.trace.upload.failed", "no url in response")
                         : TraceLang.format("aevm.trace.upload.done", url));
@@ -65,18 +67,32 @@ public final class TraceUpload {
         t.start();
     }
 
-    private static String post(String content) throws IOException {
+    /**
+     * JSON body (the form-encoded legacy endpoint carries no metadata): the
+     * content is the RENDERED log text — Minecraft-log-shaped lines for native
+     * paste-site highlighting, ending with the reversible
+     * {@link TraceLogText} DATA record — plus visible metadata for the page.
+     */
+    private static String post(String content, TraceFile f) throws IOException {
+        JsonObject body = new JsonObject();
+        body.addProperty("content", content);
+        JsonArray metadata = new JsonArray();
+        addMeta(metadata, "engine", f.meta.get("aevm"), "AE2-VM");
+        addMeta(metadata, "mc", f.meta.get("mc"), "Minecraft");
+        addMeta(metadata, "side", f.meta.get("side"), "Side");
+        addMeta(metadata, "traceId", f.traceId, "Trace ID");
+        addMeta(metadata, "vaultId", f.vaultId, "Vault ID");
+        body.add("metadata", metadata);
         HttpURLConnection conn = (HttpURLConnection) new URL("https://api.mclo.gs/1/log")
                 .openConnection();
         conn.setRequestMethod("POST");
         conn.setDoOutput(true);
         conn.setConnectTimeout(10_000);
         conn.setReadTimeout(20_000);
-        conn.setRequestProperty("Content-Type", "application/x-www-form-urlencoded");
-        byte[] body = ("content=" + URLEncoder.encode(content, "UTF-8"))
-                .getBytes(StandardCharsets.UTF_8);
+        conn.setRequestProperty("Content-Type", "application/json");
+        byte[] bytes = body.toString().getBytes(StandardCharsets.UTF_8);
         try (OutputStream os = conn.getOutputStream()) {
-            os.write(body);
+            os.write(bytes);
         }
         int code = conn.getResponseCode();
         if (code != 200) {
@@ -90,10 +106,16 @@ public final class TraceUpload {
         return o.has("url") ? o.get("url").getAsString() : null;
     }
 
-    private static String gunzip(byte[] gz) throws IOException {
-        try (InputStream in = new GZIPInputStream(new ByteArrayInputStream(gz))) {
-            return readAll(in);
+    private static void addMeta(JsonArray metadata, String key, String value, String label) {
+        if (value == null || value.isEmpty()) {
+            return;
         }
+        JsonObject e = new JsonObject();
+        e.addProperty("key", key);
+        e.addProperty("value", value);
+        e.addProperty("label", label);
+        e.addProperty("visible", true);
+        metadata.add(e);
     }
 
     private static String readAll(InputStream in) throws IOException {

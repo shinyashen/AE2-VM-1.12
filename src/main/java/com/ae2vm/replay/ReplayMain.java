@@ -3,10 +3,19 @@ package com.ae2vm.replay;
 import com.ae2vm.Tags;
 import com.ae2vm.trace.TraceFile;
 import com.ae2vm.trace.TraceLoader;
+import com.ae2vm.trace.TraceLogText;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.zip.GZIPOutputStream;
 import net.minecraft.init.Bootstrap;
 
 /**
@@ -17,6 +26,10 @@ import net.minecraft.init.Bootstrap;
  *   <li>isolated — the legacy {@link ReplayLauncher} --deps form (real MC +
  *       AE2UEL jars).</li>
  * </ul>
+ * The trace source is a local {@code .json.gz} file OR a pasted-trace URL:
+ * {@code --from-mclogs https://mclo.gs/ID} fetches the raw paste and recovers
+ * the {@link TraceLogText} DATA record (the reversible machine record the
+ * uploader appends), so ONE shared link serves both human review and replay.
  * Output goes to stdout; exit code 0 = identical, 1 = differences,
  * 2 = failure, 3 = simulation verdict STALL.
  */
@@ -32,29 +45,44 @@ public final class ReplayMain {
     /** Returns the process exit code instead of exiting (usable from tests). */
     public static int run(String[] args) {
         String tracePath = null;
+        String mclogsUrl = null;
         boolean diff = true;
         boolean simulate = true;
-        for (String a : args) {
+        for (int i = 0; i < args.length; i++) {
+            String a = args[i];
             if ("--no-diff".equals(a)) {
                 diff = false;
             } else if ("--no-simulate".equals(a)) {
                 simulate = false;
+            } else if ("--from-mclogs".equals(a)) {
+                if (i + 1 >= args.length) {
+                    System.err.println("--from-mclogs needs a URL");
+                    return 2;
+                }
+                mclogsUrl = args[++i];
             } else if (a.startsWith("--")) {
                 System.err.println("unknown flag: " + a);
             } else {
                 tracePath = a;
             }
         }
-        if (tracePath == null) {
+        if (tracePath == null && mclogsUrl == null) {
             System.err.println("usage: java -cp ae2_vm_112.jar:ae2vm-replay-shim.jar "
-                    + "com.ae2vm.replay.ReplayMain <trace.json.gz> [--no-diff] [--no-simulate]");
+                    + "com.ae2vm.replay.ReplayMain <trace.json.gz | --from-mclogs https://mclo.gs/ID> "
+                    + "[--no-diff] [--no-simulate]");
             return 2;
         }
         try {
             // vanilla registries must exist before any ItemStack is built
             // (no-op under the replay shim's virtual registry)
             Bootstrap.register();
-            Path p = Paths.get(tracePath);
+            Path p;
+            if (mclogsUrl != null) {
+                p = fetchMclogs(mclogsUrl);
+                System.out.println("trace source: " + mclogsUrl);
+            } else {
+                p = Paths.get(tracePath);
+            }
             TraceLoader.Result r = TraceLoader.load(p);
             TraceFile f = r.file;
             if (!r.intact()) {
@@ -102,6 +130,57 @@ public final class ReplayMain {
         } catch (IOException | RuntimeException e) {
             System.err.println("replay failed: " + e);
             return 2;
+        }
+    }
+
+    /**
+     * Fetches the paste's raw text and rebuilds the trace from its
+     * {@link TraceLogText} DATA record into a temp gzip file the regular
+     * loader consumes.
+     */
+    private static Path fetchMclogs(String url) throws IOException {
+        String raw = rawUrlOf(url);
+        String text = httpGet(raw);
+        String data = TraceLogText.extractDataJson(text);
+        if (data == null) {
+            throw new IOException("no [TRACE/DATA] record in the paste — not an "
+                    + "AE2-VM trace rendered by this engine (or a pre-DATA upload)");
+        }
+        Path tmp = Files.createTempFile("aevm-trace-", ".json.gz");
+        try (OutputStream os = new GZIPOutputStream(Files.newOutputStream(tmp))) {
+            os.write(data.getBytes(StandardCharsets.UTF_8));
+        }
+        tmp.toFile().deleteOnExit();
+        return tmp;
+    }
+
+    /** {@code https://mclo.gs/ID} → raw endpoint; raw URLs pass through. */
+    private static String rawUrlOf(String url) {
+        if (url.startsWith("https://api.mclo.gs/1/raw/")) {
+            return url;
+        }
+        int slash = url.lastIndexOf('/');
+        String id = slash < 0 ? url : url.substring(slash + 1);
+        return "https://api.mclo.gs/1/raw/" + id;
+    }
+
+    private static String httpGet(String url) throws IOException {
+        HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
+        conn.setRequestMethod("GET");
+        conn.setConnectTimeout(10_000);
+        conn.setReadTimeout(20_000);
+        int code = conn.getResponseCode();
+        if (code != 200) {
+            throw new IOException("HTTP " + code + " for " + url);
+        }
+        try (InputStream in = conn.getInputStream()) {
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            byte[] buf = new byte[8192];
+            int n;
+            while ((n = in.read(buf)) > 0) {
+                out.write(buf, 0, n);
+            }
+            return new String(out.toByteArray(), StandardCharsets.UTF_8);
         }
     }
 }
