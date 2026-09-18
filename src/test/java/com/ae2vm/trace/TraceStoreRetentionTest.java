@@ -66,7 +66,7 @@ class TraceStoreRetentionTest {
         big2.toFile().setLastModified(2_000_000L);
 
         int savedCount = AE2VMConfig.traceRetentionCount;
-        long savedBytes = AE2VMConfig.traceRetentionMaxBytes;
+        int savedBytes = AE2VMConfig.traceRetentionMaxBytes;
         try {
             AE2VMConfig.traceRetentionCount = 10;
             AE2VMConfig.traceRetentionMaxBytes = 1024; // one file max

@@ -40,7 +40,7 @@ public class AE2VMConfig {
     public static int traceRetentionCount = 20;
 
     @Config.Comment("Maximum total size in bytes of trace files under <server dir>/aevm/traces.")
-    public static long traceRetentionMaxBytes = 104857600L;
+    public static int traceRetentionMaxBytes = 104857600;
 
     @Config.Comment({"Chat language for trace command feedback.", "en_us or zh_cn."})
     public static String language = "en_us";
