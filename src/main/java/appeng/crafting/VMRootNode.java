@@ -60,6 +60,10 @@ public final class VMRootNode extends CraftingTreeNode {
             traceRecorder = TraceSessions.openFor(source, grid, requestedOutput, amount,
                     craftingJob.isSimulation());
         }
+        // Every native hand-off below expands AE2UEL's unguarded recursive
+        // tree; give the cycle guard (AE2VMTreeDepth) a clean slate first —
+        // the counter leaks upward on exception exits by design.
+        AE2VMTreeDepth.reset();
         if (nativeFallback || !AE2VMConfig.proxyEnabled || isThirdPartySource(source)) {
             return super.request(inventory, amount, source);
         }

@@ -5,6 +5,7 @@ import appeng.api.networking.crafting.ICraftingCallback;
 import appeng.api.networking.crafting.ICraftingGrid;
 import appeng.api.networking.security.IActionSource;
 import appeng.api.storage.data.IAEItemStack;
+import appeng.crafting.AE2VMTreeDepth;
 import appeng.crafting.CraftingJob;
 import appeng.crafting.CraftingTreeNode;
 import appeng.crafting.VMRootNode;
@@ -25,6 +26,13 @@ public abstract class CraftingJobMixin {
 
     @Shadow
     private CraftingTreeNode tree;
+
+    @Inject(method = "run", at = @At("HEAD"), remap = false)
+    private void ae2vm$resetTreeDepth(CallbackInfo callbackInfo) {
+        // One clean slate per job: the native-cycle guard (AE2VMTreeDepth)
+        // leaks depth on exception exits, so every job starts from zero.
+        AE2VMTreeDepth.reset();
+    }
 
     @Inject(method = "<init>", at = @At("RETURN"))
     private void ae2vm$replaceRoot(World world,
