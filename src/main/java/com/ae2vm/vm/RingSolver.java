@@ -558,7 +558,16 @@ final class RingSolver {
                 if (orderBase.contains(e.getKey())) {
                     BigInteger scaled = e.getValue().multiply(CAP).add(maxCount).subtract(BigInteger.ONE)
                             .divide(maxCount);
-                    remaining0.put(e.getKey(), scaled.max(BigInteger.ONE));
+                    // Never INFLATE: counts above the real plan make the probe
+                    // demand more than the real withdrawal covers, and every
+                    // fire past the draw is FORCED — phantom floors the real
+                    // plan never needs (the live 1000-spirit order: the
+                    // root-siphoned spirit draw never refills, the inflated
+                    // remainder billed +4 spirits +1 seed over the true net
+                    // draw, and the doubled seed bill exceeded the 1-unit
+                    // stock — a false infeasible). Real counts keep the
+                    // probe's economy exact; larger plans still deflate.
+                    remaining0.put(e.getKey(), scaled.min(e.getValue()).max(BigInteger.ONE));
                 }
             }
         }
