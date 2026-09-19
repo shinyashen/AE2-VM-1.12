@@ -1312,6 +1312,8 @@ public class CraftingVM {
         Map<IAEItemStack, Long> loopMissing = computeFeedbackLoopMissing(total, initialStock);
         if (!loopMissing.isEmpty()) {
             for (var e : loopMissing.entrySet()) {
+                // the kept amount is ledger-derived: real coverage shortages
+                // survive at full size, circulation artifacts are erased
                 missingItems.remove(e.getKey());
                 if (e.getValue() > 0) missingItems.add(e.getKey(), e.getValue());
             }
@@ -1847,9 +1849,33 @@ public class CraftingVM {
         if (totalFires > FIRE_CAP) return new HashMap<>();
 
         Map<IAEItemStack, Long> result = new HashMap<>();
+        // Per loop item, the schedule's ledger separates two kinds of
+        // shortfall. A REAL coverage shortage (consumed > produced + stock —
+        // an under-sized producer) must be disclosed at full size. A
+        // CIRCULATION artifact (produced and consumed balance; the sandbox
+        // walk extracts before the producer's return lands) is covered by the
+        // CPU's task returns and must be erased. The working-capital seed
+        // never lowers a real gap.
+        Map<IAEItemStack, Long> producedOf = new HashMap<>();
+        Map<IAEItemStack, Long> consumedOf = new HashMap<>();
+        for (var en : total.entrySet()) {
+            LoopPattern lp = pats.get(en.getKey());
+            if (lp == null || en.getValue().signum() <= 0) continue;
+            long cnt = en.getValue().longValue();
+            for (var o : lp.outputs.entrySet()) {
+                producedOf.merge(o.getKey(), o.getValue() * cnt, Long::sum);
+            }
+            for (var i2 : lp.inputs.entrySet()) {
+                consumedOf.merge(i2.getKey(), i2.getValue() * cnt, Long::sum);
+            }
+        }
         for (IAEItemStack x : loopItems) {
             Long inj = injected.get(x);
-            result.put(x, inj == null ? 0L : inj);
+            long seed = inj == null ? 0L : inj;
+            long net = stockOf(initialStock, x) + producedOf.getOrDefault(x, 0L)
+                    - consumedOf.getOrDefault(x, 0L);
+            long gap = Math.max(0L, -net);
+            result.put(x, Math.max(gap, seed));
         }
         return result;
     }
