@@ -2526,23 +2526,34 @@ public class CraftingVM {
      */
     private boolean runClosure() {
         if (rootPattern == null || outputKey == null || requestAmount == null
-                || requestAmount.signum() <= 0) {
+                || requestAmount.signum() <= 0
+                // an unseeded self-growth root is cut at execute level (serve
+                // from stock, shortfall missing) — the closure's seed would
+                // unconditionally re-schedule it
+                || isUnseededSelfLoop(rootPattern)) {
             return false;
         }
+        // PlanClosure.View adapter: producerOf resolves through the SAME
+        // resolver the capture used — an unseeded self-growth loop (A -> 2A)
+        // is never a producer, matching the execute-level cut.
         PlanClosure.View view = new PlanClosure.View() {
             @Override
             public ICraftingPatternDetails producerOf(IAEItemStack key) {
                 // byproduct-rooted request: the root key has no resolver
                 // entry, but the request's own pattern produces it
+                ICraftingPatternDetails p;
                 if (key.isSameType(outputKey)) {
-                    return rootPattern;
+                    p = rootPattern;
+                } else {
+                    p = patternResolver != null ? patternResolver.apply(key) : null;
+                    // solver-view fallback: exactly one any-slot producer (the
+                    // ring solver's precedent) — a byproduct-only key joins the
+                    // closure through it instead of shipping as a false leaf
+                    if (p == null) {
+                        p = PatternCompiler.resolveAnyOutputProducer(key);
+                    }
                 }
-                ICraftingPatternDetails p =
-                        patternResolver != null ? patternResolver.apply(key) : null;
-                // solver-view fallback: exactly one any-slot producer (the
-                // ring solver's precedent) — a byproduct-only key joins the
-                // closure through it instead of shipping as a false leaf
-                return p != null ? p : PatternCompiler.resolveAnyOutputProducer(key);
+                return isUnseededSelfLoop(p) ? null : p;
             }
 
             @Override
@@ -2570,6 +2581,13 @@ public class CraftingVM {
                     r == null ? 0 : r.rounds);
             return false;
         }
+        // snapshot the plan containers: a rejected closure plan (the faithful
+        // CPU cannot boot it) must leave NO residue for the stage pipeline
+        LinkedHashMap<ICraftingPatternDetails, Long> patternTimesBefore =
+                new LinkedHashMap<>(patternTimes);
+        VMCounter usedBefore = snapshotCounter(usedItems);
+        VMCounter missingBefore = snapshotCounter(missingItems);
+        VMCounter emittedBefore = snapshotCounter(emittedItems);
         // Priming floors (the KEPT mechanism, CLOSURE-DESIGN.md §5.3): the
         // ledger is balanced for keys whose production CIRCULATES (net-zero
         // cycles, self-returned catalysts), but a real CPU's first craft in a
@@ -2608,7 +2626,8 @@ public class CraftingVM {
         for (IAEItemStack k : r.withdraw.keySet()) billed.add(copyOf(k));
         for (IAEItemStack k : floors.floors().keySet()) billed.add(copyOf(k));
         for (IAEItemStack k : billed) {
-            long w = toLongSafe(getPool(r.withdraw, k), "closure-w");
+            BigInteger wv = getPool(r.withdraw, k);
+            long w = wv == null ? 0L : toLongSafe(wv, "closure-w");
             long floor = toLongSafe(floors.floors().getOrDefault(k, BigInteger.ZERO),
                     "closure-floor");
             long bill = w + floor;
@@ -2628,12 +2647,96 @@ public class CraftingVM {
             long s = toLongSafe(e.getValue(), "closure-surplus");
             if (s > 0) emittedItems.add(e.getKey(), s);
         }
-        Log.LOG.debug("[AE2-VM] plan closure converged in {} rounds: {} patterns, "
-                        + "{} crafts, {} used keys, {} missing, {} surplus",
+        // Faithful-CPU gate: the closure's plan is EXACT (zero slack), and the
+        // priming-floor probe's forced-fire model can under-estimate the boot
+        // capital on tight cycles. A plan the faithful CPU cannot complete
+        // must never ship: verify the same candidates buildPlan would try
+        // (the probe-rank order, the discovery order, its reversal — on a
+        // zero-slack cycle WHO intercepts the circulating return decides the
+        // verdict) and adopt the completing one; no candidate completes →
+        // fall back to the stage pipeline, its plan, its numbers.
+        if (missingItems.isEmpty()) {
+            long totalCrafts = 0;
+            for (Long v : patternTimes.values()) {
+                long next = totalCrafts + v;
+                totalCrafts = next < 0 ? VERIFY_CRAFT_BUDGET + 1
+                        : Math.min(VERIFY_CRAFT_BUDGET + 1, next);
+                if (totalCrafts > VERIFY_CRAFT_BUDGET) break;
+            }
+            long deliver = requestAmount.compareTo(BIG_MAX_LONG) > 0
+                    ? Long.MAX_VALUE : requestAmount.longValue();
+            if (totalCrafts <= VERIFY_CRAFT_BUDGET) {
+                LinkedHashMap<ICraftingPatternDetails, Long> discovery =
+                        new LinkedHashMap<>(patternTimes);
+                LinkedHashMap<ICraftingPatternDetails, Long> constructed = TaskOrdering.construct(
+                        patternTimes, ringTaskOrder,
+                        CraftingVM::perCraftPrimings, CraftingVM::perCraftOutputs);
+                LinkedHashMap<ICraftingPatternDetails, Long> reversed = new LinkedHashMap<>();
+                Deque<Map.Entry<ICraftingPatternDetails, Long>> orderStack = new ArrayDeque<>();
+                for (var e : discovery.entrySet()) orderStack.push(e);
+                for (var e : orderStack) reversed.put(e.getKey(), e.getValue());
+                List<LinkedHashMap<ICraftingPatternDetails, Long>> candidates = new ArrayList<>();
+                candidates.add(constructed);
+                candidates.add(discovery);
+                candidates.add(reversed);
+                VirtualCPUCluster.Verdict closest = null;
+                boolean adopted = false;
+                for (LinkedHashMap<ICraftingPatternDetails, Long> cand : candidates) {
+                    patternTimes.clear();
+                    patternTimes.putAll(cand);
+                    VirtualCPUCluster.Verdict v = new VirtualCPUCluster(
+                            new VMPlan(outputKey, deliver, simulation.getBytes(), false,
+                                    usedItems, missingItems, emittedItems,
+                                    new LinkedHashMap<>(patternTimes)),
+                            outputKey, deliver).run(10_000, 0);
+                    if (v.status == VirtualCPUCluster.Verdict.Status.COMPLETE) {
+                        adopted = true;
+                        break;
+                    }
+                    if (closest == null || v.delivered > closest.delivered) {
+                        closest = v;
+                    }
+                }
+                if (!adopted) {
+                    Log.LOG.warn("[AE2-VM] plan closure rejected by the faithful CPU "
+                            + "({}); falling back to the stage pipeline", closest);
+                    patternTimes.clear();
+                    patternTimes.putAll(patternTimesBefore);
+                    restoreCounter(usedItems, usedBefore);
+                    restoreCounter(missingItems, missingBefore);
+                    restoreCounter(emittedItems, emittedBefore);
+                    ringTaskOrder.clear();
+                    return false;
+                }
+            } else {
+                Log.LOG.debug("[AE2-VM] closure plan CPU verification skipped "
+                        + "({} crafts > budget {})", totalCrafts, VERIFY_CRAFT_BUDGET);
+            }
+        }
+        Log.LOG.debug(String.format(
+                "[AE2-VM] plan closure converged in %d rounds: %d patterns, %d crafts,"
+                        + " %d used keys, %d missing, %d surplus",
                 r.rounds, r.plans.size(), patternTimes.values().stream()
                         .reduce(0L, Long::sum),
-                usedItems.size(), missingItems.size(), emittedItems.size());
+                usedItems.size(), missingItems.size(), emittedItems.size()));
         return true;
+    }
+
+    /** Copy of a counter for the closure's fallback snapshot. */
+    private static VMCounter snapshotCounter(VMCounter c) {
+        VMCounter copy = new VMCounter();
+        for (Map.Entry<IAEItemStack, Long> e : c.entrySet()) {
+            if (e.getValue() != null && e.getValue() != 0) {
+                copy.add(e.getKey(), e.getValue());
+            }
+        }
+        return copy;
+    }
+
+    /** Restore a counter to its snapshot (replace, not merge). */
+    private static void restoreCounter(VMCounter target, VMCounter snapshot) {
+        target.reset();
+        target.addAll(snapshot);
     }
 
     /**
