@@ -220,7 +220,7 @@ public final class TraceCommand extends CommandBase {
         main.setColor(TextFormatting.LIGHT_PURPLE);
         main.setClickEvent(new ClickEvent(ClickEvent.Action.SUGGEST_COMMAND,
                 "/ae2vm trace show " + id));
-        StringBuilder hover = new StringBuilder(request);
+        StringBuilder hover = new StringBuilder(coloredRequest(f));
         if (withSource) {
             hover.append('\n').append("source: ").append(sourceLabel(f, ownerToken));
         }
@@ -254,6 +254,16 @@ public final class TraceCommand extends CommandBase {
         String what = req == null ? "?" : req.f.get("what");
         String count = req == null ? "?" : req.f.get("count");
         return count + "x" + displayName(what);
+    }
+
+    /** The request summary with the count and the item colored for the tooltip. */
+    private String coloredRequest(TraceFile f) {
+        TraceEvent req = first(f, TraceSegment.CALC, "REQUEST");
+        String what = req == null ? "?" : req.f.get("what");
+        String count = req == null ? "?" : req.f.get("count");
+        return TextFormatting.GOLD.toString() + count + TextFormatting.RESET.toString()
+                + " x " + TextFormatting.AQUA.toString() + displayName(what)
+                + TextFormatting.RESET.toString();
     }
 
     private String displayName(String token) {
