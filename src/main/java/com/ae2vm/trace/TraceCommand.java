@@ -201,16 +201,21 @@ public final class TraceCommand extends CommandBase {
         if (withSource) {
             sb.append(' ').append(sourceLabel(f, ownerToken));
         }
-        // main line: click pre-fills the summary command; LIGHT_PURPLE keeps
-        // the summary readable on translucent chat backgrounds (black was
-        // nearly invisible there — live feedback 2026-09-19)
-        TextComponentString root = new TextComponentString(sb.toString() + "  ");
-        Style main = root.getStyle();
+        // main line: click pre-fills the summary command. The summary is a
+        // SIBLING of an empty root, not styled text on the root itself: on
+        // the live CatServer client, styles set on the root component are
+        // lost in the chat pipeline while sibling styles survive (the upload
+        // link renders styled the same way). LIGHT_PURPLE keeps the summary
+        // readable on translucent chat backgrounds.
+        TextComponentString root = new TextComponentString("");
+        TextComponentString summary = new TextComponentString(sb.toString() + "  ");
+        Style main = summary.getStyle();
         main.setColor(TextFormatting.LIGHT_PURPLE);
         main.setClickEvent(new ClickEvent(ClickEvent.Action.SUGGEST_COMMAND,
                 "/ae2vm trace show " + id));
         main.setHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT,
                 new TextComponentString(TraceLang.format("aevm.trace.btn.show-hover"))));
+        root.appendSibling(summary);
         // direct-execution action buttons (permissions enforced server-side)
         TextComponentString up = new TextComponentString(TraceLang.format("aevm.trace.btn.upload"));
         Style upStyle = up.getStyle();

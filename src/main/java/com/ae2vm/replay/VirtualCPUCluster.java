@@ -204,11 +204,11 @@ public final class VirtualCPUCluster {
         for (Map.Entry<IAEItemStack, Long> e : plan.getUsedItems().entrySet()) {
             inventory.add(e.getKey(), e.getValue()); // setJob phase-2: extract + addStorage
         }
-        for (Map.Entry<IAEItemStack, Long> e : plan.getEmittedItems().entrySet()) {
-            // addEmitable :995 — expected free arrivals, registered in waitingFor
-            emitable.add(e.getKey(), e.getValue());
-            waitingFor.add(e.getKey(), e.getValue());
-        }
+        // plan.getEmittedItems() is NOT seeded into waitingFor/emitable: the
+        // real CPU's waitingFor is populated per dispatch (:730-734) and the
+        // VM no longer bridges emitted items to addEmitable (they are all
+        // task-derived — pre-registering doubled them and left a phantom
+        // residue the real returns could never satisfy).
         finalOutputKey = what;
         finalAmount = amount;
     }

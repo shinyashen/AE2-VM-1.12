@@ -204,13 +204,15 @@ public final class VMRootNode extends CraftingTreeNode {
             }
             craftingCPUCluster.addStorage(extracted);
         }
-        for (var e : plan.getEmittedItems().entrySet()) {
-            IAEItemStack emitable = e.getKey().copy();
-            emitable.setStackSize(e.getValue());
-            emitable.setCountRequestable(0L);
-            emitable.setCraftable(false);
-            craftingCPUCluster.addEmitable(emitable);
-        }
+        // NOTE: plan.getEmittedItems() is deliberately NOT bridged to
+        // craftingCPUCluster.addEmitable. AE2UEL's waitingFor is the CPU's
+        // task-return acceptance list, populated PER DISPATCH (:730-734) as
+        // tasks fire; addEmitable is only for canEmitFor providers that emit
+        // without a task (:366). The VM's emitted items are all task-derived
+        // (pattern outputs minus consumption), so the dispatch registration
+        // already covers them — pre-registering doubled the entries (the
+        // live 1000-spirit job showed 250 dice: 125 phantom waitingFor +
+        // 125 dispatch, half of it never satisfied).
         for (var e : plan.getPatternTimes().entrySet()) {
             craftingCPUCluster.addCrafting(e.getKey(), e.getValue());
         }

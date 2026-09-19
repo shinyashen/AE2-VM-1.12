@@ -17,9 +17,12 @@ import java.util.List;
 
 /**
  * Acceptance: the virtual CPU reproduces live AE2 semantics — delivery
- * completes on a sound plan (instant and lagged providers), the gross-
- * emitable shape is flagged S1 (delivery done, CPU busy forever), input
- * starvation is S2 with the blocked input, and the extraction gap is S3.
+ * completes on a sound plan (instant and lagged providers); plan-level
+ * emitted surplus is NOT registered on the CPU (waitingFor is populated per
+ * dispatch, :730-734 — the old gross-emitable S1 shape now completes, and
+ * the plan-level EMITABLE-COVER invariant flags bad reports instead);
+ * input starvation is S2 with the blocked input, and the extraction gap is
+ * S3.
  */
 class VirtualCPUClusterTest {
 
@@ -67,11 +70,16 @@ class VirtualCPUClusterTest {
     }
 
     @Test
-    void grossEmitableIsS1_busyForeverAfterDelivery() {
-        // live gaia bug shape: delivery completes, emitable waitingFor never drains
+    void planSurplusIsNotRegistered_cpuCompletes() {
+        // live gaia bug shape, re-adjudicated: the plan reports 500 redstone
+        // emitable that no task produces. The OLD setJob bridge registered it
+        // in the CPU's waitingFor — delivery done, CPU busy forever (S1).
+        // The bridge is gone (waitingFor is dispatch-populated, :730-734),
+        // so a wrong report can no longer poison the CPU; the plan-level
+        // EMITABLE-COVER invariant is the guard that flags such reports.
         VirtualCPUCluster.Verdict v = new VirtualCPUCluster(plan(3000, 500), k(STONE, 1), 1000).run(10_000, 0);
+        assertEquals(VirtualCPUCluster.Verdict.Status.COMPLETE, v.status, v.toString());
         assertEquals(1000, v.delivered, "delivery must complete");
-        assertTrue(v.evidence.stream().anyMatch(s -> s.contains("S1")), v.toString());
     }
 
     @Test
