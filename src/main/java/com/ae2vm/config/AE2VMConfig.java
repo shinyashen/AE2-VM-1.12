@@ -54,14 +54,14 @@ public class AE2VMConfig {
             "to <server dir>/aevm/ for diagnostics. 0 = off (default)."})
     public static int stallWatchdogTicks = 0;
 
-    @Config.Comment({"Third-party machine sources allowed to use the VM planner.",
-            "Auto-ordering devices (stock keepers, interfaces, emitters) submit",
-            "jobs with a machine source; unregistered ones fall back to the native",
-            "tree, which cannot handle net-gain rings or fluid patterns. Add a",
-            "substring of the device mod's class/package name (see the log line",
-            "'third-party source ... fell back to the native tree') to route its",
-            "orders through the VM."})
-    public static String[] thirdPartySourceMarkers = new String[0];
+    @Config.Comment({"Machine sources kept on the NATIVE crafting tree. By default",
+            "every auto-ordering device (stock keepers, interfaces, emitters) is",
+            "planned by the VM — the native tree cannot carry net-gain rings or",
+            "fluid patterns. Only add a device mod's class/package substring here",
+            "if that mod misbehaves on VM plans (e.g. it walks the native tree",
+            "structure and needs it intact). One INFO line per distinct excluded",
+            "source confirms the exclusion is matching."})
+    public static String[] nativeTreeSourceMarkers = new String[0];
 
     @Mod.EventBusSubscriber(modid = "ae2_vm_112")
     private static class EventHandler {

@@ -6,14 +6,15 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Third-party opt-in registry — 1.12 port of the original's
+ * Third-party source routing — 1.12 port of the original's
  * AE2VMCraftingRegistry.
  *
- * Registered markers are substrings matched against the requester's class
- * name. Only relevant for programmatic (machine-sourced) job submissions:
- * player-driven requests from AE2's own terminals are always handled by the
- * VM. Unregistered third-party machine sources fall back to the native
- * crafting tree so foreign planners keep their native behaviour.
+ * Machine-sourced job submissions (auto-ordering devices) are planned by the
+ * VM BY DEFAULT — the native tree cannot carry net-gain rings or fluid
+ * patterns, and a device that keeps stock needs honest plans. The
+ * {@code nativeTreeSourceMarkers} config lists the rare foreign planners that
+ * must keep the native tree (e.g. mods walking the tree structure); an
+ * explicit {@link #register} call from a mod always wins back the VM.
  */
 public final class AE2VMCraftingRegistry {
     private static final Set<String> REGISTERED = ConcurrentHashMap.newKeySet();
@@ -37,10 +38,26 @@ public final class AE2VMCraftingRegistry {
                 return true;
             }
         }
-        // user-configured markers (the config route for stock-keeper style
-        // devices whose mods never call the registry API)
+        return false;
+    }
+
+    /**
+     * True when the requester class is configured to keep the NATIVE tree.
+     * An explicit {@link #register} call from the mod always wins back the
+     * VM; AE2's own sources are never excluded.
+     */
+    public static boolean isNativeTreeSource(String className) {
+        if (className == null) {
+            return false;
+        }
+        if (className.startsWith("appeng.")) {
+            return false;
+        }
+        if (isRegistered(className)) {
+            return false;
+        }
         try {
-            for (String marker : AE2VMConfig.thirdPartySourceMarkers) {
+            for (String marker : AE2VMConfig.nativeTreeSourceMarkers) {
                 if (marker != null && !marker.trim().isEmpty()
                         && className.contains(marker.trim())) {
                     return true;
@@ -52,7 +69,7 @@ public final class AE2VMCraftingRegistry {
         return false;
     }
 
-    /** AE2's own sources are always VM-eligible; others require registration. */
+    /** Legacy opt-in API: registers a VM marker (substring of a class name). */
     public static boolean isUnregisteredThirdParty(String className) {
         if (className == null) {
             return false;

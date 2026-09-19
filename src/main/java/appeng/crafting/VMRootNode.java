@@ -133,6 +133,12 @@ public final class VMRootNode extends CraftingTreeNode {
      * native crafting behaviour; player-driven requests from AE2's own
      * terminals are always VM-eligible.
      */
+    /**
+     * Machine sources are planned by the VM BY DEFAULT (the native tree cannot
+     * carry rings or fluids); only {@code nativeTreeSourceMarkers} exclusions
+     * keep the native tree, and an explicit registry registration wins back
+     * the VM.
+     */
     private boolean isThirdPartySource(IActionSource source) {
         if (source == null || source.player().isPresent()) {
             return false;
@@ -140,26 +146,17 @@ public final class VMRootNode extends CraftingTreeNode {
         return source.machine()
                 .map(host -> {
                     String className = host.getClass().getName();
-                    if (AE2VMCraftingRegistry.isUnregisteredThirdParty(className)) {
-                        logFallbackOnce(className);
-                        return true;
+                    boolean excluded = AE2VMCraftingRegistry.isNativeTreeSource(className);
+                    if (excluded && LOGGED_FALLBACKS.add(className)) {
+                        AE2VM.LOGGER.info("[AE2-VM] source {} is excluded to the native tree "
+                                + "(nativeTreeSourceMarkers)", className);
                     }
-                    return false;
+                    return excluded;
                 })
                 .orElse(false);
     }
 
-    /** One INFO line per distinct unregistered source class, so users can
-     * lift the device's marker into {@code thirdPartySourceMarkers}. */
     private static final Set<String> LOGGED_FALLBACKS = ConcurrentHashMap.newKeySet();
-
-    private static void logFallbackOnce(String className) {
-        if (LOGGED_FALLBACKS.add(className)) {
-            AE2VM.LOGGER.info("[AE2-VM] third-party source {} fell back to the native tree "
-                    + "(rings and fluid patterns need the VM; add a substring of this class "
-                    + "name to thirdPartySourceMarkers to opt in)", className);
-        }
-    }
 
     /** Null when no root pattern exists — the caller falls back natively. */
     private VMPlan calculate(long amount) {
