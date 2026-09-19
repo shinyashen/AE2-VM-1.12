@@ -1,5 +1,7 @@
 package com.ae2vm.api;
 
+import com.ae2vm.config.AE2VMConfig;
+
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -34,6 +36,18 @@ public final class AE2VMCraftingRegistry {
             if (className.contains(marker)) {
                 return true;
             }
+        }
+        // user-configured markers (the config route for stock-keeper style
+        // devices whose mods never call the registry API)
+        try {
+            for (String marker : AE2VMConfig.thirdPartySourceMarkers) {
+                if (marker != null && !marker.trim().isEmpty()
+                        && className.contains(marker.trim())) {
+                    return true;
+                }
+            }
+        } catch (Throwable ignored) {
+            // config not loaded yet (early class init)
         }
         return false;
     }

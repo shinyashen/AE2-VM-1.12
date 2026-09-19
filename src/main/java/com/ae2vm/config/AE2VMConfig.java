@@ -54,6 +54,15 @@ public class AE2VMConfig {
             "to <server dir>/aevm/ for diagnostics. 0 = off (default)."})
     public static int stallWatchdogTicks = 0;
 
+    @Config.Comment({"Third-party machine sources allowed to use the VM planner.",
+            "Auto-ordering devices (stock keepers, interfaces, emitters) submit",
+            "jobs with a machine source; unregistered ones fall back to the native",
+            "tree, which cannot handle net-gain rings or fluid patterns. Add a",
+            "substring of the device mod's class/package name (see the log line",
+            "'third-party source ... fell back to the native tree') to route its",
+            "orders through the VM."})
+    public static String[] thirdPartySourceMarkers = new String[0];
+
     @Mod.EventBusSubscriber(modid = "ae2_vm_112")
     private static class EventHandler {
         @SubscribeEvent

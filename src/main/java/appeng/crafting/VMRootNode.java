@@ -3,6 +3,9 @@ package appeng.crafting;
 import appeng.api.config.Actionable;
 import appeng.api.networking.IGrid;
 import appeng.api.networking.crafting.ICraftingGrid;
+
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import appeng.api.networking.security.IActionSource;
 import appeng.api.storage.data.IAEItemStack;
 import appeng.api.storage.data.IItemList;
@@ -135,9 +138,27 @@ public final class VMRootNode extends CraftingTreeNode {
             return false;
         }
         return source.machine()
-                .map(host -> AE2VMCraftingRegistry
-                        .isUnregisteredThirdParty(host.getClass().getName()))
+                .map(host -> {
+                    String className = host.getClass().getName();
+                    if (AE2VMCraftingRegistry.isUnregisteredThirdParty(className)) {
+                        logFallbackOnce(className);
+                        return true;
+                    }
+                    return false;
+                })
                 .orElse(false);
+    }
+
+    /** One INFO line per distinct unregistered source class, so users can
+     * lift the device's marker into {@code thirdPartySourceMarkers}. */
+    private static final Set<String> LOGGED_FALLBACKS = ConcurrentHashMap.newKeySet();
+
+    private static void logFallbackOnce(String className) {
+        if (LOGGED_FALLBACKS.add(className)) {
+            AE2VM.LOGGER.info("[AE2-VM] third-party source {} fell back to the native tree "
+                    + "(rings and fluid patterns need the VM; add a substring of this class "
+                    + "name to thirdPartySourceMarkers to opt in)", className);
+        }
     }
 
     /** Null when no root pattern exists — the caller falls back natively. */
