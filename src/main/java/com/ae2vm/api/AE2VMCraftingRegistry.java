@@ -69,18 +69,4 @@ public final class AE2VMCraftingRegistry {
         return false;
     }
 
-    /** Legacy opt-in API: registers a VM marker (substring of a class name). */
-    public static boolean isUnregisteredThirdParty(String className) {
-        if (className == null) {
-            return false;
-        }
-        if (className.startsWith("appeng.")) {
-            return false;
-        }
-        return !isRegistered(className);
-    }
-
-    public static boolean hasRegistrations() {
-        return !REGISTERED.isEmpty();
-    }
 }

@@ -51,7 +51,7 @@ import java.util.Iterator;
  *       order-sensitive and zero-slack shapes starve under some rotations.
  *       That is exactly what {@code RingSolver.startupFloors} probes — the
  *       returned firing order is validated together with the priming floor,
- *       so a folded ring keeps that order as its unit-internal sequence
+ *       so a cycle keeps the probed order as its unit-internal sequence
  *       (the cycle is "cut" at the priming edges the probe forced).</li>
  * </ul>
  *
@@ -67,8 +67,8 @@ final class TaskOrdering {
 
     /**
      * Reorders {@code patternTimes} into the constructed task order. Counts
-     * are preserved untouched. {@code ringTaskOrder} is the probed firing
-     * order of folded rings (may be empty or partial — for unfolded cycles
+     * are preserved untouched. {@code ringTaskOrder} is the priming probe's
+     * firing order (may be empty or partial — for cycles it does not cover,
      * the insertion order stands and the replica assertion adjudicates).
      */
     static LinkedHashMap<ICraftingPatternDetails, Long> construct(

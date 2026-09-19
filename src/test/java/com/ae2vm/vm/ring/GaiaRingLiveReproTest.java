@@ -20,12 +20,13 @@ import net.minecraft.init.Bootstrap;
 /**
  * Live-report gaia ring: 1 terrasteel + 4 spirits -> 1 gaia ingot; 1 gaia
  * ingot -> 12 spirits + 1 dice. Order 10000 spirits. The delivery is CRAFTED
- * (a real job ignores the requested item's own stock), so the ring folds at
- * ceil(10000/8) = 1250 crafts of BOTH patterns and bills makeIngot's whole
- * 4x1250 spirit draw as job-start capital; the out-of-ring terrasteel demand
- * (1250) has its own pattern, and the E-case must schedule it (1250 crafts of
- * 2-iron -> 1 T) with the gap flowing down the DAG — iron missing, NOT a raw
- * terrasteel shortfall, and NOT the ring's own spirit capital either.
+ * (a real job ignores the requested item's own stock), so the closure's least
+ * fixpoint rides 834 crafts of BOTH patterns (12x834 >= 10000) and the ledger
+ * bills makeIngot's whole 4x834 spirit draw net of the 499 stocked; the
+ * out-of-ring terrasteel demand (834) has its own pattern, so the ledger
+ * schedules it directly (834 crafts of 2-iron -> 1 T) with the gap flowing
+ * down the DAG — iron missing, NOT a raw terrasteel shortfall, and NOT the
+ * ring's own spirit capital either.
  */
 class GaiaRingLiveReproTest {
     @Test
@@ -36,8 +37,8 @@ class GaiaRingLiveReproTest {
         BenchPatternDetails recycle = Bench.pat("I", 1, "T", 1L, "S", 4L);
         // B: gaia ingot -> 12 spirits + dice(D)
         BenchPatternDetails craft = Bench.patEx(new String[]{"S", "D"}, new long[]{12, 1}, "I", 1L);
-        // C: terrasteel IS craftable on its own (2 iron -> 1 T) — the E-case:
-        // the ring's out-of-ring ingredient has its own pattern.
+        // C: terrasteel IS craftable on its own (2 iron -> 1 T) — the ledger
+        // sizes its producer directly from the ring's out-of-ring draw.
         BenchPatternDetails terrasteel = Bench.pat("T", 1, "Fe", 2L);
         Bench.register(recycle);
         Bench.register(craft);
@@ -66,7 +67,7 @@ class GaiaRingLiveReproTest {
         assertEquals(Long.valueOf(1668L), missing.get("Fe"),
                 "the terrasteel crafts need 2 Fe each — the gap flows down the DAG");
         assertFalse(missing.containsKey("T"),
-                "the E-case supersedes the terrasteel shortfall with its own deeper disclosure");
+                "the ledger schedules the terrasteel producer — no raw-T shortfall");
     }
 
     @Test

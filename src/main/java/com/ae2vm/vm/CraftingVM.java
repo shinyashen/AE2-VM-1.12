@@ -95,12 +95,8 @@ public class CraftingVM {
 
     private final Set<IAEItemStack> resolvingKeys = new HashSet<>();
     private final Set<IAEItemStack> circularCache = new HashSet<>();
-    /** The probed firing order the startup bill is valid for (see buildPlan). */
+    /** The priming-floor probe's firing order (see runClosure / buildPlan). */
     private final List<ICraftingPatternDetails> ringTaskOrder = new ArrayList<>();
-    /** Type-normalized members of every ring the solver folded this execute —
-     *  the authoritative membership for the E-case: a ring member's demand is
-     *  covered by the net bundle's internal flow and must never be re-scheduled
-     *  from its own (in-ring) producer. */
     private final Set<IAEItemStack> cyclicCraftKeys = new HashSet<>();
     private final Set<IAEItemStack> jitFailCache = new HashSet<>();
     /** Pattern-set version this VM's caches were built against (see invalidateCaches). */
@@ -810,7 +806,7 @@ public class CraftingVM {
                             resolvingKeys.remove(tk);
                             break;
                         }
-                        applyBundleDeficit(b0.scale(cts));
+                        applyBundle(b0.scale(cts));
                         resolvingKeys.remove(tk);
                         break;
                     }
@@ -856,21 +852,7 @@ public class CraftingVM {
         Log.LOG.debug("[AE2-VM] calc time: {} us ({} ms)", calcUs, String.format("%.2f", calcUs / 1000.0D));
     }
 
-    private void applyBundleDirect(Bundle b) {
-        applyBundleDirect(b, false);
-    }
-
-    /**
-     * With {@code skipEmissions} the bundle's emitted is assumed already in
-     * the sandbox (the two-phase net application inserts ALL rings' emissions
-     * before any extraction, so cross-ring supply is order-safe). Keys that
-     * belong to a folded ring never bill here — their draw is covered by the
-     * global startup bill (a captured downstream bundle's member draw is
-     * supplied from the CPU's own startup inventory, not the network), while
-     * a net bundle's non-member keys (fuel, E-case ingredients) keep the
-     * emergent network-shortfall billing.
-     */
-    private void applyBundleDirect(Bundle b, boolean skipEmissions) {
+    private void applyBundle(Bundle b) {
         simulation.addBytes(toBytesDouble(b.bytes));
         // Catalyst seeds are STARTUP capital: extract them BEFORE this bundle's own
         // outputs flood the sandbox, so a self-returned catalyst (A + B -> A + C)
@@ -907,12 +889,10 @@ public class CraftingVM {
             long shortfall = val - got;
             if (shortfall > 0) missingItems.add(e.getKey(), shortfall);
         }
-        if (!skipEmissions) {
-            for (var e : b.emitted.entrySet()) {
-                long val = toLongSafe(e.getValue(), "emit");
-                simulation.insert(e.getKey(), val);
-                simInternal.add(e.getKey(), val);
-            }
+        for (var e : b.emitted.entrySet()) {
+            long val = toLongSafe(e.getValue(), "emit");
+            simulation.insert(e.getKey(), val);
+            simInternal.add(e.getKey(), val);
         }
         for (var e : b.used.entrySet()) {
             long val = toLongSafe(e.getValue(), "used");
@@ -949,16 +929,15 @@ public class CraftingVM {
         }
     }
 
-    private void applyBundle(Bundle b) { applyBundleDirect(b); }
-    private void applyBundleDeficit(Bundle b) { applyBundleDirect(b); }
 
     /**
-     * The plan closure (CLOSURE-DESIGN.md §2): the global-ledger fixpoint
-     * replaces the coverage pipeline — propagation counts, ring folding,
-     * E-case expansion, member billing and the ordered replay all modelled
-     * the same three ledgers from different stages, and every live bug sat
-     * on a seam between their views. The closure derives coverage from the
-     * final schedule instead: seeded from BELOW (the root pattern only — the
+     * The plan closure (CLOSURE-DESIGN.md §2): the global-ledger fixpoint is
+     * the only coverage authority. It replaces the former pipeline (propagation
+     * counts, Jacobian ring folding, E-case expansion, member billing, ordered
+     * replay — each of which modelled the same three ledgers from its own
+     * stage, and every live bug sat on a seam between those views; that code
+     * was deleted on seam/closure-cleanup). The closure derives coverage from
+     * the final schedule instead: seeded from BELOW (the root pattern only — the
      * least fixpoint), rounded over consumed/produced until no producer needs
      * a bump, then the plan triple is written directly (usedItems = W = the
      * stock-covered net draw on the ACTUAL keys, patternTimes = plans,
@@ -1031,7 +1010,7 @@ public class CraftingVM {
                 // on it (a processing fake's substitute table registers
                 // NOTHING — PatternHelper :87) — the same gate the bytecode's
                 // FUZZY_SLOT marker uses
-                Map<IAEItemStack, BigInteger> out = new HashMap<>();
+                Map<IAEItemStack, BigInteger> out = new LinkedHashMap<>();
                 IAEItemStack[] ins = safeCondensedInputs(pattern);
                 if (ins == null) {
                     return out;
@@ -1106,7 +1085,7 @@ public class CraftingVM {
         // is a true cycle deadlock, not a waiting consumer).
         RingSolver.RingPlan closurePlan = new RingSolver.RingPlan();
         closurePlan.patterns.putAll(r.plans);
-        Set<IAEItemStack> members = new HashSet<>();
+        Set<IAEItemStack> members = new LinkedHashSet<>();
         for (ICraftingPatternDetails p : r.plans.keySet()) {
             for (IAEItemStack ok : perCraftCondensedOutputs(p).keySet()) {
                 members.add(copyOf(ok));
@@ -2309,7 +2288,7 @@ public class CraftingVM {
             }
         }
         subtractStockFromNetwork(scaled);
-        applyBundleDirect(scaled);
+        applyBundle(scaled);
     }
 
     /** Remove the already-consumed network-stock pool from a bundle's used demand. */
@@ -2353,15 +2332,12 @@ public class CraftingVM {
     private boolean subBundlesComplete(Bundle b0) {
         if (b0.itemNeeds.isEmpty()) return true;
         for (IAEItemStack key : b0.itemNeeds.keySet()) {
-            Bundle[] sub = getBundles(key);
+            Bundle[] sub = activeBundles(key);
             if (sub == null || sub[0] == null) return false;
         }
         return true;
     }
 
-    private Bundle[] getBundles(IAEItemStack key) {
-        return activeBundles(key);
-    }
 
     /**
      * True when a shortfall capture should be RETRIED instead of replayed: one
@@ -2493,7 +2469,7 @@ public class CraftingVM {
         return b;
     }
 
-    /** Same-type lookup key for the startup bill map. */
+    /** Type-normalized lookup key shared by the closure triple maps. */
     private static IAEItemStack copyOf(IAEItemStack k) {
         IAEItemStack c = k.copy();
         c.reset();

@@ -101,13 +101,6 @@ public class CraftingBytecode {
     }
 
     /**
-     * Get total number of unique ingredients in this crafting tree
-     */
-    public int getIngredientCount() {
-        return constantPool.length;
-    }
-
-    /**
      * Get bytecode length in bytes
      */
     public int getCodeLength() {

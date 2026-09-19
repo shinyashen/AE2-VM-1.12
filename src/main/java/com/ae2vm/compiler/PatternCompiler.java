@@ -599,10 +599,6 @@ public final class PatternCompiler {
         return builder.build();
     }
 
-    public static void invalidate(ICraftingPatternDetails pattern) {
-        COMPILED_PATTERNS.remove(pattern);
-    }
-
     /** Clears the replacement-group registry (the compile caches stay warm). */
     public static void clearFuzzyGroups() {
         FUZZY_GROUPS.clear();

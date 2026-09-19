@@ -140,8 +140,7 @@ class GaiaCycleRideTest {
             Bench.register(p1);
             Bench.register(p2);
             // the live network's mana converters: m0 has its own producer
-            // (2 R -> 1 m0) — the E-case must expand P2's short m0 draw into
-            // THIS pattern instead of reporting (or dropping) the m0 gap
+            // (2 R -> 1 m0) — the ledger sizes it directly off P2's m0 draw
             BenchPatternDetails p3 = withConverter ? Bench.pat("m0", 1, "R", 2L) : null;
             if (p3 != null) {
                 Bench.register(p3);
@@ -202,9 +201,10 @@ class GaiaCycleRideTest {
     }
 
     /**
-     * The live-trace hole: with a converter for m0 in the web, the E-case
-     * recursion must expand P2's short m0 draw into the converter (63 crafts,
-     * R x126 consumed) — m0 itself is neither missing nor a silent hole.
+     * The converter variant: with m0's own producer in the web the closure
+     * would size it from P2's m0 draw — but the least fixpoint rides 834
+     * rounds and g4's draw is covered by the 998 stocked, so P2 (and the
+     * converter with it) never fire. The g5 capital gap is the only content.
      */
     @Test
     void ecaseExpandsTheAmplifiersInputs() {

@@ -7,8 +7,6 @@ import com.ae2vm.compiler.PatternCompiler;
 import com.ae2vm.compat.PatternCompat;
 import com.ae2vm.test.harness.CpuLifecycleAssert;
 import com.ae2vm.vm.VMPlan;
-import org.junit.jupiter.api.AfterAll;
-import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -64,7 +62,7 @@ class GaiaThousandOrderTest {
         assertEquals(1L, plan.getUsedItems().get(Bench.k("g14")), "the stocked seed");
         assertEquals(83L, plan.getUsedItems().get(Bench.k("g4")), "p1's ingot draw");
         assertEquals(84L, plan.getEmittedItems().get(Bench.k("dice")), "the passive dice surplus");
-    
+
         CpuLifecycleAssert.complete(plan, PatternCompat.getPrimaryOutput(p0), 1000);
     }
 

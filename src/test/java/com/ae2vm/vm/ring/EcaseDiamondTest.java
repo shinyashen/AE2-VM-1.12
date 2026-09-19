@@ -55,10 +55,6 @@ class EcaseDiamondTest {
                 .seed("X", 223291314L);
         VMPlan plan = Bench.run(p0, 1000, sim);
 
-        // closure: the least fixpoint rides 84 rounds (12x84 >= 1000) and
-        // sizes every downstream producer from the LEDGER: g4 84 -> p2 21,
-        // fuel 84 -> p3 28, m0 21 + 56 = 77 -> m 39. legacy: the ring
-        // solver's 125-round crafted-delivery fixed point + E-case injection
         // the LEDGER sizes every producer — no E-case injection needed: the
         // least fixpoint rides 84 rounds (12x84 >= 1000) and sizes the
         // downstream chain g4 84 -> p2 21, fuel 84 -> p3 28, m0 21 + 56 = 77
