@@ -214,7 +214,7 @@ class PerfReportTest {
         // solver gate is OFF here): the cycle's catalyst seed evaporates in
         // the propagation net, so the plan schedules crafts the
         // CPU cannot feed — a real AE2UEL job deadlocks at t=0 (:694 exact
-        // extraction, :265 delivery). With ringSolverEnabled=true the fold
+        // extraction, :265 delivery). The plan closure owns the fold
         // bills the seed as priming and the job is honestly REFUSED instead
         // (the seed is unstocked): the multi-pattern A-feed bootstrap that
         // makes Thunderbolt feasible here stays future work.

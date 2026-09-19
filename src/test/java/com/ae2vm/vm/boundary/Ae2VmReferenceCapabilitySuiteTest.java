@@ -83,15 +83,13 @@ class Ae2VmReferenceCapabilitySuiteTest {
             "S4 — idle plan: stock covers the whole request, no pattern is "
                     + "scheduled, so nothing ever arrives",
             "cycle/conversion-ring/minimum",
-            "S2 — at the shipping default (solver gate off) the cycle's "
-                    + "catalyst seed evaporates in the propagation net; with "
-                    + "ringSolverEnabled=true the fold bills the seed "
-                    + "and the job is honestly refused",
+            "S2 — the closure declines the self-adjacent catalyst to the "
+                    + "working-capital machinery, whose conversion-ring guard "
+                    + "bills the seed and the job is honestly refused",
             "cycle/conversion-ring/unbounded",
-            "S2 — at the shipping default (solver gate off) the cycle's "
-                    + "catalyst seed evaporates in the propagation net; with "
-                    + "ringSolverEnabled=true the fold bills the seed "
-                    + "and the job is honestly refused"));
+            "S2 — the closure declines the self-adjacent catalyst to the "
+                    + "working-capital machinery, whose conversion-ring guard "
+                    + "bills the seed and the job is honestly refused"));
     // single-dag/fibonacci/unbounded left the table: the CONSTRUCTED
     // task order (TaskOrdering) is producers-first for this 32-deep DAG and
     // the faithful CPU completes it — the old entry masked a discovery-order

@@ -29,7 +29,6 @@ import appeng.api.networking.storage.IStorageGrid;
 import appeng.api.storage.IMEMonitor;
 import com.ae2vm.compat.AE2FCCompat;
 import com.ae2vm.compat.PatternCompat;
-import com.ae2vm.config.AE2VMConfig;
 import com.ae2vm.replay.VirtualCPUCluster;
 import com.ae2vm.trace.TraceRecorder;
 
@@ -96,28 +95,12 @@ public class CraftingVM {
 
     private final Set<IAEItemStack> resolvingKeys = new HashSet<>();
     private final Set<IAEItemStack> circularCache = new HashSet<>();
-    /** Net-effect bundles produced by the ring solver, applied post-order. */
-    private final List<Bundle> ringNetBundles = new ArrayList<>();
-
-    /**
-     * Faithful startup billing for folded rings: per member key,
-     * max(net CPU draw, priming floor) — the inventory a real CPU must
-     * withdraw at job start. Computed in {@link #solveRings}, consumed right
-     * after the released stock reservations are restored (before any ring
-     * emission floods the sandbox, so the withdrawal draws real stock only).
-     */
-    private final Map<IAEItemStack, BigInteger> ringStartupBill = new HashMap<>();
     /** The probed firing order the startup bill is valid for (see buildPlan). */
     private final List<ICraftingPatternDetails> ringTaskOrder = new ArrayList<>();
     /** Type-normalized members of every ring the solver folded this execute —
      *  the authoritative membership for the E-case: a ring member's demand is
      *  covered by the net bundle's internal flow and must never be re-scheduled
      *  from its own (in-ring) producer. */
-    private Set<IAEItemStack> ringMemberKeys = null;
-    /** Stock reservations released when a ring fold supersedes the scheduled
-     * plans of its keys — re-inserted into the sandbox so the net bundle's
-     * extraction can draw them (the ring fold's working-stock draws). */
-    private final Map<IAEItemStack, BigInteger> ringReleasedStock = new HashMap<>();
     private final Set<IAEItemStack> cyclicCraftKeys = new HashSet<>();
     private final Set<IAEItemStack> jitFailCache = new HashSet<>();
     /** Pattern-set version this VM's caches were built against (see invalidateCaches). */
@@ -276,11 +259,6 @@ public class CraftingVM {
          *  permanently spends its inputs (capture accounting symmetry).
          *  Replay ignores this map: claims are capture-time bookkeeping. */
         final Map<IAEItemStack, BigInteger> claimed = new ConcurrentHashMap<>();
-        // The propagation's NON-ring demand per external input key (see
-        // RingSolver.RingPlan.propExternalInput): the E-case's claimed
-        // accumulator starts from it, so a producer re-sized for the ring's
-        // solved draw also re-covers the propagation-era consumers.
-        final Map<IAEItemStack, BigInteger> propExternalClaimed = new ConcurrentHashMap<>();
         // The pattern each direct sub-call was resolved to at capture time.
         // A replay may only reuse the bundle while the CURRENT resolver picks
         // the same pattern for every sub-call (the multi-pattern repair loop
@@ -438,9 +416,6 @@ public class CraftingVM {
         circularCache.clear();
         cyclicCraftKeys.clear();
         jitFailCache.clear();
-        ringNetBundles.clear();
-        ringReleasedStock.clear();
-        ringStartupBill.clear();
         ringTaskOrder.clear();
         ICraftingPatternDetails[] pool = requestBytecode.getPatternPool();
         this.rootPattern = pool != null && pool.length > 0 ? pool[0] : null;
@@ -904,17 +879,16 @@ public class CraftingVM {
         for (var e : b.seeds.entrySet()) {
             long val = toLongSafe(e.getValue(), "seed");
             if (val <= 0) continue;
-            boolean ringBilled = containsRingMember(e.getKey());
             simulation.addBytes(val); nodeCount++;
             long got = simulation.extract(e.getKey(), val, false);
-            if (!ringBilled && got > 0) {
+            if (got > 0) {
                 long internal = simInternal.get(e.getKey());
                 long fromInternal = Math.min(got, internal);
                 if (fromInternal > 0) simInternal.add(e.getKey(), -fromInternal);
                 long fromNetwork = got - fromInternal;
                 if (fromNetwork > 0) usedItems.add(e.getKey(), fromNetwork);
             }
-            if (!ringBilled && got < val) {
+            if (got < val) {
                 long remaining = val - got;
                 for (IAEItemStack variant : fuzzyFamilyOf(e.getKey())) {
                     if (variant.isSameType(e.getKey())) continue;
@@ -931,7 +905,7 @@ public class CraftingVM {
                 }
             }
             long shortfall = val - got;
-            if (shortfall > 0 && !ringBilled) missingItems.add(e.getKey(), shortfall);
+            if (shortfall > 0) missingItems.add(e.getKey(), shortfall);
         }
         if (!skipEmissions) {
             for (var e : b.emitted.entrySet()) {
@@ -942,25 +916,21 @@ public class CraftingVM {
         }
         for (var e : b.used.entrySet()) {
             long val = toLongSafe(e.getValue(), "used");
-            boolean ringBilled = containsRingMember(e.getKey());
             long got = simulation.extract(e.getKey(), val, false);
             long internal = simInternal.get(e.getKey());
             long fromInternal = Math.min(got, internal);
             if (fromInternal > 0) simInternal.add(e.getKey(), -fromInternal);
-            if (!ringBilled) {
-                long fromNetwork = got - fromInternal;
-                if (fromNetwork > 0) usedItems.add(e.getKey(), fromNetwork);
-                long shortfall = val - got;
-                if (shortfall > 0) missingItems.add(e.getKey(), shortfall);
-            }
+            long fromNetwork = got - fromInternal;
+            if (fromNetwork > 0) usedItems.add(e.getKey(), fromNetwork);
+            long shortfall = val - got;
+            if (shortfall > 0) missingItems.add(e.getKey(), shortfall);
         }
         for (var e : b.missing.entrySet()) {
             long val = toLongSafe(e.getValue(), "miss");
             if (val <= 0) continue;
-            boolean ringBilled = containsRingMember(e.getKey());
             // Realtime-verify capture-time missing against current stock.
             long got = simulation.extract(e.getKey(), val, false);
-            if (!ringBilled && got > 0) {
+            if (got > 0) {
                 long internal = simInternal.get(e.getKey());
                 long fromInternal = Math.min(got, internal);
                 if (fromInternal > 0) simInternal.add(e.getKey(), -fromInternal);
@@ -968,7 +938,7 @@ public class CraftingVM {
                 if (fromNetwork > 0) usedItems.add(e.getKey(), fromNetwork);
             }
             long shortfall = val - got;
-            if (shortfall > 0 && !ringBilled) missingItems.add(e.getKey(), shortfall);
+            if (shortfall > 0) missingItems.add(e.getKey(), shortfall);
         }
         for (var e : b.patterns.entrySet()) {
             long val = toLongSafe(e.getValue(), "pat");
@@ -983,6 +953,328 @@ public class CraftingVM {
     private void applyBundleDeficit(Bundle b) { applyBundleDirect(b); }
 
     /**
+     * The plan closure (CLOSURE-DESIGN.md §2): the global-ledger fixpoint
+     * replaces the coverage pipeline — propagation counts, ring folding,
+     * E-case expansion, member billing and the ordered replay all modelled
+     * the same three ledgers from different stages, and every live bug sat
+     * on a seam between their views. The closure derives coverage from the
+     * final schedule instead: seeded from BELOW (the root pattern only — the
+     * least fixpoint), rounded over consumed/produced until no producer needs
+     * a bump, then the plan triple is written directly (usedItems = W = the
+     * stock-covered net draw on the ACTUAL keys, patternTimes = plans,
+     * missingItems = producer-less/root gaps).
+     *
+     * <p>Returns false when the closure declines or diverges (no root
+     * pattern, net-losing cycle past the CAP, self-adjacent catalyst, or a
+     * faithful-CPU rejection) — the caller keeps this pipeline, whose special
+     * mechanisms (working capital, conversion rings, recursion) own those
+     * shapes.
+     */
+    private boolean runClosure() {
+        // the closure covers CRAFT jobs: a compileRequest-shaped program whose
+        // root CALL crafts the delivery. Emission-shaped programs (no root
+        // CALL — hand-rolled or shim fixtures) deliver by INSERT_OUTPUT and
+        // run on the pipeline as-is.
+        if (rootCraftTimes <= 0 || rootPattern == null || outputKey == null
+                || requestAmount == null || requestAmount.signum() <= 0
+                // an unseeded self-growth root is cut at execute level (serve
+                // from stock, shortfall missing) — the closure's seed would
+                // unconditionally re-schedule it
+                || isUnseededSelfLoop(rootPattern)) {
+            return false;
+        }
+        // PlanClosure.View adapter: producerOf resolves through the SAME
+        // resolver the capture used — an unseeded self-growth loop (A -> 2A)
+        // is never a producer, matching the execute-level cut.
+        PlanClosure.View view = new PlanClosure.View() {
+            @Override
+            public ICraftingPatternDetails producerOf(IAEItemStack key) {
+                // byproduct-rooted request: the root key has no resolver
+                // entry, but the request's own pattern produces it
+                ICraftingPatternDetails p;
+                if (key.isSameType(outputKey)) {
+                    p = rootPattern;
+                } else {
+                    p = patternResolver != null ? patternResolver.apply(key) : null;
+                    // solver-view fallback: exactly one any-slot producer (the
+                    // ring solver's precedent) — a byproduct-only key joins the
+                    // closure through it instead of shipping as a false leaf
+                    if (p == null) {
+                        p = PatternCompiler.resolveAnyOutputProducer(key);
+                    }
+                }
+                return isUnseededSelfLoop(p) ? null : p;
+            }
+
+            @Override
+            public Map<IAEItemStack, BigInteger> inputsOf(ICraftingPatternDetails pattern) {
+                // ALL condensed lines: a returned/catalyst line nets to zero
+                // (it is an output of the same pattern), so counting it keeps
+                // the ledger honest without a dedicated seed mechanism
+                return perCraftPrimings(pattern);
+            }
+
+            @Override
+            public Map<IAEItemStack, BigInteger> outputsOf(ICraftingPatternDetails pattern) {
+                return perCraftCondensedOutputs(pattern);
+            }
+
+            @Override
+            public BigInteger stockOf(IAEItemStack key) {
+                return BigInteger.valueOf(Math.max(0L, executeStartStock.get(key)));
+            }
+
+            @Override
+            public Map<IAEItemStack, BigInteger> fuzzyInputsOf(ICraftingPatternDetails pattern) {
+                // the compile registered a substitute group for an input key
+                // iff its pattern is craftable with a replacement-enabled slot
+                // on it (a processing fake's substitute table registers
+                // NOTHING — PatternHelper :87) — the same gate the bytecode's
+                // FUZZY_SLOT marker uses
+                Map<IAEItemStack, BigInteger> out = new HashMap<>();
+                IAEItemStack[] ins = safeCondensedInputs(pattern);
+                if (ins == null) {
+                    return out;
+                }
+                for (IAEItemStack in : ins) {
+                    if (in == null || in.getStackSize() <= 0) continue;
+                    if (PatternCompiler.getFuzzyGroup(in).size() > 1) {
+                        IAEItemStack ik = in.copy().setStackSize(1);
+                        ik.reset();
+                        out.merge(ik, BigInteger.valueOf(in.getStackSize()), BigInteger::add);
+                    }
+                }
+                return out;
+            }
+
+            @Override
+            public List<IAEItemStack> nbtFamilyOf(IAEItemStack key) {
+                // processing default fuzzy: same-item damage-equal variants
+                // present in the network stock (fluid fakes excluded — the NBT
+                // IS the fluid identity)
+                List<IAEItemStack> family = new ArrayList<>();
+                if (!PatternCompiler.isProcessingInput(key)
+                        || AE2FCCompat.isFluidFakeItem(key)) {
+                    return family;
+                }
+                for (IAEItemStack v : simulation.findFuzzyFamily(key)) {
+                    if (v == null || v.isSameType(key)) continue;
+                    // 1.12 damage is item identity: only same-damage variants
+                    if (v.getItemDamage() != key.getItemDamage()) continue;
+                    if (Math.max(0L, executeStartStock.get(v)) <= 0) continue;
+                    family.add(v);
+                }
+                return family;
+            }
+
+            @Override
+            public boolean isProcessingInput(IAEItemStack key) {
+                return PatternCompiler.isProcessingInput(key)
+                        && !AE2FCCompat.isFluidFakeItem(key);
+            }
+
+            @Override
+            public List<IAEItemStack> substitutesOf(IAEItemStack key) {
+                List<IAEItemStack> subs = new ArrayList<>();
+                for (IAEItemStack v : PatternCompiler.getFuzzyGroup(key)) {
+                    if (v == null || v.isSameType(key)) continue;
+                    subs.add(v);
+                }
+                return subs;
+            }
+        };
+        PlanClosure.Result r = PlanClosure.close(outputKey, requestAmount, rootPattern, view);
+        if (r == null || !r.converged) {
+            Log.LOG.warn("[AE2-VM] plan closure diverged after {} rounds; "
+                    + "falling back to the stage pipeline",
+                    r == null ? 0 : r.rounds);
+            return false;
+        }
+        // snapshot the plan containers: a rejected closure plan (the faithful
+        // CPU cannot boot it) must leave NO residue for the stage pipeline
+        LinkedHashMap<ICraftingPatternDetails, Long> patternTimesBefore =
+                new LinkedHashMap<>(patternTimes);
+        VMCounter usedBefore = snapshotCounter(usedItems);
+        VMCounter missingBefore = snapshotCounter(missingItems);
+        VMCounter emittedBefore = snapshotCounter(emittedItems);
+        // Priming floors (the KEPT mechanism, CLOSURE-DESIGN.md §5.3): the
+        // ledger is balanced for keys whose production CIRCULATES (net-zero
+        // cycles, self-returned catalysts), but a real CPU's first craft in a
+        // cycle precedes the first return — the probe forces the priming
+        // inventory the task order needs, with the closure's net draw as its
+        // netDrawOf (a DAG's deferral never forces: a pass that fires nothing
+        // is a true cycle deadlock, not a waiting consumer).
+        RingSolver.RingPlan closurePlan = new RingSolver.RingPlan();
+        closurePlan.patterns.putAll(r.plans);
+        Set<IAEItemStack> members = new HashSet<>();
+        for (ICraftingPatternDetails p : r.plans.keySet()) {
+            for (IAEItemStack ok : perCraftCondensedOutputs(p).keySet()) {
+                members.add(copyOf(ok));
+            }
+        }
+        RingSolver.FloorPlan floors = RingSolver.startupFloors(
+                Collections.singletonList(closurePlan),
+                CraftingVM::perCraftPrimings, CraftingVM::perCraftOutputs,
+                k -> r.netDraw.getOrDefault(copyOf(k), BigInteger.ZERO),
+                outputKey, members);
+        ringTaskOrder.clear();
+        ringTaskOrder.addAll(floors.order());
+        patternTimes.clear();
+        for (var e : r.plans.entrySet()) {
+            long t = toLongSafe(e.getValue(), "closure-plan");
+            if (t <= 0) continue;
+            patternTimes.put(e.getKey(), t);
+            simulation.addCrafting(e.getKey(), t);
+            simulation.addBytes(t);
+        }
+        // job-start capital: the net draw W plus the additive priming floors,
+        // billed against stock — beyond stock it is an honest shortfall (the
+        // CPU cannot boot the plan). Floor-only keys (net-zero circulation)
+        // are billed too, so the union is taken.
+        Set<IAEItemStack> billed = new LinkedHashSet<>();
+        for (IAEItemStack k : r.withdraw.keySet()) billed.add(copyOf(k));
+        for (IAEItemStack k : floors.floors().keySet()) billed.add(copyOf(k));
+        for (IAEItemStack k : billed) {
+            BigInteger wv = getPool(r.withdraw, k);
+            long w = wv == null ? 0L : toLongSafe(wv, "closure-w");
+            long floor = toLongSafe(floors.floors().getOrDefault(k, BigInteger.ZERO),
+                    "closure-floor");
+            long bill = w + floor;
+            if (bill <= 0) continue;
+            long stock = Math.max(0L, executeStartStock.get(k));
+            long got = Math.min(bill, stock);
+            usedItems.add(k, got);
+            if (got < bill) missingItems.add(k, bill - got);
+            simulation.addBytes(bill);
+            nodeCount++;
+        }
+        for (var e : r.missing.entrySet()) {
+            long m = toLongSafe(e.getValue(), "closure-miss");
+            if (m > 0) missingItems.add(e.getKey(), m);
+        }
+        for (var e : r.surplus.entrySet()) {
+            long s = toLongSafe(e.getValue(), "closure-surplus");
+            if (s > 0) emittedItems.add(e.getKey(), s);
+        }
+        // Faithful-CPU gate: the closure's plan is EXACT (zero slack), and the
+        // priming-floor probe's forced-fire model can under-estimate the boot
+        // capital on tight cycles. A plan the faithful CPU cannot complete
+        // must never ship: verify the same candidates buildPlan would try
+        // (the probe-rank order, the discovery order, its reversal — on a
+        // zero-slack cycle WHO intercepts the circulating return decides the
+        // verdict) and adopt the completing one; no candidate completes →
+        // fall back to the stage pipeline, its plan, its numbers.
+        if (missingItems.isEmpty()) {
+            long totalCrafts = 0;
+            for (Long v : patternTimes.values()) {
+                long next = totalCrafts + v;
+                totalCrafts = next < 0 ? VERIFY_CRAFT_BUDGET + 1
+                        : Math.min(VERIFY_CRAFT_BUDGET + 1, next);
+                if (totalCrafts > VERIFY_CRAFT_BUDGET) break;
+            }
+            long deliver = requestAmount.compareTo(BIG_MAX_LONG) > 0
+                    ? Long.MAX_VALUE : requestAmount.longValue();
+            if (totalCrafts <= VERIFY_CRAFT_BUDGET) {
+                LinkedHashMap<ICraftingPatternDetails, Long> discovery =
+                        new LinkedHashMap<>(patternTimes);
+                LinkedHashMap<ICraftingPatternDetails, Long> constructed = TaskOrdering.construct(
+                        patternTimes, ringTaskOrder,
+                        CraftingVM::perCraftPrimings, CraftingVM::perCraftOutputs);
+                LinkedHashMap<ICraftingPatternDetails, Long> reversed = new LinkedHashMap<>();
+                Deque<Map.Entry<ICraftingPatternDetails, Long>> orderStack = new ArrayDeque<>();
+                for (var e : discovery.entrySet()) orderStack.push(e);
+                for (var e : orderStack) reversed.put(e.getKey(), e.getValue());
+                List<LinkedHashMap<ICraftingPatternDetails, Long>> candidates = new ArrayList<>();
+                candidates.add(constructed);
+                candidates.add(discovery);
+                candidates.add(reversed);
+                VirtualCPUCluster.Verdict closest = null;
+                boolean adopted = false;
+                for (LinkedHashMap<ICraftingPatternDetails, Long> cand : candidates) {
+                    patternTimes.clear();
+                    patternTimes.putAll(cand);
+                    VirtualCPUCluster.Verdict v = new VirtualCPUCluster(
+                            new VMPlan(outputKey, deliver, simulation.getBytes(), false,
+                                    usedItems, missingItems, emittedItems,
+                                    new LinkedHashMap<>(patternTimes)),
+                            outputKey, deliver).run(10_000, 0);
+                    if (v.status == VirtualCPUCluster.Verdict.Status.COMPLETE) {
+                        adopted = true;
+                        break;
+                    }
+                    if (closest == null || v.delivered > closest.delivered) {
+                        closest = v;
+                    }
+                }
+                if (!adopted) {
+                    Log.LOG.warn("[AE2-VM] plan closure rejected by the faithful CPU "
+                            + "({}); falling back to the stage pipeline", closest);
+                    patternTimes.clear();
+                    patternTimes.putAll(patternTimesBefore);
+                    restoreCounter(usedItems, usedBefore);
+                    restoreCounter(missingItems, missingBefore);
+                    restoreCounter(emittedItems, emittedBefore);
+                    ringTaskOrder.clear();
+                    return false;
+                }
+            } else {
+                Log.LOG.debug("[AE2-VM] closure plan CPU verification skipped "
+                        + "({} crafts > budget {})", totalCrafts, VERIFY_CRAFT_BUDGET);
+            }
+        }
+        Log.LOG.debug(String.format(
+                "[AE2-VM] plan closure converged in %d rounds: %d patterns, %d crafts,"
+                        + " %d used keys, %d missing, %d surplus",
+                r.rounds, r.plans.size(), patternTimes.values().stream()
+                        .reduce(0L, Long::sum),
+                usedItems.size(), missingItems.size(), emittedItems.size()));
+        return true;
+    }
+
+    /**
+     * Per-craft typed outputs from the CONDENSED array — the form the trace
+     * dumps, {@link PlanInvariants} and the offline ground truth all read.
+     */
+    private static Map<IAEItemStack, BigInteger> perCraftCondensedOutputs(ICraftingPatternDetails d) {
+        Map<IAEItemStack, BigInteger> out = new HashMap<>();
+        IAEItemStack[] outs = safeCondensedOutputs(d);
+        if (outs != null) {
+            for (IAEItemStack o : outs) {
+                if (o == null || o.getStackSize() <= 0) continue;
+                IAEItemStack ok = o.copy().setStackSize(1);
+                ok.reset();
+                out.merge(ok, BigInteger.valueOf(o.getStackSize()), BigInteger::add);
+            }
+        }
+        return out;
+    }
+
+    private static IAEItemStack[] safeCondensedOutputs(ICraftingPatternDetails details) {
+        try {
+            return details.getCondensedOutputs();
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    /** Copy of a counter for the closure's fallback snapshot. */
+    private static VMCounter snapshotCounter(VMCounter c) {
+        VMCounter copy = new VMCounter();
+        for (Map.Entry<IAEItemStack, Long> e : c.entrySet()) {
+            if (e.getValue() != null && e.getValue() != 0) {
+                copy.add(e.getKey(), e.getValue());
+            }
+        }
+        return copy;
+    }
+
+    /** Restore a counter to its snapshot (replace, not merge). */
+    private static void restoreCounter(VMCounter target, VMCounter snapshot) {
+        target.reset();
+        target.addAll(snapshot);
+    }
+
+    /**
      * Final aggregation over the captured bundle DAG: demand-propagation worklist
      * (O(patterns+edges)), stock-aware sub-craft with exact-vs-fuzzy slot split,
      * post-order single application of each bundle scaled by its total demand.
@@ -991,11 +1283,12 @@ public class CraftingVM {
         if (aggregated) return;
         aggregated = true;
         VMCounter initialStock = executeStartStock;
-        if (AE2VMConfig.closureEnabled && runClosure()) {
-            // the closure's plan triple is in force (CLOSURE-DESIGN.md §5.4
-            // step 1): patternTimes/usedItems/missingItems are written, the
-            // stage pipeline below is bypassed entirely. A diverged closure
-            // (net-loss cycle past the CAP) falls through to this pipeline.
+        if (runClosure()) {
+            // the closure's plan triple is in force: patternTimes/usedItems/
+            // missingItems are written and the propagation pipeline below is
+            // bypassed entirely. A declined closure (diverged net-loss cycle,
+            // self-adjacent catalyst, faithful-CPU rejection) falls through
+            // to this pipeline, whose special mechanisms own those shapes.
             return;
         }
         Map<IAEItemStack, BigInteger> total = new HashMap<>();
@@ -1150,134 +1443,6 @@ public class CraftingVM {
         if (!selfAdjacentKeys.isEmpty()) {
             correctRecursion(total, initialStock);
         }
-        // The ring family is feature-gated (hard-off while the live-server
-        // stalls are triaged): with the gate closed, ringNetBundles stays
-        // empty and every post-solve block below degrades to no-ops, so the
-        // plain propagation plan drives the whole aggregation.
-        if (AE2VMConfig.ringSolverEnabled) {
-            solveRings(total, itemDemand);
-        }
-        // the released stock reservations of stripped ring keys go back into
-        // the sandbox so the startup bill can draw them (the bill is
-        // closure-bounded to exactly this stock)
-        for (var e : ringReleasedStock.entrySet()) {
-            simulation.insert(e.getKey(), e.getValue().longValue());
-        }
-        // consume the faithful startup bill BEFORE any ring emission floods
-        // the sandbox: the withdrawal is job-start capital drawn from real
-        // stock, never from the ring's own future production
-        for (var e : ringStartupBill.entrySet()) {
-            long bill = toLongSafe(e.getValue(), "ring-bill");
-            if (bill <= 0) continue;
-            simulation.addBytes(bill);
-            nodeCount++;
-            long got = simulation.extract(e.getKey(), bill, false);
-            if (got > 0) usedItems.add(e.getKey(), got);
-            if (got < bill) missingItems.add(e.getKey(), bill - got);
-        }
-        ringStartupBill.clear();
-        // two-phase application: ALL net emissions land before ANY
-        // net extraction, so a downstream ring's draw can be supplied by an
-        // upstream ring folded earlier in the consumers-first solve order
-        for (Bundle net : ringNetBundles) {
-            for (var e : net.emitted.entrySet()) {
-                long val = toLongSafe(e.getValue(), "ring-emit");
-                simulation.insert(e.getKey(), val);
-                simInternal.add(e.getKey(), val);
-            }
-        }
-        for (Bundle net : ringNetBundles) {
-            // E-case: an out-of-ring ingredient that has its own pattern gets
-            // its extraction DEFICIT scheduled instead of being reported as a
-            // raw-ingredient shortfall the network can never fill. The
-            // expansion is RECURSIVE and POST-ORDER ({@link #expandEcase}): an
-            // injected producer's own short inputs are expanded into their
-            // producers first, and only pattern-less leaves fall through to
-            // the honest missing report. The one-level version silently
-            // dropped the injected amplifier's own inputs on the live gaia
-            // trace (mana resources absent from used AND missing — the
-            // MISSING-COVERAGE / INPUT-REACH violations). Simulate before the
-            // net extraction so the deficit is measured against untouched
-            // stock; applyOrdered's replay below then picks the injected
-            // totals up. Ring MEMBERS are excluded by the solver's
-            // membership: their demand is net flow (their own production
-            // feeds their consumption inside the bundle), and re-scheduling
-            // them would double-fire the pattern (the live gaia report showed
-            // the recycler at 2x its solution).
-            List<IAEItemStack> rescheduled = new ArrayList<>();
-            Map<IAEItemStack, Long> ecaseAvailable = new HashMap<>();
-            Map<IAEItemStack, Long> ecaseClaimed = new HashMap<>();
-            Map<IAEItemStack, Long> ecaseMemberDraw = new HashMap<>();
-            // seed the claimed accumulator with the propagation's non-ring
-            // demand for each external input — the producer re-sizing below
-            // replaces the propagation-era count that covered those consumers
-            for (var pe : net.propExternalClaimed.entrySet()) {
-                long v = toLongSafe(pe.getValue(), "prop-ext");
-                if (v > 0) ecaseClaimed.put(pe.getKey(), v);
-            }
-            Set<IAEItemStack> ecaseOnStack = new HashSet<>();
-            for (var e : net.used.entrySet()) {
-                long demand = toLongSafe(e.getValue(), "ring-use");
-                if (demand <= 0 || containsRingMember(e.getKey())) continue;
-                // Belt and braces: a key the bundle itself emits is ring flow.
-                if (net.emitted.containsKey(e.getKey())) continue;
-                expandEcase(total, e.getKey(), demand, ecaseAvailable, ecaseClaimed,
-                        ecaseOnStack, rescheduled, ecaseMemberDraw);
-            }
-            // Injected chains drawing on ring MEMBERS: bill the draw as
-            // startup capital (extract now, shortfall honestly missing) — the
-            // ring's solved production predates these patterns and the member
-            // billing skip would otherwise silence the draw entirely.
-            for (var md : ecaseMemberDraw.entrySet()) {
-                long bill = md.getValue();
-                simulation.addBytes(bill);
-                nodeCount++;
-                long got = simulation.extract(md.getKey(), bill, false);
-                if (got > 0) usedItems.add(md.getKey(), got);
-                if (got < bill) missingItems.add(md.getKey(), bill - got);
-            }
-            applyBundleDirect(net, true);
-            // Report the ring's TRUE surplus: gross emission minus the flow the
-            // ring consumes internally AND minus the out-of-ring demand the
-            // downstream (non-ring) schedule draws from it. Both reductions
-            // matter:
-            //  - only the surplus is emitable in native CPU semantics
-            //    (howManyEmitted); passing gross made the CPU believe 1250
-            //    ingots / 15000 spirits were owed back — a state it cannot
-            //    complete (the reported stall);
-            //  - when the root is a DOWNSTREAM item, the ring's product is an
-            //    intermediate consumed by that item's recipe: without the
-            //    demand reduction it was reported as surplus, starving the
-            //    missing list of the material the downstream chain actually
-            //    needs. itemDemand carries out-of-ring demand only (the
-            //    propagation strips ring edges), so it is exactly the draw.
-            for (var e : net.emitted.entrySet()) {
-                long gross = toLongSafe(e.getValue(), "ring-report");
-                if (gross <= 0) continue;
-                long consumed = 0;
-                for (var u : net.used.entrySet()) {
-                    if (u.getKey().isSameType(e.getKey())) {
-                        consumed = toLongSafe(u.getValue(), "ring-use");
-                        break;
-                    }
-                }
-                BigInteger outside = BigInteger.ZERO;
-                for (var d : itemDemand.entrySet()) {
-                    if (d.getKey().isSameType(e.getKey())) {
-                        outside = d.getValue();
-                        break;
-                    }
-                }
-                long surplus = gross - consumed - toLongSafe(outside, "ring-outside");
-                if (surplus > 0) emittedItems.add(e.getKey(), surplus);
-            }
-            if (!rescheduled.isEmpty()) {
-                // the raw-ingredient shortfall is superseded by the injected
-                // schedule's own (deeper) disclosure
-                for (IAEItemStack k : rescheduled) missingItems.remove(k);
-            }
-        }
-        ringReleasedStock.clear();
         Set<IAEItemStack> applied = new HashSet<>();
         for (IAEItemStack k : total.keySet()) applyOrdered(k, applied, total);
         Map<IAEItemStack, Long> loopMissing = computeFeedbackLoopMissing(total, initialStock);
@@ -1302,171 +1467,6 @@ public class CraftingVM {
             if (s.isSameType(key)) return true;
         }
         return false;
-    }
-
-    /** True when {@code key} is a member of a ring folded this execute. */
-    private boolean containsRingMember(IAEItemStack key) {
-        return ringMemberKeys != null && containsKey(ringMemberKeys, key);
-    }
-
-    /** Safety cap for one E-case injection — far above any honest craft count. */
-    private static final long ECASE_CRAFT_CAP = 1_000_000_000_000L;
-
-    /**
-     * Recursive E-case expansion: schedule {@code key}'s stock deficit on its
-     * own pattern, then expand the pattern's short inputs the same way. The
-     * recursion is POST-ORDER (inputs injected before the key itself) so the
-     * downstream producers land before the consumer draws.
-     *
-     * <p>Re-arrivals are LEGITIMATE and must size, not cut: a big web shares
-     * one external ingredient between many consumers (the live 366-pattern
-     * draconic order — the producer was sized to the ring chain's demand and
-     * the other consumers' 63k more were left uncovered, shipped as false
-     * missing). {@code available} accumulates the probed stock plus every
-     * injection's production, {@code claimed} the demands served so far; an
-     * arrival schedules only the uncovered remainder ({@code demand -
-     * (available - claimed)}). TRUE cycles are cut by {@code onStack} — a key
-     * already on the recursion path stays unscheduled (the ring owns it) and
-     * its shortfall surfaces through the ordinary extraction path as the
-     * honest missing entry. {@code rescheduled} collects every injected key
-     * so the caller can strip their raw shortfalls in favor of this deeper
-     * disclosure (the live mana-resource hole: consumed by the plan, absent
-     * from used AND missing).
-     */
-    private void expandEcase(Map<IAEItemStack, BigInteger> total, IAEItemStack key, long demand,
-                             Map<IAEItemStack, Long> available, Map<IAEItemStack, Long> claimed,
-                             Set<IAEItemStack> onStack, List<IAEItemStack> rescheduled,
-                             Map<IAEItemStack, Long> memberDraw) {
-        if (demand <= 0) return;
-        if (containsRingMember(key)) {
-            // The ring predates this injection: its solved production does not
-            // include the injected chain's draw on a member output, and both
-            // the billing skip (ring-billed) and this expansion would
-            // otherwise drop it into a hole (the live web: injected machinery
-            // chains drew 31k spirits off an 9.7k-production ring). Record
-            // the draw — the caller bills it as startup capital.
-            if (demand > 0) memberDraw.merge(copyOf(key), demand, Long::sum);
-            return;
-        }
-        IAEItemStack norm = copyOf(key);
-        if (!onStack.add(norm)) return; // true cycle: the ring owns it
-        try {
-            ICraftingPatternDetails p = patternResolver != null ? patternResolver.apply(key) : null;
-            if (p == null) return; // true leaf: the extraction shortfall reports it
-            Bundle[] arr = activeBundles(key);
-            if (arr == null || arr[0] == null) {
-                // The propagation never walked this key, so no JIT bundle was
-                // captured — but the PATTERN exists (the user wrote it). Build
-                // a plain flow bundle from the condensed inputs/outputs and
-                // register it, or the injection would decline and the key
-                // would ship as false missing (the live glass/metal holes:
-                // consumed by injected patterns, pattern present, producer
-                // unschedulable).
-                arr = synthesizeBundle(key, p);
-                if (arr == null || arr[0] == null) return;
-            }
-            Long probed = available.get(norm);
-            long avail;
-            if (probed == null) {
-                // first arrival: measure the live stock ONCE and IN FULL
-                // (simulate-only; capped at this arrival's demand would hide
-                // the stock later arrivals must share); later arrivals
-                // account through the accumulator
-                avail = simulation.extract(key, Long.MAX_VALUE, true);
-                available.put(norm, avail);
-            } else {
-                avail = probed;
-            }
-            long spare = avail - claimed.getOrDefault(norm, 0L);
-            long deficit = demand - spare;
-            claimed.merge(norm, demand, Long::sum);
-            if (deficit <= 0) return; // covered by stock + earlier injections
-            long perCraft = 1;
-            try {
-                IAEItemStack[] outs = p.getOutputs();
-                if (outs != null) {
-                    for (IAEItemStack out : outs) {
-                        if (out != null && out.isSameType(key) && out.getStackSize() > 0) {
-                            perCraft = out.getStackSize();
-                            break;
-                        }
-                    }
-                }
-            } catch (Throwable ignored) {
-            }
-            long crafts = (deficit + perCraft - 1) / perCraft;
-            if (crafts > ECASE_CRAFT_CAP) return; // diverged: keep the honest shortfall
-            available.merge(norm, crafts * perCraft, Long::sum);
-            for (IAEItemStack in : safeCondensedInputs(p)) {
-                if (in == null || in.getStackSize() <= 0) continue;
-                // A returned/catalyst input is a seed, not a per-craft consumption.
-                if (PatternCompiler.detectReturnedInput(p, in) != null) continue;
-                expandEcase(total, in, crafts * in.getStackSize(), available, claimed,
-                        onStack, rescheduled, memberDraw);
-            }
-            BigInteger existing = total.getOrDefault(key, BigInteger.ZERO);
-            total.put(key, existing.add(BigInteger.valueOf(crafts)));
-            if (!rescheduled.contains(key)) rescheduled.add(key);
-            Log.LOG.debug("[AE2-VM] ring E-case: {} deficit {} -> +{} crafts of its own pattern",
-                    key.getDefinition(), deficit, crafts);
-        } finally {
-            onStack.remove(norm);
-        }
-    }
-
-    /**
-     * Plain flow bundle for a pattern with no captured JIT bundle: condensed
-     * inputs (returned/catalyst lines excluded from used, a one-unit seed
-     * kept) as used + itemNeeds, outputs as emitted, the pattern as the
-     * single craft. {@code applyOrdered} replays it like any captured bundle
-     * — inputs extracted (shortfalls honestly reported), outputs inserted,
-     * input producers ordered first via itemNeeds. No captured subtree, no
-     * sub-choice validation: the resolver's current pick IS the choice.
-     */
-    private Bundle[] synthesizeBundle(IAEItemStack key, ICraftingPatternDetails p) {
-        PatternCompiler.compileIfAbsent(p);
-        CraftingBytecode sbc = PatternCompiler.getCompiled(p);
-        if (sbc == null) {
-            return null;
-        }
-        BundleKey bk = new BundleKey(key, sbc.getCode());
-        Bundle[] existing = bundleCache.get(bk);
-        if (existing != null) {
-            return existing;
-        }
-        Bundle b = new Bundle();
-        IAEItemStack[] ins = safeCondensedInputs(p);
-        if (ins != null) {
-            for (IAEItemStack in : ins) {
-                if (in == null || in.getStackSize() <= 0) continue;
-                IAEItemStack ik = in.copy();
-                long amt = ik.getStackSize();
-                ik.reset();
-                if (PatternCompiler.detectReturnedInput(p, in) != null) {
-                    // catalyst line: a one-time seed, not a per-craft draw
-                    b.seeds.merge(ik, BigInteger.ONE, BigInteger::add);
-                    continue;
-                }
-                b.used.merge(ik, BigInteger.valueOf(amt), BigInteger::add);
-                b.itemNeeds.merge(ik, BigInteger.valueOf(amt), BigInteger::add);
-            }
-        }
-        IAEItemStack[] outs = safeOutputs(p);
-        if (outs != null) {
-            for (IAEItemStack out : outs) {
-                if (out == null || out.getStackSize() <= 0) continue;
-                IAEItemStack ok = out.copy();
-                long amt = ok.getStackSize();
-                ok.reset();
-                b.emitted.merge(ok, BigInteger.valueOf(amt), BigInteger::add);
-            }
-        }
-        b.patterns.put(p, BigInteger.ONE);
-        Bundle[] arr = new Bundle[]{b};
-        bundleCache.put(bk, arr);
-        Log.LOG.debug("[AE2-VM] ring E-case: synthesized a plain bundle for {} ({})",
-                key.getDefinition(), p);
-        return arr;
     }
 
     /** Self-adjacent patterns: own output key also a NON-returned consumed input. */
@@ -2491,501 +2491,6 @@ public class CraftingVM {
             if (d.signum() > 0) b.patterns.put(e.getKey(), d);
         }
         return b;
-    }
-
-    /**
-     * Solve the pure mutual rings whose back-edge demand the
-     * propagation loop dropped, fold each into a net-effect bundle, and remove
-     * the ring keys from the aggregation total (the net bundle takes over their
-     * scheduling — including the root direction when the root key is a ring
-     * member). The removal is what prevents the pre-solver propagation counts
-     * from being REPLAYED by {@code applyOrdered} on top of the solved ring:
-     * the captured root bundle's ring edges were stripped stock-only at capture
-     * time, so its replay schedules unbacked crafts (the "834 missing
-     * ingots" CPU stall in replay form).
-     */
-
-    /**
-     * The closure bypass (CLOSURE-DESIGN.md §5.4 step 1, gate default OFF):
-     * the global-ledger fixpoint of {@link PlanClosure} replaces the whole
-     * coverage pipeline — propagation counts, ring folding, E-case expansion,
-     * member billing and the ordered replay all model the same three ledgers
-     * from different stages, and every live bug sat on a seam between their
-     * views. The closure derives coverage from the final schedule instead:
-     * seeded from BELOW (the root pattern only — the least fixpoint), rounded
-     * over consumed/produced until no producer needs a bump, then the plan
-     * triple is written directly (usedItems = W = min(netDraw, stock),
-     * patternTimes = plans, missingItems = producer-less/root gaps).
-     *
-     * <p>Returns false when the closure declines or diverges (no root
-     * pattern, net-losing cycle past the CAP) — the caller keeps the legacy
-     * pipeline. Not yet in the closure's scope (kept mechanisms, §5.4 step 3
-     * wires them once the default flips): priming floors for circulating
-     * keys (a catalyst's first craft precedes its first return) and the
-     * NBT-variant stock refinement.
-     */
-    private boolean runClosure() {
-        if (rootPattern == null || outputKey == null || requestAmount == null
-                || requestAmount.signum() <= 0
-                // an unseeded self-growth root is cut at execute level (serve
-                // from stock, shortfall missing) — the closure's seed would
-                // unconditionally re-schedule it
-                || isUnseededSelfLoop(rootPattern)) {
-            return false;
-        }
-        // PlanClosure.View adapter: producerOf resolves through the SAME
-        // resolver the capture used — an unseeded self-growth loop (A -> 2A)
-        // is never a producer, matching the execute-level cut.
-        PlanClosure.View view = new PlanClosure.View() {
-            @Override
-            public ICraftingPatternDetails producerOf(IAEItemStack key) {
-                // byproduct-rooted request: the root key has no resolver
-                // entry, but the request's own pattern produces it
-                ICraftingPatternDetails p;
-                if (key.isSameType(outputKey)) {
-                    p = rootPattern;
-                } else {
-                    p = patternResolver != null ? patternResolver.apply(key) : null;
-                    // solver-view fallback: exactly one any-slot producer (the
-                    // ring solver's precedent) — a byproduct-only key joins the
-                    // closure through it instead of shipping as a false leaf
-                    if (p == null) {
-                        p = PatternCompiler.resolveAnyOutputProducer(key);
-                    }
-                }
-                return isUnseededSelfLoop(p) ? null : p;
-            }
-
-            @Override
-            public Map<IAEItemStack, BigInteger> inputsOf(ICraftingPatternDetails pattern) {
-                // ALL condensed lines: a returned/catalyst line nets to zero
-                // (it is an output of the same pattern), so counting it keeps
-                // the ledger honest without a dedicated seed mechanism
-                return perCraftPrimings(pattern);
-            }
-
-            @Override
-            public Map<IAEItemStack, BigInteger> outputsOf(ICraftingPatternDetails pattern) {
-                return perCraftCondensedOutputs(pattern);
-            }
-
-            @Override
-            public BigInteger stockOf(IAEItemStack key) {
-                return BigInteger.valueOf(Math.max(0L, executeStartStock.get(key)));
-            }
-
-            @Override
-            public Map<IAEItemStack, BigInteger> fuzzyInputsOf(ICraftingPatternDetails pattern) {
-                // the compile registered a substitute group for an input key
-                // iff its pattern is craftable with a replacement-enabled slot
-                // on it (a processing fake's substitute table registers
-                // NOTHING — PatternHelper :87) — the same gate the bytecode's
-                // FUZZY_SLOT marker uses
-                Map<IAEItemStack, BigInteger> out = new HashMap<>();
-                IAEItemStack[] ins = safeCondensedInputs(pattern);
-                if (ins == null) {
-                    return out;
-                }
-                for (IAEItemStack in : ins) {
-                    if (in == null || in.getStackSize() <= 0) continue;
-                    if (PatternCompiler.getFuzzyGroup(in).size() > 1) {
-                        IAEItemStack ik = in.copy().setStackSize(1);
-                        ik.reset();
-                        out.merge(ik, BigInteger.valueOf(in.getStackSize()), BigInteger::add);
-                    }
-                }
-                return out;
-            }
-
-            @Override
-            public List<IAEItemStack> nbtFamilyOf(IAEItemStack key) {
-                // processing default fuzzy: same-item damage-equal variants
-                // present in the network stock (fluid fakes excluded — the NBT
-                // IS the fluid identity)
-                List<IAEItemStack> family = new ArrayList<>();
-                if (!PatternCompiler.isProcessingInput(key)
-                        || AE2FCCompat.isFluidFakeItem(key)) {
-                    return family;
-                }
-                for (IAEItemStack v : simulation.findFuzzyFamily(key)) {
-                    if (v == null || v.isSameType(key)) continue;
-                    // 1.12 damage is item identity: only same-damage variants
-                    if (v.getItemDamage() != key.getItemDamage()) continue;
-                    if (Math.max(0L, executeStartStock.get(v)) <= 0) continue;
-                    family.add(v);
-                }
-                return family;
-            }
-
-            @Override
-            public boolean isProcessingInput(IAEItemStack key) {
-                return PatternCompiler.isProcessingInput(key)
-                        && !AE2FCCompat.isFluidFakeItem(key);
-            }
-
-            @Override
-            public List<IAEItemStack> substitutesOf(IAEItemStack key) {
-                List<IAEItemStack> subs = new ArrayList<>();
-                for (IAEItemStack v : PatternCompiler.getFuzzyGroup(key)) {
-                    if (v == null || v.isSameType(key)) continue;
-                    subs.add(v);
-                }
-                return subs;
-            }
-        };
-        PlanClosure.Result r = PlanClosure.close(outputKey, requestAmount, rootPattern, view);
-        if (r == null || !r.converged) {
-            Log.LOG.warn("[AE2-VM] plan closure diverged after {} rounds; "
-                    + "falling back to the stage pipeline",
-                    r == null ? 0 : r.rounds);
-            return false;
-        }
-        // snapshot the plan containers: a rejected closure plan (the faithful
-        // CPU cannot boot it) must leave NO residue for the stage pipeline
-        LinkedHashMap<ICraftingPatternDetails, Long> patternTimesBefore =
-                new LinkedHashMap<>(patternTimes);
-        VMCounter usedBefore = snapshotCounter(usedItems);
-        VMCounter missingBefore = snapshotCounter(missingItems);
-        VMCounter emittedBefore = snapshotCounter(emittedItems);
-        // Priming floors (the KEPT mechanism, CLOSURE-DESIGN.md §5.3): the
-        // ledger is balanced for keys whose production CIRCULATES (net-zero
-        // cycles, self-returned catalysts), but a real CPU's first craft in a
-        // cycle precedes the first return — the probe forces the priming
-        // inventory the task order needs, with the closure's net draw as its
-        // netDrawOf (a DAG's deferral never forces: a pass that fires nothing
-        // is a true cycle deadlock, not a waiting consumer).
-        RingSolver.RingPlan closurePlan = new RingSolver.RingPlan();
-        closurePlan.patterns.putAll(r.plans);
-        Set<IAEItemStack> members = new HashSet<>();
-        for (ICraftingPatternDetails p : r.plans.keySet()) {
-            for (IAEItemStack ok : perCraftCondensedOutputs(p).keySet()) {
-                members.add(copyOf(ok));
-            }
-        }
-        RingSolver.FloorPlan floors = RingSolver.startupFloors(
-                Collections.singletonList(closurePlan),
-                CraftingVM::perCraftPrimings, CraftingVM::perCraftOutputs,
-                k -> r.netDraw.getOrDefault(copyOf(k), BigInteger.ZERO),
-                outputKey, members);
-        ringTaskOrder.clear();
-        ringTaskOrder.addAll(floors.order());
-        patternTimes.clear();
-        for (var e : r.plans.entrySet()) {
-            long t = toLongSafe(e.getValue(), "closure-plan");
-            if (t <= 0) continue;
-            patternTimes.put(e.getKey(), t);
-            simulation.addCrafting(e.getKey(), t);
-            simulation.addBytes(t);
-        }
-        // job-start capital: the net draw W plus the additive priming floors,
-        // billed against stock — beyond stock it is an honest shortfall (the
-        // CPU cannot boot the plan). Floor-only keys (net-zero circulation)
-        // are billed too, so the union is taken.
-        Set<IAEItemStack> billed = new LinkedHashSet<>();
-        for (IAEItemStack k : r.withdraw.keySet()) billed.add(copyOf(k));
-        for (IAEItemStack k : floors.floors().keySet()) billed.add(copyOf(k));
-        for (IAEItemStack k : billed) {
-            BigInteger wv = getPool(r.withdraw, k);
-            long w = wv == null ? 0L : toLongSafe(wv, "closure-w");
-            long floor = toLongSafe(floors.floors().getOrDefault(k, BigInteger.ZERO),
-                    "closure-floor");
-            long bill = w + floor;
-            if (bill <= 0) continue;
-            long stock = Math.max(0L, executeStartStock.get(k));
-            long got = Math.min(bill, stock);
-            usedItems.add(k, got);
-            if (got < bill) missingItems.add(k, bill - got);
-            simulation.addBytes(bill);
-            nodeCount++;
-        }
-        for (var e : r.missing.entrySet()) {
-            long m = toLongSafe(e.getValue(), "closure-miss");
-            if (m > 0) missingItems.add(e.getKey(), m);
-        }
-        for (var e : r.surplus.entrySet()) {
-            long s = toLongSafe(e.getValue(), "closure-surplus");
-            if (s > 0) emittedItems.add(e.getKey(), s);
-        }
-        // Faithful-CPU gate: the closure's plan is EXACT (zero slack), and the
-        // priming-floor probe's forced-fire model can under-estimate the boot
-        // capital on tight cycles. A plan the faithful CPU cannot complete
-        // must never ship: verify the same candidates buildPlan would try
-        // (the probe-rank order, the discovery order, its reversal — on a
-        // zero-slack cycle WHO intercepts the circulating return decides the
-        // verdict) and adopt the completing one; no candidate completes →
-        // fall back to the stage pipeline, its plan, its numbers.
-        if (missingItems.isEmpty()) {
-            long totalCrafts = 0;
-            for (Long v : patternTimes.values()) {
-                long next = totalCrafts + v;
-                totalCrafts = next < 0 ? VERIFY_CRAFT_BUDGET + 1
-                        : Math.min(VERIFY_CRAFT_BUDGET + 1, next);
-                if (totalCrafts > VERIFY_CRAFT_BUDGET) break;
-            }
-            long deliver = requestAmount.compareTo(BIG_MAX_LONG) > 0
-                    ? Long.MAX_VALUE : requestAmount.longValue();
-            if (totalCrafts <= VERIFY_CRAFT_BUDGET) {
-                LinkedHashMap<ICraftingPatternDetails, Long> discovery =
-                        new LinkedHashMap<>(patternTimes);
-                LinkedHashMap<ICraftingPatternDetails, Long> constructed = TaskOrdering.construct(
-                        patternTimes, ringTaskOrder,
-                        CraftingVM::perCraftPrimings, CraftingVM::perCraftOutputs);
-                LinkedHashMap<ICraftingPatternDetails, Long> reversed = new LinkedHashMap<>();
-                Deque<Map.Entry<ICraftingPatternDetails, Long>> orderStack = new ArrayDeque<>();
-                for (var e : discovery.entrySet()) orderStack.push(e);
-                for (var e : orderStack) reversed.put(e.getKey(), e.getValue());
-                List<LinkedHashMap<ICraftingPatternDetails, Long>> candidates = new ArrayList<>();
-                candidates.add(constructed);
-                candidates.add(discovery);
-                candidates.add(reversed);
-                VirtualCPUCluster.Verdict closest = null;
-                boolean adopted = false;
-                for (LinkedHashMap<ICraftingPatternDetails, Long> cand : candidates) {
-                    patternTimes.clear();
-                    patternTimes.putAll(cand);
-                    VirtualCPUCluster.Verdict v = new VirtualCPUCluster(
-                            new VMPlan(outputKey, deliver, simulation.getBytes(), false,
-                                    usedItems, missingItems, emittedItems,
-                                    new LinkedHashMap<>(patternTimes)),
-                            outputKey, deliver).run(10_000, 0);
-                    if (v.status == VirtualCPUCluster.Verdict.Status.COMPLETE) {
-                        adopted = true;
-                        break;
-                    }
-                    if (closest == null || v.delivered > closest.delivered) {
-                        closest = v;
-                    }
-                }
-                if (!adopted) {
-                    Log.LOG.warn("[AE2-VM] plan closure rejected by the faithful CPU "
-                            + "({}); falling back to the stage pipeline", closest);
-                    patternTimes.clear();
-                    patternTimes.putAll(patternTimesBefore);
-                    restoreCounter(usedItems, usedBefore);
-                    restoreCounter(missingItems, missingBefore);
-                    restoreCounter(emittedItems, emittedBefore);
-                    ringTaskOrder.clear();
-                    return false;
-                }
-            } else {
-                Log.LOG.debug("[AE2-VM] closure plan CPU verification skipped "
-                        + "({} crafts > budget {})", totalCrafts, VERIFY_CRAFT_BUDGET);
-            }
-        }
-        Log.LOG.debug(String.format(
-                "[AE2-VM] plan closure converged in %d rounds: %d patterns, %d crafts,"
-                        + " %d used keys, %d missing, %d surplus",
-                r.rounds, r.plans.size(), patternTimes.values().stream()
-                        .reduce(0L, Long::sum),
-                usedItems.size(), missingItems.size(), emittedItems.size()));
-        return true;
-    }
-
-    /** Copy of a counter for the closure's fallback snapshot. */
-    private static VMCounter snapshotCounter(VMCounter c) {
-        VMCounter copy = new VMCounter();
-        for (Map.Entry<IAEItemStack, Long> e : c.entrySet()) {
-            if (e.getValue() != null && e.getValue() != 0) {
-                copy.add(e.getKey(), e.getValue());
-            }
-        }
-        return copy;
-    }
-
-    /** Restore a counter to its snapshot (replace, not merge). */
-    private static void restoreCounter(VMCounter target, VMCounter snapshot) {
-        target.reset();
-        target.addAll(snapshot);
-    }
-
-    /**
-     * Per-craft typed outputs from the CONDENSED array — the form the trace
-     * dumps, {@link PlanInvariants} and the offline ground truth all read.
-     */
-    private static Map<IAEItemStack, BigInteger> perCraftCondensedOutputs(ICraftingPatternDetails d) {
-        Map<IAEItemStack, BigInteger> out = new HashMap<>();
-        IAEItemStack[] outs = safeCondensedOutputs(d);
-        if (outs != null) {
-            for (IAEItemStack o : outs) {
-                if (o == null || o.getStackSize() <= 0) continue;
-                IAEItemStack ok = o.copy().setStackSize(1);
-                ok.reset();
-                out.merge(ok, BigInteger.valueOf(o.getStackSize()), BigInteger::add);
-            }
-        }
-        return out;
-    }
-
-    private static IAEItemStack[] safeCondensedOutputs(ICraftingPatternDetails details) {
-        try {
-            return details.getCondensedOutputs();
-        } catch (Throwable t) {
-            return null;
-        }
-    }
-
-    private void solveRings(Map<IAEItemStack, BigInteger> total,
-                            Map<IAEItemStack, BigInteger> itemDemand) {
-        List<RingSolver.RingPlan> plans;
-        try {
-        plans = RingSolver.solve(total, itemDemand, k -> {
-            ICraftingPatternDetails d = patternResolver != null ? patternResolver.apply(k) : null;
-            if (d == null) {
-                // Byproduct fallback: SOLVER-VIEW ONLY. A key
-                // with no primary producer but exactly one any-slot producer
-                // joins the ring graph through that pattern — the folded net
-                // bundle then covers its production and consumption itself.
-                // Deliberately NOT in the capture resolver: capture-time
-                // resolution would re-shape the catalyst/lossy reference
-                // scenarios (their catalyst keys are byproducts too).
-                d = PatternCompiler.resolveAnyOutputProducer(k);
-            }
-            if (d == null) return null;
-            final ICraftingPatternDetails pattern = d;
-            Map<IAEItemStack, BigInteger> in = new HashMap<>();
-            IAEItemStack[] ins = safeCondensedInputs(d);
-            if (ins != null) {
-                for (IAEItemStack i : ins) {
-                    if (i == null || i.getStackSize() <= 0) continue;
-                    if (PatternCompiler.detectReturnedInput(d, i) != null) continue;
-                    IAEItemStack ik = i.copy().setStackSize(1);
-                    ik.reset();
-                    in.merge(ik, BigInteger.valueOf(i.getStackSize()), BigInteger::add);
-                }
-            }
-            Map<IAEItemStack, BigInteger> out = new HashMap<>();
-            IAEItemStack[] outs = safeOutputs(d);
-            if (outs != null) {
-                for (IAEItemStack o : outs) {
-                    if (o == null || o.getStackSize() <= 0) continue;
-                    IAEItemStack ok = o.copy().setStackSize(1);
-                    ok.reset();
-                    out.merge(ok, BigInteger.valueOf(o.getStackSize()), BigInteger::add);
-                }
-            }
-            return new RingSolver.RecipeView() {
-                @Override
-                public ICraftingPatternDetails pattern() {
-                    return pattern;
-                }
-
-                @Override
-                public Map<IAEItemStack, BigInteger> inputs() {
-                    return in;
-                }
-
-                @Override
-                public Map<IAEItemStack, BigInteger> outputs() {
-                    return out;
-                }
-            };
-        }, k -> BigInteger.valueOf(executeStartStock.get(k)), outputKey, this.requestAmount);
-        // gross flow accumulated across ALL folded rings — the startup bill
-        // below is global (a downstream ring's production supplies an
-        // upstream ring's draw, so per-plan netting would double-bill)
-        VMCounter grossUsed = new VMCounter();
-        VMCounter grossEmitted = new VMCounter();
-        VMCounter grossExt = new VMCounter();
-        for (RingSolver.RingPlan plan : plans) {
-            // the net bundle owns the ring: drop the propagation's counts so
-            // applyOrdered never replays a ring member on top of the solved plan
-            for (IAEItemStack rk : plan.ringKeys) {
-                total.keySet().removeIf(k -> k.isSameType(rk));
-                // release the scheduling-phase stock reservation of the
-                // superseded plan — the startup bill re-draws exactly what
-                // the job must withdraw
-                BigInteger reserved = getPool(stockFromNetwork, rk);
-                if (reserved != null && reserved.signum() > 0) {
-                    setPool(stockFromNetwork, rk, BigInteger.ZERO);
-                    ringReleasedStock.merge(rk, reserved, BigInteger::add);
-                    usedItems.add(rk, -reserved.longValue());
-                }
-            }
-            Bundle net = new Bundle();
-            net.propExternalClaimed.putAll(plan.propExternalInput);
-            for (var e : plan.patterns.entrySet()) {
-                long val = toLongSafe(e.getValue(), "ring-pat");
-                if (val <= 0) continue;
-                net.patterns.put(e.getKey(), BigInteger.valueOf(val));
-            }
-            for (var e : plan.emitted.entrySet()) {
-                long val = toLongSafe(e.getValue(), "ring-emit");
-                if (val > 0) {
-                    net.emitted.put(e.getKey(), BigInteger.valueOf(val));
-                    grossEmitted.add(e.getKey(), val);
-                }
-            }
-            for (var e : plan.used.entrySet()) {
-                long val = toLongSafe(e.getValue(), "ring-use");
-                if (val > 0) {
-                    net.used.put(e.getKey(), BigInteger.valueOf(val));
-                    grossUsed.add(e.getKey(), val);
-                }
-            }
-            for (var e : plan.ext.entrySet()) {
-                long val = toLongSafe(e.getValue(), "ring-ext");
-                if (val > 0) grossExt.add(e.getKey(), val);
-            }
-            if (ringMemberKeys == null) {
-                ringMemberKeys = new HashSet<>();
-            }
-            for (IAEItemStack rk : plan.ringKeys) {
-                ringMemberKeys.add(rk.copy().setStackSize(1));
-            }
-            ringNetBundles.add(net);
-        }
-        if (!ringNetBundles.isEmpty()) {
-            // Faithful startup billing: a real CPU owns ONLY the
-            // job-start withdrawal (setJob extracts usedItems into its closed
-            // local inventory), so the plan must bill each ring MEMBER key's
-            // NET draw — gross consumption minus production that returns to
-            // the inventory (everything but the delivered final output) —
-            // plus the priming floor for keys whose production merely
-            // circulates. Billing the gross `used` instead would net the
-            // ring's own emission flood against the withdrawal and starve
-            // the CPU at t=0 (the original live gaia stall). Non-member
-            // inputs of ring patterns (fuel, E-case ingredients) stay on the
-            // emergent extraction path: the rescheduled producer covers them
-            // on-CPU, so charging them here would double-report.
-            for (VMCounter c : new VMCounter[]{grossUsed, grossEmitted, grossExt}) {
-                for (IAEItemStack k : c.keys()) {
-                    if (containsRingMember(k)) {
-                        ringStartupBill.put(copyOf(k), BigInteger.ZERO); // key seeding
-                    }
-                }
-            }
-            for (IAEItemStack k : new ArrayList<>(ringStartupBill.keySet())) {
-                boolean root = k.isSameType(outputKey);
-                long netDraw = grossExt.get(k) + grossUsed.get(k)
-                        - (root ? 0L : grossEmitted.get(k));
-                ringStartupBill.put(k, netDraw > 0 ? BigInteger.valueOf(netDraw) : BigInteger.ZERO);
-            }
-            RingSolver.FloorPlan floorPlan = RingSolver.startupFloors(plans,
-                    CraftingVM::perCraftPrimings, CraftingVM::perCraftOutputs,
-                    k -> ringStartupBill.getOrDefault(copyOf(k), BigInteger.ZERO),
-                    outputKey, ringMemberKeys);
-            // ADDITIVE: a floor is EXTRA priming beyond the net draw (both
-            // serve different firings — e.g. one unit for the circulating
-            // pair's first craft plus the pair's own net draw); max() would
-            // under-bill exactly the coupled shapes.
-            for (var e : floorPlan.floors().entrySet()) {
-                IAEItemStack k = copyOf(e.getKey());
-                ringStartupBill.put(k,
-                        ringStartupBill.getOrDefault(k, BigInteger.ZERO).add(e.getValue()));
-            }
-            ringStartupBill.values().removeIf(v -> v.signum() <= 0);
-            // Execution-aware scheduling: the floor is only valid for the
-            // FIRING ORDER that produced it, so the plan must EMIT that order.
-            // The enforcement happens in buildPlan (after the net bundles have
-            // repopulated patternTimes — at probe time the map is still empty).
-            ringTaskOrder.clear();
-            ringTaskOrder.addAll(floorPlan.order());
-        }
-        } catch (Throwable t) {
-            // the fold is abandoned and the propagation plan stays in force;
-            // the failure must be visible — a silent catch hid solver bugs before
-            Log.LOG.warn("[AE2-VM] ring solver failed; falling back to the propagation plan", t);
-        }
     }
 
     /** Same-type lookup key for the startup bill map. */

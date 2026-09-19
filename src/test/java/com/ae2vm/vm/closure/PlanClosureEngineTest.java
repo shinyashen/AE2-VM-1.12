@@ -2,15 +2,12 @@ package com.ae2vm.vm.closure;
 
 import com.ae2vm.compat.PatternCompat;
 import com.ae2vm.compiler.PatternCompiler;
-import com.ae2vm.config.AE2VMConfig;
 import com.ae2vm.test.fakes.BenchPatternDetails;
 import com.ae2vm.test.fakes.BenchSimulationState;
 import com.ae2vm.test.harness.Bench;
 import com.ae2vm.test.harness.CpuLifecycleAssert;
 import com.ae2vm.vm.VMPlan;
 import net.minecraft.init.Bootstrap;
-import org.junit.jupiter.api.AfterAll;
-import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 import java.util.LinkedHashMap;
@@ -21,7 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * The closure bypass end-to-end (closureEnabled on): a ring-with-root web
+ * The plan closure end-to-end: a ring-with-root web
  * whose faithful plan uses LESS startup capital than the stage pipeline's
  * (the root's produced units cover the delivery, so the in-plan draw comes
  * from stock, not from double-fired production), the injected-chain
@@ -29,16 +26,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * falling back to the stage pipeline's plan unchanged.
  */
 class PlanClosureEngineTest {
-    @BeforeAll
-    static void enableClosure() {
-        AE2VMConfig.closureEnabled = true;
-    }
-
-    @AfterAll
-    static void restoreClosureGate() {
-        AE2VMConfig.closureEnabled = false;
-    }
-
     @Test
     void rootedRingPlanCoversFromStockInsteadOfDoubleFiring() {
         Bootstrap.register();
@@ -113,20 +100,11 @@ class PlanClosureEngineTest {
         Bootstrap.register();
         // cycle 2 A -> 1 B, 1 B -> 1 A behind the root R (1 A -> 1 R):
         // net-losing on a non-root key — the closure diverges past its bound
-        // and the stage pipeline's plan stays in force, identical to a
-        // closure-disabled run of the same web. Compared via primary outputs:
-        // the two runs build distinct fake pattern instances.
-        VMPlan on = runNetLossWeb();
-        AE2VMConfig.closureEnabled = false;
-        try {
-            VMPlan off = runNetLossWeb();
-            assertEquals(schedule(off), schedule(on),
-                    "the fallback must keep the stage pipeline's schedule");
-            assertEquals(off.isSimulation(), on.isSimulation());
-            assertEquals(off.getMissingItems().size(), on.getMissingItems().size());
-        } finally {
-            AE2VMConfig.closureEnabled = true;
-        }
+        // and the stage pipeline's plan stays in force: two patterns at the
+        // demand-derived counts, the honest shortfall disclosed.
+        VMPlan plan = runNetLossWeb();
+        assertEquals(2, schedule(plan).size(), "the pipeline schedules both cycle legs");
+        assertTrue(schedule(plan).containsValue(10L), "the delivery-derived count: " + schedule(plan));
     }
 
     /** patternTimes keyed by primary output (stable across runs). */

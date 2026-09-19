@@ -7,8 +7,6 @@ import com.ae2vm.test.fakes.BenchAEItemStack;
 import com.ae2vm.compiler.PatternCompiler;
 import com.ae2vm.test.harness.CpuLifecycleAssert;
 import com.ae2vm.vm.VMPlan;
-import org.junit.jupiter.api.AfterAll;
-import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 import java.util.LinkedHashMap;
@@ -17,7 +15,6 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import com.ae2vm.config.AE2VMConfig;
 import net.minecraft.init.Bootstrap;
 
 /**
@@ -31,17 +28,6 @@ import net.minecraft.init.Bootstrap;
  * terrasteel shortfall, and NOT the ring's own spirit capital either.
  */
 class GaiaRingLiveReproTest {
-    @BeforeAll
-    static void enableRingFamily() {
-        // The ring family is experimental and off by default; these tests pin its behavior.
-        AE2VMConfig.ringSolverEnabled = true;
-    }
-
-    @AfterAll
-    static void restoreRingFamilyGate() {
-        AE2VMConfig.ringSolverEnabled = false;
-    }
-
     @Test
     void gaiaRingFoldsAndOutOfRingIngredientSchedules() throws Exception {
         Bootstrap.register();
@@ -62,7 +48,7 @@ class GaiaRingLiveReproTest {
         VMPlan plan = Bench.run(craft, 10000, sim);
         CpuLifecycleAssert.auto(plan);
 
-        long turns = closure() ? 834L : 1250L;
+        long turns = 834L;
         assertEquals(Long.valueOf(turns), plan.getPatternTimes().get(recycle),
                 "the recycling pattern folds at the fixed point (closure least / ring solver)");
         assertEquals(Long.valueOf(turns), plan.getPatternTimes().get(craft),
@@ -75,9 +61,9 @@ class GaiaRingLiveReproTest {
         }
         assertEquals(2, missing.size(),
                 "the spirit capital and the iron gap are the only disclosures, got " + missing);
-        assertEquals(Long.valueOf(closure() ? 2837L : 4501L), missing.get("S"),
+        assertEquals(Long.valueOf(2837L), missing.get("S"),
                 "makeIngot's whole 4x-turns draw is job-start capital; 499 stocked");
-        assertEquals(Long.valueOf(closure() ? 1668L : 2500L), missing.get("Fe"),
+        assertEquals(Long.valueOf(1668L), missing.get("Fe"),
                 "the terrasteel crafts need 2 Fe each — the gap flows down the DAG");
         assertFalse(missing.containsKey("T"),
                 "the E-case supersedes the terrasteel shortfall with its own deeper disclosure");
@@ -99,14 +85,10 @@ class GaiaRingLiveReproTest {
         BenchSimulationState sim = new BenchSimulationState().seed("S", 5000).seed("Fe", 2500);
         VMPlan plan = Bench.run(craft, 10000, sim);
         CpuLifecycleAssert.auto(plan);
-        assertEquals(Long.valueOf(closure() ? 834L : 1250L), plan.getPatternTimes().get(recycle));
-        assertEquals(Long.valueOf(closure() ? 834L : 1250L), plan.getPatternTimes().get(craft));
+        assertEquals(Long.valueOf(834L), plan.getPatternTimes().get(recycle));
+        assertEquals(Long.valueOf(834L), plan.getPatternTimes().get(craft));
         assertTrue(plan.getMissingItems().isEmpty(), "nothing missing: " + plan.getMissingItems());
     }
 
-    /** True when the closure bypass owns coverage (dual-mode expectations). */
-    private static boolean closure() {
-        return AE2VMConfig.closureEnabled;
-    }
 
 }

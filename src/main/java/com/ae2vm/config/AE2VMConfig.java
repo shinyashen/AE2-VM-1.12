@@ -22,30 +22,6 @@ public class AE2VMConfig {
      * family ships off by default until live validation (gaia / coupled /
      * tight-stock scenarios) passes.
      */
-    @Config.Comment({"EXPERIMENTAL: net-amplifying recipe ring folding.",
-            "The ring solver turns mutual recipe loops (e.g. 4 spirits -> 1 ingot,",
-            "1 ingot -> 12 spirits) into a single CPU-executable plan and bills",
-            "the startup inventory the CPU must withdraw. Off by default pending",
-            "live validation."})
-    @Config.RequiresMcRestart
-    public static boolean ringSolverEnabled = false;
-
-    /**
-     * Feature gate for the plan closure ({@link com.ae2vm.vm.PlanClosure}):
-     * the global-ledger fixpoint that derives job coverage from the final
-     * schedule instead of the stage pipeline's per-phase ledgers. BYPASS /
-     * OFF by default (CLOSURE-DESIGN.md §5.4 step 1) — while off, the
-     * propagation + ring + E-case pipeline drives every plan; flipping this
-     * on routes coverage through the closure and falls back to the pipeline
-     * whenever the closure diverges (net-losing cycle past its CAP).
-     */
-    @Config.Comment({"EXPERIMENTAL: plan closure — derive job coverage from a",
-            "global ledger fixpoint over the final schedule (consumed,",
-            "produced, refill; net draw beyond stock bumps producers or",
-            "discloses missing). Bypass: off keeps the stage pipeline."})
-    @Config.RequiresMcRestart
-    public static boolean closureEnabled = false;
-
     // ---- diagnostics traces ----
 
     @Config.Comment({"Per-session event cap for armed trace recording.",

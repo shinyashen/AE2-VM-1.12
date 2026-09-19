@@ -11,7 +11,6 @@ import appeng.api.config.FuzzyMode;
 import com.ae2vm.compiler.PatternCompiler;
 import com.ae2vm.compat.PatternCompat;
 import com.ae2vm.test.harness.CpuLifecycleAssert;
-import com.ae2vm.config.AE2VMConfig;
 import com.ae2vm.vm.VMCounter;
 import com.ae2vm.vm.VMPlan;
 import com.ae2vm.vm.PlanInvariants;
@@ -129,11 +128,10 @@ class GaiaCycleRideTest {
         return out;
     }
 
-    private static VMPlan run(boolean gate, boolean withConverter) {
+    private static VMPlan run(boolean withConverter) {
         Bootstrap.register();
         Bench.reset();
-        AE2VMConfig.ringSolverEnabled = gate;
-        try {
+        {
             BenchPatternDetails p0 = Bench.patEx(new String[]{"g5", "dice"}, new long[]{12, 1}, "g14", 1L);
             BenchPatternDetails p1 = Bench.patEx(new String[]{"g14"}, new long[]{1}, "g4", 1L, "g5", 4L);
             BenchPatternDetails p2 = Bench.patEx(new String[]{"g4"}, new long[]{4},
@@ -155,8 +153,6 @@ class GaiaCycleRideTest {
                     .seed("g4", 998)
                     .seed("X", 223291314L);
             return Bench.run(p0, 10000, sim);
-        } finally {
-            AE2VMConfig.ringSolverEnabled = false;
         }
     }
 
@@ -182,32 +178,18 @@ class GaiaCycleRideTest {
      */
     @Test
     void gateOnRidesTheCycleWithHonestDisclosure() {
-        VMPlan plan = run(true, false);
+        VMPlan plan = run(false);
         dump(plan, "plain");
         Map<String, Long> missing = byId(plan.getMissingItems());
-        if (closure()) {
-            // the least fixpoint rides 834 rounds: g4's 834 draw is covered by
-            // the 998 stocked, so P2 (and m0/m1/m2) never join the plan, and
-            // the g5 draw 4x834 = 3336 is covered by the 779 stocked + the
-            // ring's own siphon-exempt returns on the faithful CPU
-            assertEquals(Long.valueOf(834L), plan.getPatternTimes().get(pat("g14")), "P1 loops (closure)");
-            assertEquals(Long.valueOf(834L), plan.getPatternTimes().get(pat("g5")), "P0 loops (closure)");
-            // the root siphon keeps p1's whole 4x834 g5 draw job-start capital:
-            // the 779 stocked cover part, the rest is the honest disclosure
-            assertFalse(plan.getMissingItems().isEmpty(), "the g5 capital shortfall is disclosed");
-            assertEquals(Long.valueOf(2557L), missing.get("g5"), "the net g5 capital gap (3336 - 779)");
-            assertEquals(1, missing.size(), "nothing else missing: " + missing);
-        } else {
-            assertEquals(Long.valueOf(1250L), plan.getPatternTimes().get(pat("g14")), "P1 loops");
-            assertEquals(Long.valueOf(1250L), plan.getPatternTimes().get(pat("g5")), "P0 loops");
-            assertEquals(Long.valueOf(63L), plan.getPatternTimes().get(pat("g4")), "E-case amplifier");
-            assertEquals(Long.valueOf(4221L), missing.get("g5"),
-                    "the faithful g5 job-start capital against 779 stocked");
-            assertEquals(Long.valueOf(63L), missing.get("m0"), "P2 leaf input m0");
-            assertEquals(Long.valueOf(63L), missing.get("m1"), "P2 leaf input m1");
-            assertEquals(Long.valueOf(63L), missing.get("m2"), "P2 leaf input m2");
-            assertEquals(4, missing.size(), "nothing else missing: " + missing);
-        }
+        // the least fixpoint rides 834 rounds: g4's 834 draw is covered by
+        // the 998 stocked, so P2 (and m0/m1/m2) never join the plan. The root
+        // siphon keeps p1's whole 4x834 g5 draw job-start capital: the 779
+        // stocked cover part, the rest is the honest disclosure.
+        assertEquals(Long.valueOf(834L), plan.getPatternTimes().get(pat("g14")), "P1 loops");
+        assertEquals(Long.valueOf(834L), plan.getPatternTimes().get(pat("g5")), "P0 loops");
+        assertFalse(plan.getMissingItems().isEmpty(), "the g5 capital shortfall is disclosed");
+        assertEquals(Long.valueOf(2557L), missing.get("g5"), "the net g5 capital gap (3336 - 779)");
+        assertEquals(1, missing.size(), "nothing else missing: " + missing);
         // audit must be clean: every net-negative ledger key is covered
         ProbeList stock = new ProbeList()
                 .put(new BenchAEItemStack("g5", 779))
@@ -226,30 +208,17 @@ class GaiaCycleRideTest {
      */
     @Test
     void ecaseExpandsTheAmplifiersInputs() {
-        VMPlan plan = run(true, true);
+        VMPlan plan = run(true);
         dump(plan, "converter");
         Map<String, Long> missing = byId(plan.getMissingItems());
-        if (closure()) {
-            // same 834-round least fixpoint — g4 comes from stock, so P2 and
-            // the converter never join; nothing is missing at all
-            assertEquals(Long.valueOf(834L), plan.getPatternTimes().get(pat("g14")), "P1 loops (closure)");
-            assertEquals(Long.valueOf(834L), plan.getPatternTimes().get(pat("g5")), "P0 loops (closure)");
-            // the root siphon keeps p1's whole 4x834 g5 draw job-start capital:
-            // the 779 stocked cover part, the rest is the honest disclosure
-            assertFalse(plan.getMissingItems().isEmpty(), "the g5 capital shortfall is disclosed");
-            assertEquals(Long.valueOf(2557L), missing.get("g5"), "the net g5 capital gap (3336 - 779)");
-            assertEquals(1, missing.size(), "nothing else missing: " + missing);
-        } else {
-            assertEquals(Long.valueOf(63L), plan.getPatternTimes().get(pat("m0")),
-                    "the converter joins the plan for P2's m0 draw");
-            assertFalse(missing.containsKey("m0"),
-                    "m0 is produced by the expanded converter, not missing: " + missing);
-            assertEquals(Long.valueOf(63L), missing.get("m1"), "m1 leaf stays honest");
-            assertEquals(Long.valueOf(63L), missing.get("m2"), "m2 leaf stays honest");
-            assertEquals(Long.valueOf(126L), missing.get("R"),
-                    "the converter's own leaf input is the honest disclosure");
-            assertEquals(Long.valueOf(4221L), missing.get("g5"), "g5 capital unchanged");
-        }
+        // same 834-round least fixpoint — g4 comes from stock, so P2 and the
+        // converter never join. The root siphon keeps p1's whole g5 draw
+        // job-start capital: 3336 - 779 stocked is the honest disclosure.
+        assertEquals(Long.valueOf(834L), plan.getPatternTimes().get(pat("g14")), "P1 loops");
+        assertEquals(Long.valueOf(834L), plan.getPatternTimes().get(pat("g5")), "P0 loops");
+        assertFalse(plan.getMissingItems().isEmpty(), "the g5 capital shortfall is disclosed");
+        assertEquals(Long.valueOf(2557L), missing.get("g5"), "the net g5 capital gap (3336 - 779)");
+        assertEquals(1, missing.size(), "nothing else missing: " + missing);
         ProbeList stock = new ProbeList()
                 .put(new BenchAEItemStack("g5", 779))
                 .put(new BenchAEItemStack("g4", 998))
@@ -260,9 +229,5 @@ class GaiaCycleRideTest {
         CpuLifecycleAssert.auto(plan);
     }
 
-    /** True when the closure bypass owns coverage (dual-mode expectations). */
-    private static boolean closure() {
-        return AE2VMConfig.closureEnabled;
-    }
 
 }

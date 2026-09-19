@@ -12,7 +12,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.ae2vm.compat.PatternCompat;
-import com.ae2vm.config.AE2VMConfig;
 import net.minecraft.init.Bootstrap;
 
 /**
@@ -26,14 +25,11 @@ import net.minecraft.init.Bootstrap;
  * plan now carries the out-of-ring draw as its whole used set.
  */
 class DownstreamStockedRingTest {
-    private static final boolean GATE_ON = true;
-    private static final boolean GATE_OFF = false;
 
-    private static VMPlan run(boolean gate) {
+    private static VMPlan run() {
         Bootstrap.register();
         Bench.reset();
-        AE2VMConfig.ringSolverEnabled = gate;
-        try {
+        {
             // ring: B (1 ingot -> 12 spirits), A (1 terrasteel + 4 spirits -> 1 ingot)
             BenchPatternDetails b = Bench.pat("S", 12, "I", 1L);
             BenchPatternDetails a = Bench.pat("I", 1, "T", 1L, "S", 4L);
@@ -61,18 +57,11 @@ class DownstreamStockedRingTest {
             CpuLifecycleAssert.complete(plan,
                     PatternCompat.getPrimaryOutput(x), 1000);
             return plan;
-        } finally {
-            AE2VMConfig.ringSolverEnabled = false;
         }
     }
 
     @Test
-    void gateOffPlainPropagation() {
-        run(GATE_OFF);
-    }
-
-    @Test
-    void gateOnIdleFoldStillBillsTheDownstreamDraw() {
-        run(GATE_ON);
+    void stockedRingProductNeverEngagesTheRing() {
+        run();
     }
 }

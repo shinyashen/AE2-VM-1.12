@@ -5,11 +5,8 @@ import com.ae2vm.test.fakes.BenchPatternDetails;
 
 import com.ae2vm.compiler.PatternCompiler;
 import com.ae2vm.test.harness.CpuLifecycleAssert;
-import com.ae2vm.config.AE2VMConfig;
 import com.ae2vm.test.fakes.BenchAEItemStack;
 import com.ae2vm.vm.VMPlan;
-import org.junit.jupiter.api.AfterAll;
-import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 import java.util.LinkedHashMap;
@@ -34,16 +31,6 @@ import net.minecraft.init.Bootstrap;
  * consumers, disclosing only the true leaf shortfall (R).
  */
 class EcaseDiamondTest {
-    @BeforeAll
-    static void enableRingFamily() {
-        AE2VMConfig.ringSolverEnabled = true;
-    }
-
-    @AfterAll
-    static void restoreRingFamilyGate() {
-        AE2VMConfig.ringSolverEnabled = false;
-    }
-
     @Test
     void diamondRearrivalsSizeTheSharedProducer() {
         Bootstrap.register();
@@ -72,35 +59,23 @@ class EcaseDiamondTest {
         // sizes every downstream producer from the LEDGER: g4 84 -> p2 21,
         // fuel 84 -> p3 28, m0 21 + 56 = 77 -> m 39. legacy: the ring
         // solver's 125-round crafted-delivery fixed point + E-case injection
-        if (closure()) {
-            assertEquals(Long.valueOf(84L), plan.getPatternTimes().get(p0), "P0 loops (closure)");
-            assertEquals(Long.valueOf(84L), plan.getPatternTimes().get(p1), "P1 loops (closure)");
-            assertEquals(Long.valueOf(21L), plan.getPatternTimes().get(p2),
-                    "g4's producer: ceil(84/4)");
-            assertEquals(Long.valueOf(28L), plan.getPatternTimes().get(p3),
-                    "fuel's producer: ceil(84/3)");
-            assertEquals(Long.valueOf(39L), plan.getPatternTimes().get(m),
-                    "the shared m0 producer covers 21 + 56 = 77 units with 39 crafts");
-        } else {
-            // the ring rides at the crafted-delivery fixed point (capital stocked)
-            assertEquals(Long.valueOf(125L), plan.getPatternTimes().get(p0), "P0 loops");
-            assertEquals(Long.valueOf(125L), plan.getPatternTimes().get(p1), "P1 loops");
-            // the E-case injects both consumers' producers over the full deficit
-            assertEquals(Long.valueOf(32L), plan.getPatternTimes().get(p2),
-                    "g4's producer: ceil(125/4)");
-            assertEquals(Long.valueOf(42L), plan.getPatternTimes().get(p3),
-                    "fuel's producer: ceil(125/3)");
-            // the shared m0 producer is sized for BOTH consumers: g4's chain needs
-            // 32 m0, fuel's chain 84 m0 -> 116 produced = 58 crafts
-            assertEquals(Long.valueOf(58L), plan.getPatternTimes().get(m),
-                    "the diamond re-arrival must top the shared producer up");
-        }
+        // the LEDGER sizes every producer — no E-case injection needed: the
+        // least fixpoint rides 84 rounds (12x84 >= 1000) and sizes the
+        // downstream chain g4 84 -> p2 21, fuel 84 -> p3 28, m0 21 + 56 = 77
+        assertEquals(Long.valueOf(84L), plan.getPatternTimes().get(p0), "P0 loops");
+        assertEquals(Long.valueOf(84L), plan.getPatternTimes().get(p1), "P1 loops");
+        assertEquals(Long.valueOf(21L), plan.getPatternTimes().get(p2),
+                "g4's producer: ceil(84/4)");
+        assertEquals(Long.valueOf(28L), plan.getPatternTimes().get(p3),
+                "fuel's producer: ceil(84/3)");
+        assertEquals(Long.valueOf(39L), plan.getPatternTimes().get(m),
+                "the shared m0 producer covers 21 + 56 = 77 units with 39 crafts");
         // only the true leaf is missing: R feeds all the m0 crafts
         Map<String, Long> missing = new LinkedHashMap<>();
         for (var e : plan.getMissingItems().entrySet()) {
             missing.put(((BenchAEItemStack) e.getKey()).id, e.getValue());
         }
-        long rLeaf = closure() ? 39L : 58L;
+        long rLeaf = 39L;
         assertTrue(missing.containsKey("R") && missing.get("R") == rLeaf,
                 "the honest leaf disclosure is R x" + rLeaf + ", got " + missing);
         assertTrue(!missing.containsKey("m0"),
@@ -110,9 +85,5 @@ class EcaseDiamondTest {
         CpuLifecycleAssert.stalls(plan, "S2");
     }
 
-    /** True when the closure bypass owns coverage (dual-mode expectations). */
-    private static boolean closure() {
-        return AE2VMConfig.closureEnabled;
-    }
 
 }
