@@ -1192,13 +1192,16 @@ public class CraftingVM {
             // them would double-fire the pattern (the live gaia report showed
             // the recycler at 2x its solution).
             List<IAEItemStack> rescheduled = new ArrayList<>();
-            Set<IAEItemStack> ecaseSeen = new HashSet<>();
+            Map<IAEItemStack, Long> ecaseAvailable = new HashMap<>();
+            Map<IAEItemStack, Long> ecaseClaimed = new HashMap<>();
+            Set<IAEItemStack> ecaseOnStack = new HashSet<>();
             for (var e : net.used.entrySet()) {
                 long demand = toLongSafe(e.getValue(), "ring-use");
                 if (demand <= 0 || containsRingMember(e.getKey())) continue;
                 // Belt and braces: a key the bundle itself emits is ring flow.
                 if (net.emitted.containsKey(e.getKey())) continue;
-                expandEcase(total, e.getKey(), demand, ecaseSeen, rescheduled);
+                expandEcase(total, e.getKey(), demand, ecaseAvailable, ecaseClaimed,
+                        ecaseOnStack, rescheduled);
             }
             applyBundleDirect(net, true);
             // Report the ring's TRUE surplus: gross emission minus the flow the
@@ -1278,53 +1281,81 @@ public class CraftingVM {
      * Recursive E-case expansion: schedule {@code key}'s stock deficit on its
      * own pattern, then expand the pattern's short inputs the same way. The
      * recursion is POST-ORDER (inputs injected before the key itself) so the
-     * downstream producers land before the consumer draws, and every
-     * injection re-checks the LIVE simulation stock (simulate-only probe) so
-     * an input already covered by stock, another ring's emission or an
-     * earlier expansion is never double-scheduled. Cycles are cut by
-     * {@code seen} — the second arrival of a key stays unscheduled and its
-     * shortfall surfaces through the ordinary extraction path as the honest
-     * missing entry. {@code rescheduled} collects every injected key so the
-     * caller can strip their raw shortfalls in favor of this deeper
+     * downstream producers land before the consumer draws.
+     *
+     * <p>Re-arrivals are LEGITIMATE and must size, not cut: a big web shares
+     * one external ingredient between many consumers (the live 366-pattern
+     * draconic order — the producer was sized to the ring chain's demand and
+     * the other consumers' 63k more were left uncovered, shipped as false
+     * missing). {@code available} accumulates the probed stock plus every
+     * injection's production, {@code claimed} the demands served so far; an
+     * arrival schedules only the uncovered remainder ({@code demand -
+     * (available - claimed)}). TRUE cycles are cut by {@code onStack} — a key
+     * already on the recursion path stays unscheduled (the ring owns it) and
+     * its shortfall surfaces through the ordinary extraction path as the
+     * honest missing entry. {@code rescheduled} collects every injected key
+     * so the caller can strip their raw shortfalls in favor of this deeper
      * disclosure (the live mana-resource hole: consumed by the plan, absent
      * from used AND missing).
      */
     private void expandEcase(Map<IAEItemStack, BigInteger> total, IAEItemStack key, long demand,
-                             Set<IAEItemStack> seen, List<IAEItemStack> rescheduled) {
+                             Map<IAEItemStack, Long> available, Map<IAEItemStack, Long> claimed,
+                             Set<IAEItemStack> onStack, List<IAEItemStack> rescheduled) {
         if (demand <= 0 || containsRingMember(key)) return;
-        if (!seen.add(copyOf(key))) return; // cycle cut: honest missing below
-        ICraftingPatternDetails p = patternResolver != null ? patternResolver.apply(key) : null;
-        if (p == null) return; // true leaf: the extraction shortfall reports it
-        Bundle[] arr = activeBundles(key);
-        if (arr == null || arr[0] == null) return; // no replayable bundle to schedule
-        long avail = simulation.extract(key, demand, true);
-        long deficit = demand - avail;
-        if (deficit <= 0) return; // stocked: no injection needed
-        long perCraft = 1;
+        IAEItemStack norm = copyOf(key);
+        if (!onStack.add(norm)) return; // true cycle: the ring owns it
         try {
-            IAEItemStack[] outs = p.getOutputs();
-            if (outs != null) {
-                for (IAEItemStack out : outs) {
-                    if (out != null && out.isSameType(key) && out.getStackSize() > 0) {
-                        perCraft = out.getStackSize();
-                        break;
+            ICraftingPatternDetails p = patternResolver != null ? patternResolver.apply(key) : null;
+            if (p == null) return; // true leaf: the extraction shortfall reports it
+            Bundle[] arr = activeBundles(key);
+            if (arr == null || arr[0] == null) return; // no replayable bundle to schedule
+            Long probed = available.get(norm);
+            long avail;
+            if (probed == null) {
+                // first arrival: measure the live stock ONCE and IN FULL
+                // (simulate-only; capped at this arrival's demand would hide
+                // the stock later arrivals must share); later arrivals
+                // account through the accumulator
+                avail = simulation.extract(key, Long.MAX_VALUE, true);
+                available.put(norm, avail);
+            } else {
+                avail = probed;
+            }
+            long spare = avail - claimed.getOrDefault(norm, 0L);
+            long deficit = demand - spare;
+            claimed.merge(norm, demand, Long::sum);
+            if (deficit <= 0) return; // covered by stock + earlier injections
+            long perCraft = 1;
+            try {
+                IAEItemStack[] outs = p.getOutputs();
+                if (outs != null) {
+                    for (IAEItemStack out : outs) {
+                        if (out != null && out.isSameType(key) && out.getStackSize() > 0) {
+                            perCraft = out.getStackSize();
+                            break;
+                        }
                     }
                 }
+            } catch (Throwable ignored) {
             }
-        } catch (Throwable ignored) {
+            long crafts = (deficit + perCraft - 1) / perCraft;
+            if (crafts > ECASE_CRAFT_CAP) return; // diverged: keep the honest shortfall
+            available.merge(norm, crafts * perCraft, Long::sum);
+            for (IAEItemStack in : safeCondensedInputs(p)) {
+                if (in == null || in.getStackSize() <= 0) continue;
+                // A returned/catalyst input is a seed, not a per-craft consumption.
+                if (PatternCompiler.detectReturnedInput(p, in) != null) continue;
+                expandEcase(total, in, crafts * in.getStackSize(), available, claimed,
+                        onStack, rescheduled);
+            }
+            BigInteger existing = total.getOrDefault(key, BigInteger.ZERO);
+            total.put(key, existing.add(BigInteger.valueOf(crafts)));
+            if (!rescheduled.contains(key)) rescheduled.add(key);
+            Log.LOG.debug("[AE2-VM] ring E-case: {} deficit {} -> +{} crafts of its own pattern",
+                    key.getDefinition(), deficit, crafts);
+        } finally {
+            onStack.remove(norm);
         }
-        long crafts = (deficit + perCraft - 1) / perCraft;
-        if (crafts > ECASE_CRAFT_CAP) return; // diverged: keep the honest shortfall
-        for (IAEItemStack in : safeCondensedInputs(p)) {
-            if (in == null || in.getStackSize() <= 0) continue;
-            // A returned/catalyst input is a seed, not a per-craft consumption.
-            if (PatternCompiler.detectReturnedInput(p, in) != null) continue;
-            expandEcase(total, in, crafts * in.getStackSize(), seen, rescheduled);
-        }
-        total.put(key, BigInteger.valueOf(crafts));
-        rescheduled.add(key);
-        Log.LOG.debug("[AE2-VM] ring E-case: {} deficit {} -> {} crafts of its own pattern",
-                key.getDefinition(), deficit, crafts);
     }
 
     /** Self-adjacent patterns: own output key also a NON-returned consumed input. */
