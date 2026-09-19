@@ -275,6 +275,11 @@ public class CraftingVM {
          *  permanently spends its inputs (capture accounting symmetry).
          *  Replay ignores this map: claims are capture-time bookkeeping. */
         final Map<IAEItemStack, BigInteger> claimed = new ConcurrentHashMap<>();
+        // The propagation's NON-ring demand per external input key (see
+        // RingSolver.RingPlan.propExternalInput): the E-case's claimed
+        // accumulator starts from it, so a producer re-sized for the ring's
+        // solved draw also re-covers the propagation-era consumers.
+        final Map<IAEItemStack, BigInteger> propExternalClaimed = new ConcurrentHashMap<>();
         // The pattern each direct sub-call was resolved to at capture time.
         // A replay may only reuse the bundle while the CURRENT resolver picks
         // the same pattern for every sub-call (the multi-pattern repair loop
@@ -1194,6 +1199,13 @@ public class CraftingVM {
             List<IAEItemStack> rescheduled = new ArrayList<>();
             Map<IAEItemStack, Long> ecaseAvailable = new HashMap<>();
             Map<IAEItemStack, Long> ecaseClaimed = new HashMap<>();
+            // seed the claimed accumulator with the propagation's non-ring
+            // demand for each external input — the producer re-sizing below
+            // replaces the propagation-era count that covered those consumers
+            for (var pe : net.propExternalClaimed.entrySet()) {
+                long v = toLongSafe(pe.getValue(), "prop-ext");
+                if (v > 0) ecaseClaimed.put(pe.getKey(), v);
+            }
             Set<IAEItemStack> ecaseOnStack = new HashSet<>();
             for (var e : net.used.entrySet()) {
                 long demand = toLongSafe(e.getValue(), "ring-use");
@@ -1308,7 +1320,17 @@ public class CraftingVM {
             ICraftingPatternDetails p = patternResolver != null ? patternResolver.apply(key) : null;
             if (p == null) return; // true leaf: the extraction shortfall reports it
             Bundle[] arr = activeBundles(key);
-            if (arr == null || arr[0] == null) return; // no replayable bundle to schedule
+            if (arr == null || arr[0] == null) {
+                // The propagation never walked this key, so no JIT bundle was
+                // captured — but the PATTERN exists (the user wrote it). Build
+                // a plain flow bundle from the condensed inputs/outputs and
+                // register it, or the injection would decline and the key
+                // would ship as false missing (the live glass/metal holes:
+                // consumed by injected patterns, pattern present, producer
+                // unschedulable).
+                arr = synthesizeBundle(key, p);
+                if (arr == null || arr[0] == null) return;
+            }
             Long probed = available.get(norm);
             long avail;
             if (probed == null) {
@@ -1356,6 +1378,61 @@ public class CraftingVM {
         } finally {
             onStack.remove(norm);
         }
+    }
+
+    /**
+     * Plain flow bundle for a pattern with no captured JIT bundle: condensed
+     * inputs (returned/catalyst lines excluded from used, a one-unit seed
+     * kept) as used + itemNeeds, outputs as emitted, the pattern as the
+     * single craft. {@code applyOrdered} replays it like any captured bundle
+     * — inputs extracted (shortfalls honestly reported), outputs inserted,
+     * input producers ordered first via itemNeeds. No captured subtree, no
+     * sub-choice validation: the resolver's current pick IS the choice.
+     */
+    private Bundle[] synthesizeBundle(IAEItemStack key, ICraftingPatternDetails p) {
+        PatternCompiler.compileIfAbsent(p);
+        CraftingBytecode sbc = PatternCompiler.getCompiled(p);
+        if (sbc == null) {
+            return null;
+        }
+        BundleKey bk = new BundleKey(key, sbc.getCode());
+        Bundle[] existing = bundleCache.get(bk);
+        if (existing != null) {
+            return existing;
+        }
+        Bundle b = new Bundle();
+        IAEItemStack[] ins = safeCondensedInputs(p);
+        if (ins != null) {
+            for (IAEItemStack in : ins) {
+                if (in == null || in.getStackSize() <= 0) continue;
+                IAEItemStack ik = in.copy();
+                long amt = ik.getStackSize();
+                ik.reset();
+                if (PatternCompiler.detectReturnedInput(p, in) != null) {
+                    // catalyst line: a one-time seed, not a per-craft draw
+                    b.seeds.merge(ik, BigInteger.ONE, BigInteger::add);
+                    continue;
+                }
+                b.used.merge(ik, BigInteger.valueOf(amt), BigInteger::add);
+                b.itemNeeds.merge(ik, BigInteger.valueOf(amt), BigInteger::add);
+            }
+        }
+        IAEItemStack[] outs = safeOutputs(p);
+        if (outs != null) {
+            for (IAEItemStack out : outs) {
+                if (out == null || out.getStackSize() <= 0) continue;
+                IAEItemStack ok = out.copy();
+                long amt = ok.getStackSize();
+                ok.reset();
+                b.emitted.merge(ok, BigInteger.valueOf(amt), BigInteger::add);
+            }
+        }
+        b.patterns.put(p, BigInteger.ONE);
+        Bundle[] arr = new Bundle[]{b};
+        bundleCache.put(bk, arr);
+        Log.LOG.debug("[AE2-VM] ring E-case: synthesized a plain bundle for {} ({})",
+                key.getDefinition(), p);
+        return arr;
     }
 
     /** Self-adjacent patterns: own output key also a NON-returned consumed input. */
@@ -2448,6 +2525,7 @@ public class CraftingVM {
                 }
             }
             Bundle net = new Bundle();
+            net.propExternalClaimed.putAll(plan.propExternalInput);
             for (var e : plan.patterns.entrySet()) {
                 long val = toLongSafe(e.getValue(), "ring-pat");
                 if (val <= 0) continue;

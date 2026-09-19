@@ -268,8 +268,15 @@ public final class AE2VMCrafting {
             List<String> violations =
                     PlanInvariants.check(fixed, what, amount, stockView.stockView());
             if (!violations.isEmpty()) {
-                AE2VM.LOGGER.warn("[AE2-VM] plan invariant violations {}: {}",
-                        what.getDefinition(), violations);
+                // console: the count plus a short head; the full list goes to
+                // DEBUG (the trace's AUDIT segment records every entry anyway)
+                AE2VM.LOGGER.warn("[AE2-VM] plan invariant violations ({}): {}{}",
+                        violations.size(), violations.subList(0, Math.min(3, violations.size())),
+                        violations.size() > 3 ? " ..." : "");
+                if (AE2VM.LOGGER.isDebugEnabled()) {
+                    AE2VM.LOGGER.debug("[AE2-VM] full invariant violation list for {}: {}",
+                            what.getDefinition(), violations);
+                }
                 if (rec != null) {
                     rec.invariantViolations(violations);
                 }

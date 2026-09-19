@@ -36,4 +36,4 @@ aevm.trace.btn.upload=[upload]
 aevm.trace.btn.download=[download]
 aevm.trace.btn.upload-hover=Upload to mclo.gs (link is public)
 aevm.trace.btn.download-hover=Save to .minecraft/aevm/traces
-aevm.trace.btn.show-hover=Show summary
+aevm.trace.btn.show-hover=Click to show summary

@@ -94,6 +94,17 @@ final class RingSolver {
          * draw their stock reservation used to cover.
          */
         final Map<IAEItemStack, BigInteger> ext = new LinkedHashMap<>();
+        /**
+         * The propagation's NON-ring demand per EXTERNAL INPUT key (a key the
+         * ring's patterns consume but no ring member produces): itemDemand
+         * minus the ring's own propagation-time contribution. The engine's
+         * E-case sizes such a key's producer for the ring's SOLVED draw —
+         * replacing the propagation-era count that also covered these other
+         * consumers — and must re-cover them or they ship as false missing
+         * (the live draconic order: the producer re-sized to the ring chain
+         * only, the propagation-era consumers' 2778+ left uncovered).
+         */
+        final Map<IAEItemStack, BigInteger> propExternalInput = new LinkedHashMap<>();
     }
 
     /** Per-craft typed inputs/outputs of one ring recipe (returned inputs excluded). */
@@ -473,6 +484,26 @@ final class RingSolver {
             // captured root bundle is the producer pattern and would double-fire
             // on replay); the request is delivered from the bundle's emitted
             plan.ringKeys.add(rootKey);
+        }
+        // The propagation's non-ring demand per external input: itemDemand
+        // counts EVERY propagation consumer of the key, including the ring's
+        // own patterns at their propagation-era counts — subtract those and
+        // what remains belongs to consumers outside the ring, whose scheduled
+        // crafts the E-case's producer re-sizing must keep covering.
+        for (var e : plan.used.entrySet()) {
+            if (isRingMember(scc, e.getKey())) continue;
+            BigInteger ringProp = BigInteger.ZERO;
+            for (IAEItemStack m : scc) {
+                BigInteger cnt = total.getOrDefault(m, BigInteger.ZERO);
+                if (cnt.signum() <= 0) continue;
+                ringProp = ringProp.add(cnt.multiply(
+                        viewOfKey.get(m).inputs().getOrDefault(e.getKey(), BigInteger.ZERO)));
+            }
+            BigInteger nonRing = itemDemand.getOrDefault(e.getKey(), BigInteger.ZERO)
+                    .subtract(ringProp);
+            if (nonRing.signum() > 0) {
+                plan.propExternalInput.put(e.getKey(), nonRing);
+            }
         }
 
         // ---- startup floors are GLOBAL (across all folded rings, and

@@ -192,14 +192,15 @@ public final class TraceCommand extends CommandBase {
 
     private ITextComponent renderLine(Path p, TraceFile f, boolean withSource, String ownerToken) {
         String id = traceIdOf(p);
-        String time = id.length() > 9 ? id.substring(0, 9) : id; // yyyyMMdd-HHmmss-xxxx → compact
         String statusKey = "aevm.trace.status." + lastStatus(f);
         String request = requestSummary(f);
-        StringBuilder sb = new StringBuilder("#").append(id).append(' ').append(time)
-                .append(' ').append(TraceLang.format(statusKey))
-                .append(' ').append(request);
+        // SHORT row: id + status (+ source). The request details ride in the
+        // tooltip — long wrapping rows were exactly where the live client
+        // lost every component style, while short styled parts survived.
+        StringBuilder sb = new StringBuilder("#").append(id)
+                .append(' ').append(TraceLang.format(statusKey)).append("  ");
         if (withSource) {
-            sb.append(' ').append(sourceLabel(f, ownerToken));
+            sb.append(sourceLabel(f, ownerToken)).append("  ");
         }
         // main line: click pre-fills the summary command. The color rides IN
         // THE TEXT as a legacy § code rather than on the component style:
@@ -210,13 +211,18 @@ public final class TraceCommand extends CommandBase {
         // translucent chat backgrounds.
         TextComponentString root = new TextComponentString("");
         TextComponentString summary = new TextComponentString(
-                TextFormatting.LIGHT_PURPLE.toString() + sb.toString() + "  ");
+                TextFormatting.LIGHT_PURPLE.toString() + sb.toString());
         Style main = summary.getStyle();
         main.setColor(TextFormatting.LIGHT_PURPLE);
         main.setClickEvent(new ClickEvent(ClickEvent.Action.SUGGEST_COMMAND,
                 "/ae2vm trace show " + id));
+        StringBuilder hover = new StringBuilder(request);
+        if (withSource) {
+            hover.append('\n').append("source: ").append(sourceLabel(f, ownerToken));
+        }
+        hover.append('\n').append(TraceLang.format("aevm.trace.btn.show-hover"));
         main.setHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT,
-                new TextComponentString(TraceLang.format("aevm.trace.btn.show-hover"))));
+                new TextComponentString(hover.toString())));
         root.appendSibling(summary);
         // direct-execution action buttons (permissions enforced server-side)
         TextComponentString up = new TextComponentString(TraceLang.format("aevm.trace.btn.upload"));
