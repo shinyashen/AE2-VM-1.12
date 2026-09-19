@@ -9,6 +9,7 @@ import appeng.api.storage.channels.IItemStorageChannel;
 import appeng.api.storage.data.IAEItemStack;
 import appeng.api.storage.data.IItemList;
 import appeng.util.inv.ItemListIgnoreCrafting;
+import com.ae2vm.Log;
 import com.ae2vm.compat.AE2FCCompat;
 import appeng.api.storage.channels.IFluidStorageChannel;
 import appeng.api.storage.data.IAEFluidStack;
@@ -95,7 +96,29 @@ public final class NetworkCraftingSandbox implements SimulationState {
                 }
             }
         }
+        warnOnShrunkenStock(stock.size());
         return new NetworkCraftingSandbox(stock);
+    }
+
+    private static int lastSnapshotItems = -1;
+
+    /**
+     * A storage-cache corruption (AE2UEL-side; the sandbox only READS the
+     * monitor) manifests as a dramatically shrunken stock view — the live
+     * case shipped a 59-item snapshot over a multi-thousand-type network and
+     * planned 93 false missing entries off it. Flag the collapse so the plan
+     * is not trusted and the server gets restarted before more jobs run on
+     * the poisoned view.
+     */
+    private static void warnOnShrunkenStock(int size) {
+        int last = lastSnapshotItems;
+        lastSnapshotItems = size;
+        if (last > 200 && size < last / 4) {
+            Log.LOG.warn("[AE2-VM] network stock view collapsed: {} item types "
+                            + "(previously {}) — the storage cache looks corrupted; plans built "
+                            + "on this view will report false missing. Restart the server.",
+                    size, last);
+        }
     }
 
     private static void addStock(IItemList<IAEItemStack> list, IAEItemStack item, boolean replace) {

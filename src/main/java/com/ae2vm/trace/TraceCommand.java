@@ -201,14 +201,16 @@ public final class TraceCommand extends CommandBase {
         if (withSource) {
             sb.append(' ').append(sourceLabel(f, ownerToken));
         }
-        // main line: click pre-fills the summary command. The summary is a
-        // SIBLING of an empty root, not styled text on the root itself: on
-        // the live CatServer client, styles set on the root component are
-        // lost in the chat pipeline while sibling styles survive (the upload
-        // link renders styled the same way). LIGHT_PURPLE keeps the summary
-        // readable on translucent chat backgrounds.
+        // main line: click pre-fills the summary command. The color rides IN
+        // THE TEXT as a legacy § code rather than on the component style:
+        // live CatServer clients lost component styles on this row (styles on
+        // the root AND on a long wrapping sibling) while the short styled
+        // buttons survived — a § code is part of the string and survives
+        // every re-render. LIGHT_PURPLE keeps the summary readable on
+        // translucent chat backgrounds.
         TextComponentString root = new TextComponentString("");
-        TextComponentString summary = new TextComponentString(sb.toString() + "  ");
+        TextComponentString summary = new TextComponentString(
+                TextFormatting.LIGHT_PURPLE.toString() + sb.toString() + "  ");
         Style main = summary.getStyle();
         main.setColor(TextFormatting.LIGHT_PURPLE);
         main.setClickEvent(new ClickEvent(ClickEvent.Action.SUGGEST_COMMAND,
