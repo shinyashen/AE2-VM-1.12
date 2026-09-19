@@ -2,6 +2,7 @@ package com.ae2vm.trace;
 
 import com.google.gson.JsonObject;
 
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -99,7 +100,7 @@ public final class TraceLogText {
         }
     }
 
-    private static void planEntries(StringBuilder sb, String label, java.util.List<StackEntry> entries) {
+    private static void planEntries(StringBuilder sb, String label, List<StackEntry> entries) {
         for (StackEntry e : entries) {
             String token = e.spec == null ? "?" : e.spec.token;
             line(sb, 0, "PLAN", "INFO", label + " " + e.count + "x " + token);
