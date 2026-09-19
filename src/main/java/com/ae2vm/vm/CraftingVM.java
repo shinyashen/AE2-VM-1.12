@@ -17,6 +17,7 @@ import java.util.Deque;
 import java.util.Iterator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -990,6 +991,13 @@ public class CraftingVM {
         if (aggregated) return;
         aggregated = true;
         VMCounter initialStock = executeStartStock;
+        if (AE2VMConfig.closureEnabled && runClosure()) {
+            // the closure's plan triple is in force (CLOSURE-DESIGN.md §5.4
+            // step 1): patternTimes/usedItems/missingItems are written, the
+            // stage pipeline below is bypassed entirely. A diverged closure
+            // (net-loss cycle past the CAP) falls through to this pipeline.
+            return;
+        }
         Map<IAEItemStack, BigInteger> total = new HashMap<>();
         Map<IAEItemStack, Set<IAEItemStack>> children = new HashMap<>();
         Map<IAEItemStack, Integer> parentCount = new HashMap<>();
@@ -2496,6 +2504,163 @@ public class CraftingVM {
      * time, so its replay schedules unbacked crafts (the "834 missing
      * ingots" CPU stall in replay form).
      */
+
+    /**
+     * The closure bypass (CLOSURE-DESIGN.md §5.4 step 1, gate default OFF):
+     * the global-ledger fixpoint of {@link PlanClosure} replaces the whole
+     * coverage pipeline — propagation counts, ring folding, E-case expansion,
+     * member billing and the ordered replay all model the same three ledgers
+     * from different stages, and every live bug sat on a seam between their
+     * views. The closure derives coverage from the final schedule instead:
+     * seeded from BELOW (the root pattern only — the least fixpoint), rounded
+     * over consumed/produced until no producer needs a bump, then the plan
+     * triple is written directly (usedItems = W = min(netDraw, stock),
+     * patternTimes = plans, missingItems = producer-less/root gaps).
+     *
+     * <p>Returns false when the closure declines or diverges (no root
+     * pattern, net-losing cycle past the CAP) — the caller keeps the legacy
+     * pipeline. Not yet in the closure's scope (kept mechanisms, §5.4 step 3
+     * wires them once the default flips): priming floors for circulating
+     * keys (a catalyst's first craft precedes its first return) and the
+     * NBT-variant stock refinement.
+     */
+    private boolean runClosure() {
+        if (rootPattern == null || outputKey == null || requestAmount == null
+                || requestAmount.signum() <= 0) {
+            return false;
+        }
+        PlanClosure.View view = new PlanClosure.View() {
+            @Override
+            public ICraftingPatternDetails producerOf(IAEItemStack key) {
+                // byproduct-rooted request: the root key has no resolver
+                // entry, but the request's own pattern produces it
+                if (key.isSameType(outputKey)) {
+                    return rootPattern;
+                }
+                ICraftingPatternDetails p =
+                        patternResolver != null ? patternResolver.apply(key) : null;
+                // solver-view fallback: exactly one any-slot producer (the
+                // ring solver's precedent) — a byproduct-only key joins the
+                // closure through it instead of shipping as a false leaf
+                return p != null ? p : PatternCompiler.resolveAnyOutputProducer(key);
+            }
+
+            @Override
+            public Map<IAEItemStack, BigInteger> inputsOf(ICraftingPatternDetails pattern) {
+                // ALL condensed lines: a returned/catalyst line nets to zero
+                // (it is an output of the same pattern), so counting it keeps
+                // the ledger honest without a dedicated seed mechanism
+                return perCraftPrimings(pattern);
+            }
+
+            @Override
+            public Map<IAEItemStack, BigInteger> outputsOf(ICraftingPatternDetails pattern) {
+                return perCraftCondensedOutputs(pattern);
+            }
+
+            @Override
+            public BigInteger stockOf(IAEItemStack key) {
+                return BigInteger.valueOf(Math.max(0L, executeStartStock.get(key)));
+            }
+        };
+        PlanClosure.Result r = PlanClosure.close(outputKey, requestAmount, rootPattern, view);
+        if (r == null || !r.converged) {
+            Log.LOG.warn("[AE2-VM] plan closure diverged after {} rounds; "
+                    + "falling back to the stage pipeline",
+                    r == null ? 0 : r.rounds);
+            return false;
+        }
+        // Priming floors (the KEPT mechanism, CLOSURE-DESIGN.md §5.3): the
+        // ledger is balanced for keys whose production CIRCULATES (net-zero
+        // cycles, self-returned catalysts), but a real CPU's first craft in a
+        // cycle precedes the first return — the probe forces the priming
+        // inventory the task order needs, with the closure's net draw as its
+        // netDrawOf (a DAG's deferral never forces: a pass that fires nothing
+        // is a true cycle deadlock, not a waiting consumer).
+        RingSolver.RingPlan closurePlan = new RingSolver.RingPlan();
+        closurePlan.patterns.putAll(r.plans);
+        Set<IAEItemStack> members = new HashSet<>();
+        for (ICraftingPatternDetails p : r.plans.keySet()) {
+            for (IAEItemStack ok : perCraftCondensedOutputs(p).keySet()) {
+                members.add(copyOf(ok));
+            }
+        }
+        RingSolver.FloorPlan floors = RingSolver.startupFloors(
+                Collections.singletonList(closurePlan),
+                CraftingVM::perCraftPrimings, CraftingVM::perCraftOutputs,
+                k -> r.netDraw.getOrDefault(copyOf(k), BigInteger.ZERO),
+                outputKey, members);
+        ringTaskOrder.clear();
+        ringTaskOrder.addAll(floors.order());
+        patternTimes.clear();
+        for (var e : r.plans.entrySet()) {
+            long t = toLongSafe(e.getValue(), "closure-plan");
+            if (t <= 0) continue;
+            patternTimes.put(e.getKey(), t);
+            simulation.addCrafting(e.getKey(), t);
+            simulation.addBytes(t);
+        }
+        // job-start capital: the net draw W plus the additive priming floors,
+        // billed against stock — beyond stock it is an honest shortfall (the
+        // CPU cannot boot the plan). Floor-only keys (net-zero circulation)
+        // are billed too, so the union is taken.
+        Set<IAEItemStack> billed = new LinkedHashSet<>();
+        for (IAEItemStack k : r.withdraw.keySet()) billed.add(copyOf(k));
+        for (IAEItemStack k : floors.floors().keySet()) billed.add(copyOf(k));
+        for (IAEItemStack k : billed) {
+            long w = toLongSafe(getPool(r.withdraw, k), "closure-w");
+            long floor = toLongSafe(floors.floors().getOrDefault(k, BigInteger.ZERO),
+                    "closure-floor");
+            long bill = w + floor;
+            if (bill <= 0) continue;
+            long stock = Math.max(0L, executeStartStock.get(k));
+            long got = Math.min(bill, stock);
+            usedItems.add(k, got);
+            if (got < bill) missingItems.add(k, bill - got);
+            simulation.addBytes(bill);
+            nodeCount++;
+        }
+        for (var e : r.missing.entrySet()) {
+            long m = toLongSafe(e.getValue(), "closure-miss");
+            if (m > 0) missingItems.add(e.getKey(), m);
+        }
+        for (var e : r.surplus.entrySet()) {
+            long s = toLongSafe(e.getValue(), "closure-surplus");
+            if (s > 0) emittedItems.add(e.getKey(), s);
+        }
+        Log.LOG.debug("[AE2-VM] plan closure converged in {} rounds: {} patterns, "
+                        + "{} crafts, {} used keys, {} missing, {} surplus",
+                r.rounds, r.plans.size(), patternTimes.values().stream()
+                        .reduce(0L, Long::sum),
+                usedItems.size(), missingItems.size(), emittedItems.size());
+        return true;
+    }
+
+    /**
+     * Per-craft typed outputs from the CONDENSED array — the form the trace
+     * dumps, {@link PlanInvariants} and the offline ground truth all read.
+     */
+    private static Map<IAEItemStack, BigInteger> perCraftCondensedOutputs(ICraftingPatternDetails d) {
+        Map<IAEItemStack, BigInteger> out = new HashMap<>();
+        IAEItemStack[] outs = safeCondensedOutputs(d);
+        if (outs != null) {
+            for (IAEItemStack o : outs) {
+                if (o == null || o.getStackSize() <= 0) continue;
+                IAEItemStack ok = o.copy().setStackSize(1);
+                ok.reset();
+                out.merge(ok, BigInteger.valueOf(o.getStackSize()), BigInteger::add);
+            }
+        }
+        return out;
+    }
+
+    private static IAEItemStack[] safeCondensedOutputs(ICraftingPatternDetails details) {
+        try {
+            return details.getCondensedOutputs();
+        } catch (Throwable t) {
+            return null;
+        }
+    }
 
     private void solveRings(Map<IAEItemStack, BigInteger> total,
                             Map<IAEItemStack, BigInteger> itemDemand) {
