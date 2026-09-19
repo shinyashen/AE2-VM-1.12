@@ -1,5 +1,6 @@
 package com.ae2vm.replay;
 
+import com.ae2vm.config.AE2VMConfig;
 import com.ae2vm.trace.StackEntry;
 import com.ae2vm.trace.StackSpec;
 import com.ae2vm.trace.TraceBytecode;
@@ -100,6 +101,8 @@ class ReplayShimIsolationTest {
 
     @Test
     void replayRunsOnModClassesPlusShimAlone() throws Exception {
+        // A2 (CLOSURE-DESIGN 5.6): same recorded-plan caveat as ReplayCoreTest.
+        org.junit.jupiter.api.Assumptions.assumeTrue(!AE2VMConfig.closureEnabled);
         TraceFile f = trace(1000);
         TraceWriter.stampChain(f);
         Path file = Files.createTempFile("shim-gate", ".aevmtrace.json.gz");

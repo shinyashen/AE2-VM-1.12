@@ -62,22 +62,23 @@ class GaiaRingLiveReproTest {
         VMPlan plan = Bench.run(craft, 10000, sim);
         CpuLifecycleAssert.auto(plan);
 
-        assertEquals(Long.valueOf(1250L), plan.getPatternTimes().get(recycle),
-                "the recycling pattern folds at the crafted-delivery fixed point");
-        assertEquals(Long.valueOf(1250L), plan.getPatternTimes().get(craft),
-                "the crafting pattern folds at the crafted-delivery fixed point");
-        assertEquals(Long.valueOf(1250L), plan.getPatternTimes().get(terrasteel),
-                "the out-of-ring ingredient's own pattern must be scheduled for its deficit (E-case)");
+        long turns = closure() ? 834L : 1250L;
+        assertEquals(Long.valueOf(turns), plan.getPatternTimes().get(recycle),
+                "the recycling pattern folds at the fixed point (closure least / ring solver)");
+        assertEquals(Long.valueOf(turns), plan.getPatternTimes().get(craft),
+                "the crafting pattern folds at the fixed point");
+        assertEquals(Long.valueOf(turns), plan.getPatternTimes().get(terrasteel),
+                "the out-of-ring ingredient's own pattern must be scheduled for its deficit");
         Map<String, Long> missing = new LinkedHashMap<>();
         for (var e : plan.getMissingItems().entrySet()) {
             missing.put(((BenchAEItemStack) e.getKey()).id, e.getValue());
         }
         assertEquals(2, missing.size(),
                 "the spirit capital and the iron gap are the only disclosures, got " + missing);
-        assertEquals(Long.valueOf(4501L), missing.get("S"),
-                "makeIngot's whole 4x1250 draw is job-start capital; 499 stocked");
-        assertEquals(Long.valueOf(2500L), missing.get("Fe"),
-                "1250 terrasteel crafts need 2500 iron — the gap flows down the DAG");
+        assertEquals(Long.valueOf(closure() ? 2837L : 4501L), missing.get("S"),
+                "makeIngot's whole 4x-turns draw is job-start capital; 499 stocked");
+        assertEquals(Long.valueOf(closure() ? 1668L : 2500L), missing.get("Fe"),
+                "the terrasteel crafts need 2 Fe each — the gap flows down the DAG");
         assertFalse(missing.containsKey("T"),
                 "the E-case supersedes the terrasteel shortfall with its own deeper disclosure");
     }
@@ -98,8 +99,14 @@ class GaiaRingLiveReproTest {
         BenchSimulationState sim = new BenchSimulationState().seed("S", 5000).seed("Fe", 2500);
         VMPlan plan = Bench.run(craft, 10000, sim);
         CpuLifecycleAssert.auto(plan);
-        assertEquals(Long.valueOf(1250L), plan.getPatternTimes().get(recycle));
-        assertEquals(Long.valueOf(1250L), plan.getPatternTimes().get(craft));
+        assertEquals(Long.valueOf(closure() ? 834L : 1250L), plan.getPatternTimes().get(recycle));
+        assertEquals(Long.valueOf(closure() ? 834L : 1250L), plan.getPatternTimes().get(craft));
         assertTrue(plan.getMissingItems().isEmpty(), "nothing missing: " + plan.getMissingItems());
     }
+
+    /** True when the closure bypass owns coverage (dual-mode expectations). */
+    private static boolean closure() {
+        return AE2VMConfig.closureEnabled;
+    }
+
 }

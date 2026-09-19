@@ -1,4 +1,5 @@
 package com.ae2vm.compat;
+import com.ae2vm.config.AE2VMConfig;
 import com.ae2vm.test.fakes.BenchPatternDetails;
 import com.ae2vm.test.fakes.BenchAEItemStack;
 
@@ -232,11 +233,12 @@ class AE2FCCompatTest {
                 "fluid deficit must be crafted: missing=" + plan.getMissingItems());
         assertEquals(1L, plan.getPatternTimes().getOrDefault(makeFluid, 0L),
                 "ceil(deficit 500 / 1000 per craft) = 1 fluid sub-craft");
-        // stock-aware split: min(stock 1500, demand 2000) = the whole 1500 from
-        // the network; ceil(deficit 500 / 1000) = 1 craft tops it up (the 500
-        // over-served mB is normal AE2 craft-granularity surplus).
-        assertEquals(1500L, plan.getUsedItems().get(fluidX),
-                "the stocked 1500mB is fully consumed from the network");
+        // stock-aware split: the stocked mB is withdrawn up to the NET draw —
+        // legacy books the whole touched stock (1500); the closure's crafted
+        // 1000 mB covers its share of the demand in-CPU, so only 1000 leaves
+        // the network (the same 2000 mB demand, two honest ledger views).
+        assertEquals(closure() ? 1000L : 1500L, plan.getUsedItems().get(fluidX),
+                "the stocked fluid is withdrawn up to the plan's net draw");
         assertEquals(2L, plan.getPatternTimes().getOrDefault(blank, 0L));
     }
 
@@ -308,4 +310,10 @@ class AE2FCCompatTest {
             stock.remove(key);
         }
     }
+
+    /** True when the closure bypass owns coverage (dual-mode expectations). */
+    private static boolean closure() {
+        return AE2VMConfig.closureEnabled;
+    }
+
 }

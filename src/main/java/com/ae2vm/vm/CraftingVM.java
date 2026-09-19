@@ -2573,6 +2573,65 @@ public class CraftingVM {
             public BigInteger stockOf(IAEItemStack key) {
                 return BigInteger.valueOf(Math.max(0L, executeStartStock.get(key)));
             }
+
+            @Override
+            public Map<IAEItemStack, BigInteger> fuzzyInputsOf(ICraftingPatternDetails pattern) {
+                // the compile registered a substitute group for an input key
+                // iff its pattern is craftable with a replacement-enabled slot
+                // on it (a processing fake's substitute table registers
+                // NOTHING — PatternHelper :87) — the same gate the bytecode's
+                // FUZZY_SLOT marker uses
+                Map<IAEItemStack, BigInteger> out = new HashMap<>();
+                IAEItemStack[] ins = safeCondensedInputs(pattern);
+                if (ins == null) {
+                    return out;
+                }
+                for (IAEItemStack in : ins) {
+                    if (in == null || in.getStackSize() <= 0) continue;
+                    if (PatternCompiler.getFuzzyGroup(in).size() > 1) {
+                        IAEItemStack ik = in.copy().setStackSize(1);
+                        ik.reset();
+                        out.merge(ik, BigInteger.valueOf(in.getStackSize()), BigInteger::add);
+                    }
+                }
+                return out;
+            }
+
+            @Override
+            public List<IAEItemStack> nbtFamilyOf(IAEItemStack key) {
+                // processing default fuzzy: same-item damage-equal variants
+                // present in the network stock (fluid fakes excluded — the NBT
+                // IS the fluid identity)
+                List<IAEItemStack> family = new ArrayList<>();
+                if (!PatternCompiler.isProcessingInput(key)
+                        || AE2FCCompat.isFluidFakeItem(key)) {
+                    return family;
+                }
+                for (IAEItemStack v : simulation.findFuzzyFamily(key)) {
+                    if (v == null || v.isSameType(key)) continue;
+                    // 1.12 damage is item identity: only same-damage variants
+                    if (v.getItemDamage() != key.getItemDamage()) continue;
+                    if (Math.max(0L, executeStartStock.get(v)) <= 0) continue;
+                    family.add(v);
+                }
+                return family;
+            }
+
+            @Override
+            public boolean isProcessingInput(IAEItemStack key) {
+                return PatternCompiler.isProcessingInput(key)
+                        && !AE2FCCompat.isFluidFakeItem(key);
+            }
+
+            @Override
+            public List<IAEItemStack> substitutesOf(IAEItemStack key) {
+                List<IAEItemStack> subs = new ArrayList<>();
+                for (IAEItemStack v : PatternCompiler.getFuzzyGroup(key)) {
+                    if (v == null || v.isSameType(key)) continue;
+                    subs.add(v);
+                }
+                return subs;
+            }
         };
         PlanClosure.Result r = PlanClosure.close(outputKey, requestAmount, rootPattern, view);
         if (r == null || !r.converged) {

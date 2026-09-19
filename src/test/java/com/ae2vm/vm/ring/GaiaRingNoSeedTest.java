@@ -56,17 +56,23 @@ class GaiaRingNoSeedTest {
         Long spiritCrafts = plan.getPatternTimes().get(makeSpirit);
         assertTrue(ingotCrafts != null && ingotCrafts > 0,
                 "recycling pattern must join the plan (ring must fold)");
-        assertEquals(Long.valueOf(1250L), spiritCrafts,
-                "the ring nets 8 spirits per round pair: 1250 rounds craft the 10000 delivery");
-        assertEquals(Long.valueOf(1250L), ingotCrafts,
+        assertEquals(Long.valueOf(closure() ? 834L : 1250L), spiritCrafts,
+                "the fixed point crafts the 10000 delivery (closure least fixpoint / ring solver)");
+        assertEquals(Long.valueOf(closure() ? 834L : 1250L), ingotCrafts,
                 "the ring balances recycling at the same craft count");
 
         Map<String, Long> missing = new HashMap<>();
         for (var e : plan.getMissingItems().entrySet()) {
             missing.put(((BenchAEItemStack) e.getKey()).id, e.getValue());
         }
-        assertEquals(Map.of("S", 5000L), missing,
-                "the faithful disclosure is makeIngot's whole 4x1250 input draw — "
+        assertEquals(Map.of("S", closure() ? 3336L : 5000L), missing,
+                "the faithful disclosure is makeIngot's whole input draw — "
                         + "timing seeds alone would starve the CPU at t=0");
     }
+
+    /** True when the closure bypass owns coverage (dual-mode expectations). */
+    private static boolean closure() {
+        return AE2VMConfig.closureEnabled;
+    }
+
 }

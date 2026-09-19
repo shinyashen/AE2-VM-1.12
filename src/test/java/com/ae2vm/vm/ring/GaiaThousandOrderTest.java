@@ -59,19 +59,42 @@ class GaiaThousandOrderTest {
                 .seed("X", 222897314L);
         VMPlan plan = Bench.run(p0, 1000, sim);
 
-        assertEquals(Long.valueOf(125L), plan.getPatternTimes().get(p0), "P0 loops");
-        assertEquals(Long.valueOf(124L), plan.getPatternTimes().get(p1),
-                "the stocked seed spares exactly one recycler round");
-        assertTrue(plan.getMissingItems().isEmpty(),
-                "the true net draw is fully stocked; nothing missing: " + plan.getMissingItems());
-        assertFalse(plan.isSimulation(), "the order must be acceptable");
-        assertEquals(496L, plan.getUsedItems().get(Bench.k("g5")), "P1's whole spirit draw");
-        assertEquals(1L, plan.getUsedItems().get(Bench.k("g14")), "the spared round's seed");
-        // The live web (2495 patterns) additionally withdrew 83 ingots during
-        // its own propagation walk (207 total); this 3-pattern mirror bills
-        // exactly the ring's draw.
-        assertEquals(124L, plan.getUsedItems().get(Bench.k("g4")), "P1's ingot draw");
-        assertEquals(125L, plan.getEmittedItems().get(Bench.k("dice")), "the passive dice surplus");
+        if (closure()) {
+            // the closure's least fixpoint: seed 84 root crafts (the delivery),
+            // the recycler tops g14 up from its 1 stocked unit, and the ring's
+            // own g5 production covers p1's draw from STOCK — same delivery,
+            // fewer crafts, less startup capital (CLOSURE-DESIGN 5.5)
+            assertEquals(Long.valueOf(84L), plan.getPatternTimes().get(p0), "P0 loops (closure seed)");
+            assertEquals(Long.valueOf(83L), plan.getPatternTimes().get(p1),
+                    "the stocked seed spares one recycler round");
+            assertTrue(plan.getMissingItems().isEmpty(),
+                    "the least fixpoint is fully stocked: " + plan.getMissingItems());
+            assertFalse(plan.isSimulation(), "the order must be acceptable");
+            assertEquals(332L, plan.getUsedItems().get(Bench.k("g5")), "p1's in-plan spirit draw");
+            assertEquals(1L, plan.getUsedItems().get(Bench.k("g14")), "the stocked seed");
+            assertEquals(83L, plan.getUsedItems().get(Bench.k("g4")), "p1's ingot draw");
+            assertEquals(84L, plan.getEmittedItems().get(Bench.k("dice")), "the passive dice surplus");
+        } else {
+            assertEquals(Long.valueOf(125L), plan.getPatternTimes().get(p0), "P0 loops");
+            assertEquals(Long.valueOf(124L), plan.getPatternTimes().get(p1),
+                    "the stocked seed spares exactly one recycler round");
+            assertTrue(plan.getMissingItems().isEmpty(),
+                    "the true net draw is fully stocked; nothing missing: " + plan.getMissingItems());
+            assertFalse(plan.isSimulation(), "the order must be acceptable");
+            assertEquals(496L, plan.getUsedItems().get(Bench.k("g5")), "P1's whole spirit draw");
+            assertEquals(1L, plan.getUsedItems().get(Bench.k("g14")), "the spared round's seed");
+            // The live web (2495 patterns) additionally withdrew 83 ingots during
+            // its own propagation walk (207 total); this 3-pattern mirror bills
+            // exactly the ring's draw.
+            assertEquals(124L, plan.getUsedItems().get(Bench.k("g4")), "P1's ingot draw");
+            assertEquals(125L, plan.getEmittedItems().get(Bench.k("dice")), "the passive dice surplus");
+        }
         CpuLifecycleAssert.complete(plan, PatternCompat.getPrimaryOutput(p0), 1000);
     }
+
+    /** True when the closure bypass owns coverage (dual-mode expectations). */
+    private static boolean closure() {
+        return AE2VMConfig.closureEnabled;
+    }
+
 }

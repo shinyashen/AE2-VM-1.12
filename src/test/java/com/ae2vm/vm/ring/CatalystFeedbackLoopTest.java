@@ -224,8 +224,8 @@ class CatalystFeedbackLoopTest {
         VMPlan plan = Bench.run(loop[1], 8, sim);
         CpuLifecycleAssert.auto(plan);
         assertFalse(feasible(plan), "starved lossy cycle must be infeasible, got missing=" + dump(plan));
-        assertTrue(infeasibleMatches(plan, Map.of("A", 2L)),
-                "starved lossy cycle must report A>=2 missing, got " + dump(plan));
+        assertTrue(infeasibleMatches(plan, Map.of("A", closure() ? 1L : 2L)),
+                "starved lossy cycle must report the A startup gap (closure net 1 / legacy priming 2), got " + dump(plan));
     }
 
     // ---- ring variants from the design review (net-amplifying shapes) ----
@@ -260,13 +260,15 @@ class CatalystFeedbackLoopTest {
         CpuLifecycleAssert.auto(plan);
         assertTrue(feasible(plan),
                 "byproduct ring with the full input draw stocked must be feasible, got " + dump(plan));
-        assertEquals(5000, usedOf(plan, "A"), "the root's gross input draw is the job-start capital");
+        assertEquals(closure() ? 3336L : 5000L, usedOf(plan, "A"),
+                closure() ? "the least fixpoint runs 834 rounds: net A capital only"
+                          : "the root's gross input draw is the job-start capital");
         assertEquals(0, usedOf(plan, "B"), "B circulates: primed by the recycler's own seed order, no capital");
         // exact turns: the solved ring must be the ONLY scheduling — a replayed
         // pre-solver count on top (the old integration bug) would double the
         // dissolve crafts with no backed inputs
-        assertEquals(1250, timesOf(plan, "B"), "recycler (B->12A+C+D) turns");
-        assertEquals(1250, timesOf(plan, "A"), "makeIngot (4A->B) turns");
+        assertEquals(closure() ? 834L : 1250L, timesOf(plan, "B"), "recycler (B->12A+C+D) turns");
+        assertEquals(closure() ? 834L : 1250L, timesOf(plan, "A"), "makeIngot (4A->B) turns");
     }
 
     @Test
@@ -282,7 +284,7 @@ class CatalystFeedbackLoopTest {
                 "unseeded byproduct ring must be infeasible, got feasible");
         // the faithful disclosure: makeIngot's whole draw (4x1250) is
         // job-start capital the empty network cannot cover
-        assertTrue(infeasibleMatches(plan, Map.of("A", 5000L)),
+        assertTrue(infeasibleMatches(plan, Map.of("A", closure() ? 3336L : 5000L)),
                 "unseeded byproduct ring must report its input-draw capital, got " + dump(plan));
     }
 
@@ -310,7 +312,7 @@ class CatalystFeedbackLoopTest {
         VMPlan over = Bench.run(loop[1], 10000, sim);
         CpuLifecycleAssert.auto(over);
         assertTrue(feasible(over), "over-request must stay feasible, got " + dump(over));
-        assertEquals(1250, cEmittedUnder, "the passive byproduct surplus is emitable");
+        assertEquals(closure() ? 834L : 1250L, cEmittedUnder, "the passive byproduct surplus is emitable");
         System.out.println("[RING-VARIANT] C external: under-request C-emitted=" + cEmittedUnder
                 + " over-request missing=" + dump(over));
     }
@@ -333,11 +335,13 @@ class CatalystFeedbackLoopTest {
         CpuLifecycleAssert.auto(plan);
         assertTrue(feasible(plan),
                 "shared-intermediate ring with sufficient capital must be feasible, got " + dump(plan));
-        assertEquals(20000, usedOf(plan, "A"), "the root's gross input draw is the job-start capital");
-        assertEquals(2500, usedOf(plan, "C"), "the external fuel draw is job-start capital too");
-        assertEquals(2500, timesOf(plan, "D", "B"), "recycler (D+B->12A) rounds");
-        assertEquals(2500, timesOf(plan, "B", "C"), "makeD (B+C->D) rounds");
-        assertEquals(5000, timesOf(plan, "A"), "makeIngot (4A->B) rounds");
+        assertEquals(closure() ? 6672L : 20000L, usedOf(plan, "A"),
+                closure() ? "the least fixpoint: 834 recycler rounds feed the ingot leg from stock"
+                          : "the root's gross input draw is the job-start capital");
+        assertEquals(closure() ? 834L : 2500L, usedOf(plan, "C"), "the external fuel draw is job-start capital too");
+        assertEquals(closure() ? 834L : 2500L, timesOf(plan, "D", "B"), "recycler (D+B->12A) rounds");
+        assertEquals(closure() ? 834L : 2500L, timesOf(plan, "B", "C"), "makeD (B+C->D) rounds");
+        assertEquals(closure() ? 1668L : 5000L, timesOf(plan, "A"), "makeIngot (4A->B) rounds");
     }
 
     @Test
@@ -353,9 +357,19 @@ class CatalystFeedbackLoopTest {
         // faithful plan consumes 2500 C, the network holds 1000, so the
         // extraction shortfall must surface as missing C (never a false
         // feasible, never a missing on a ring-internal key).
-        assertFalse(feasible(plan), "fuel-starved shared ring must be infeasible, got " + dump(plan));
-        assertTrue(infeasibleMatches(plan, Map.of("C", 1500L)),
-                "fuel-starved shared ring must report the C shortfall, got " + dump(plan));
+        if (closure()) {
+            // the least fixpoint rides 834 recycler rounds and feeds the
+            // makeIngot leg from the stocked A: the C draw drops to 834 <= 1000
+            // — genuinely feasible where the ring solver's 2500-round fixed
+            // point starved on fuel
+            assertTrue(feasible(plan), "least-fixpoint plan fits the stocked fuel, got " + dump(plan));
+            assertEquals(6672L, usedOf(plan, "A"), "closure A draw");
+            assertEquals(834L, usedOf(plan, "C"), "closure C draw");
+        } else {
+            assertFalse(feasible(plan), "fuel-starved shared ring must be infeasible, got " + dump(plan));
+            assertTrue(infeasibleMatches(plan, Map.of("C", 1500L)),
+                    "fuel-starved shared ring must report the C shortfall, got " + dump(plan));
+        }
     }
 
     // ---- ordering a ring BYPRODUCT directly (external-root driver) ----
@@ -453,9 +467,11 @@ class CatalystFeedbackLoopTest {
         CpuLifecycleAssert.auto(plan);
         assertTrue(feasible(plan),
                 "byproduct-intermediate ring must be feasible, got " + dump(plan));
-        assertEquals(5000, usedOf(plan, "A"), "the root's gross input draw is the job-start capital");
-        assertEquals(1250, timesOf(plan, "A"), "makeIngotBy (4A->B+X) turns");
-        assertEquals(1250, timesOf(plan, "B", "X"), "recycler (B+X->12A) turns");
+        assertEquals(closure() ? 3336L : 5000L, usedOf(plan, "A"),
+                closure() ? "the least fixpoint: 834 rounds draw only 4x834 A"
+                          : "the root's gross input draw is the job-start capital");
+        assertEquals(closure() ? 834L : 1250L, timesOf(plan, "A"), "makeIngotBy (4A->B+X) turns");
+        assertEquals(closure() ? 834L : 1250L, timesOf(plan, "B", "X"), "recycler (B+X->12A) turns");
     }
 
     @Test
@@ -471,7 +487,7 @@ class CatalystFeedbackLoopTest {
                 "unseeded byproduct-intermediate ring must be infeasible, got feasible");
         // the faithful disclosure: makeIngotBy's whole draw (4x1250) is
         // job-start capital the empty network cannot cover
-        assertTrue(infeasibleMatches(plan, Map.of("A", 5000L)),
+        assertTrue(infeasibleMatches(plan, Map.of("A", closure() ? 3336L : 5000L)),
                 "unseeded byproduct-intermediate ring must report its input-draw capital, got " + dump(plan));
     }
 
@@ -493,10 +509,10 @@ class CatalystFeedbackLoopTest {
         CpuLifecycleAssert.auto(plan);
         assertFalse(feasible(plan),
                 "member-root re-consumption without X stock must be infeasible, got " + dump(plan));
-        assertTrue(infeasibleMatches(plan, Map.of("X", 2212L)),
+        assertTrue(infeasibleMatches(plan, Map.of("X", closure() ? 1475L : 2212L)),
                 "the recycler's re-consumed X draw must be disclosed, got " + dump(plan));
-        assertEquals(7212, timesOf(plan, "A"), "makeIngotBy (4A->B+X) turns");
-        assertEquals(2212, timesOf(plan, "B", "X"), "recycler (B+X->12A) turns");
+        assertEquals(closure() ? 5000L : 7212L, timesOf(plan, "A"), "makeIngotBy (4A->B+X) turns");
+        assertEquals(closure() ? 1475L : 2212L, timesOf(plan, "B", "X"), "recycler (B+X->12A) turns");
     }
 
     @Test
@@ -513,9 +529,9 @@ class CatalystFeedbackLoopTest {
         CpuLifecycleAssert.auto(plan);
         assertTrue(feasible(plan),
                 "member-root request with the re-consumed draw stocked must be feasible, got " + dump(plan));
-        assertEquals(2212, usedOf(plan, "X"), "the re-consumed root draw is job-start capital");
-        assertEquals(7212, timesOf(plan, "A"), "makeIngotBy (4A->B+X) turns");
-        assertEquals(2212, timesOf(plan, "B", "X"), "recycler (B+X->12A) turns");
+        assertEquals(closure() ? 1475L : 2212L, usedOf(plan, "X"), "the re-consumed root draw is job-start capital");
+        assertEquals(closure() ? 5000L : 7212L, timesOf(plan, "A"), "makeIngotBy (4A->B+X) turns");
+        assertEquals(closure() ? 1475L : 2212L, timesOf(plan, "B", "X"), "recycler (B+X->12A) turns");
     }
 
     @Test
@@ -536,8 +552,8 @@ class CatalystFeedbackLoopTest {
         CpuLifecycleAssert.auto(plan);
         assertTrue(feasible(plan),
                 "ambiguous X producer must degrade gracefully, got " + dump(plan));
-        assertEquals(1250, timesOf(plan, "A"), "makeIngotBy (4A->B+X) turns");
-        assertEquals(1250, timesOf(plan, "B", "X"), "recycler (B+X->12A) turns");
+        assertEquals(closure() ? 834L : 1250L, timesOf(plan, "A"), "makeIngotBy (4A->B+X) turns");
+        assertEquals(closure() ? 834L : 1250L, timesOf(plan, "B", "X"), "recycler (B+X->12A) turns");
     }
 
     // ---- coupled rings (consumers-first solve + net write-back) ----
@@ -574,17 +590,17 @@ class CatalystFeedbackLoopTest {
                 "coupled rings must close on the amplified demand, got " + dump(plan));
         // the stocked B spares the solve one makeIngot craft (non-root member
         // stock is round-sparing), so the root draw is 4×1249
-        assertEquals(4996, usedOf(plan, "A"), "the root's input draw is the job-start capital");
+        assertEquals(closure() ? 3332L : 4996L, usedOf(plan, "A"), "the root's input draw is the job-start capital");
         assertEquals(2, usedOf(plan, "F"), "F's net draw: 7496 consumed minus 7494 circulating");
         assertTrue(usedOf(plan, "B") + usedOf(plan, "X") >= 1
                         && usedOf(plan, "B") <= 1 && usedOf(plan, "X") <= 1,
                 "priming capital stays at unit scale across the circulating keys");
-        assertEquals(1249, timesOf(plan, "A"), "makeIngot (4A->B) turns");
-        assertEquals(1250, timesOf(plan, "B", "X"), "recycler (B+X->12A) turns");
+        assertEquals(closure() ? 833L : 1249L, timesOf(plan, "A"), "makeIngot (4A->B) turns");
+        assertEquals(closure() ? 834L : 1250L, timesOf(plan, "B", "X"), "recycler (B+X->12A) turns");
         // the three seeded units (B, X, F-stock) spare coupled rounds down
         // the write-back chain: the from-below fixed point absorbs them
-        assertEquals(3745, timesOf(plan, "F"), "makeX (2F->X) turns");
-        assertEquals(2496, timesOf(plan, "X"), "makeF (X->3F) turns");
+        assertEquals(closure() ? 2497L : 3745L, timesOf(plan, "F"), "makeX (2F->X) turns");
+        assertEquals(closure() ? 1664L : 2496L, timesOf(plan, "X"), "makeF (X->3F) turns");
     }
 
     // ---- amplifying loop: the real-world gaia-spirit report ----
@@ -605,12 +621,14 @@ class CatalystFeedbackLoopTest {
         CpuLifecycleAssert.auto(plan);
         assertTrue(feasible(plan),
                 "amplifying ring with the full input draw stocked must be feasible, got " + dump(plan));
-        assertEquals(5000, usedOf(plan, "S"), "the root's gross input draw is the job-start capital");
+        assertEquals(closure() ? 3336L : 5000L, usedOf(plan, "S"),
+                closure() ? "the least fixpoint: 834 rounds draw 4x834 spirits"
+                          : "the root's gross input draw is the job-start capital");
         assertEquals(0, usedOf(plan, "I"), "I circulates: no priming capital beyond the net draw");
         assertTrue(schedulesPatternWithInput(plan, "S"),
                 "plan must schedule the ingot-synthesis pattern ");
-        assertEquals(1250, timesOf(plan, "S"), "makeIngot (4S->I) turns");
-        assertEquals(1250, timesOf(plan, "I"), "makeSpirit (I->12S) turns");
+        assertEquals(closure() ? 834L : 1250L, timesOf(plan, "S"), "makeIngot (4S->I) turns");
+        assertEquals(closure() ? 834L : 1250L, timesOf(plan, "I"), "makeSpirit (I->12S) turns");
     }
 
     @Test
@@ -627,12 +645,12 @@ class CatalystFeedbackLoopTest {
         VMPlan plan = Bench.run(loop[1], 10000, sim);
         CpuLifecycleAssert.auto(plan);
         assertFalse(feasible(plan), "under-capitalized amplifying ring must be infeasible, got " + dump(plan));
-        assertTrue(infeasibleMatches(plan, Map.of("S", 2697L)),
+        assertTrue(infeasibleMatches(plan, Map.of("S", closure() ? 1033L : 2697L)),
                 "the input-draw shortfall must be disclosed, got " + dump(plan));
         assertTrue(schedulesPatternWithInput(plan, "S"),
                 "plan must schedule the ingot-synthesis pattern ");
-        assertEquals(1250, timesOf(plan, "S"), "makeIngot (4S->I) turns");
-        assertEquals(1250, timesOf(plan, "I"), "makeSpirit (I->12S) turns");
+        assertEquals(closure() ? 834L : 1250L, timesOf(plan, "S"), "makeIngot (4S->I) turns");
+        assertEquals(closure() ? 834L : 1250L, timesOf(plan, "I"), "makeSpirit (I->12S) turns");
     }
 
     @Test
@@ -648,8 +666,14 @@ class CatalystFeedbackLoopTest {
                 "unbounded-stock amplifying ring must be feasible, got " + dump(plan));
         // the delivery is CRAFTED even when stock could cover it (a job
         // ignores the requested item's own stock) — the idle plan is gone
-        assertEquals(1250, timesOf(plan, "S"), "makeIngot (4S->I) turns");
-        assertEquals(1250, timesOf(plan, "I"), "makeSpirit (I->12S) turns");
-        assertEquals(5000, usedOf(plan, "S"), "the input draw is billed no matter how deep the stock");
+        assertEquals(closure() ? 834L : 1250L, timesOf(plan, "S"), "makeIngot (4S->I) turns");
+        assertEquals(closure() ? 834L : 1250L, timesOf(plan, "I"), "makeSpirit (I->12S) turns");
+        assertEquals(closure() ? 3336L : 5000L, usedOf(plan, "S"), "the input draw is billed no matter how deep the stock");
     }
+
+    /** True when the closure bypass owns coverage (dual-mode expectations). */
+    private static boolean closure() {
+        return AE2VMConfig.closureEnabled;
+    }
+
 }

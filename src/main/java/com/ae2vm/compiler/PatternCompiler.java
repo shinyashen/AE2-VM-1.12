@@ -57,6 +57,11 @@ public final class PatternCompiler {
     /** Signals a pattern-set change; invalidates every latched consumer. */
     public static void bumpPatternSetVersion() {
         PATTERN_SET_VERSION.incrementAndGet();
+        // the byproduct index is DERIVED from the compiled pattern set: a
+        // removed pattern must not keep serving as an any-output producer
+        // (the closure/capture fallback would re-schedule it). It re-registers
+        // on the next compileIfAbsent of a surviving pattern.
+        ANY_OUTPUT_PRODUCERS.clear();
     }
 
     private static final Map<ICraftingPatternDetails, CraftingBytecode> COMPILED_PATTERNS =

@@ -662,6 +662,17 @@ final class RingSolver {
             Set<IAEItemStack> members,
             Map<IAEItemStack, BigInteger> floor) {
         Map<IAEItemStack, BigInteger> ledger = new HashMap<>();
+        // the job-start withdrawal IS the CPU's starting inventory: seed every
+        // member key's net draw up front. (The old getOrDefault-when-absent
+        // fallback lost it once a refill put the key in the ledger at zero —
+        // a pass-2+ reburn then phantom-FORCED fires and billed a floor the
+        // real plan never needs.)
+        for (IAEItemStack m : members) {
+            BigInteger nd = netDrawOf.apply(m);
+            if (nd != null && nd.signum() > 0) {
+                ledger.put(m, nd);
+            }
+        }
         // passes: bounded by total capped crafts (each pass fires >= 1 craft
         // or forces); plenty for the feedback loops to flow
         BigInteger totalCrafts = remaining.values().stream()

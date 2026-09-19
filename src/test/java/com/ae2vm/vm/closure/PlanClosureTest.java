@@ -182,19 +182,39 @@ class PlanClosureTest {
     }
 
     @Test
-    void catalystNetsToZeroInTheLedger() {
-        // X + cat -> Y + cat: the catalyst's consumption is refilled by its
-        // own return — the net draw is zero (the one-unit PRIMING is the
-        // floor probe's kept scope, not the coverage ledger's)
-        BenchPatternDetails pY = pat(new String[]{"Y", "cat"}, new long[]{1, 1},
-                "X", 1L, "cat", 1L);
-        List<BenchPatternDetails> pats = List.of(pY);
-        Map<String, Long> stock = Map.of("X", 100L, "cat", 1L);
-        PlanClosure.Result r = PlanClosure.close(k("Y"), BigInteger.TEN, pY, view(pats, stock));
+    void crossPatternCatalystCycleNetsToZero() {
+        // cat + X -> Y and Y -> 2 cat: the catalyst circulates across TWO
+        // patterns (no single pattern re-consumes its own output, so the
+        // ledger owns it) — the least fixpoint balances cat exactly, X is the
+        // only net draw. Root R = Y -> R keeps the siphon out of the cycle.
+        BenchPatternDetails pR = pat(new String[]{"R"}, new long[]{1}, "Y", 1L);
+        BenchPatternDetails pY = pat(new String[]{"Y"}, new long[]{1}, "X", 1L, "cat", 1L);
+        BenchPatternDetails pCat = pat(new String[]{"cat"}, new long[]{2}, "Y", 1L);
+        List<BenchPatternDetails> pats = List.of(pR, pY, pCat);
+        Map<String, Long> stock = Map.of("X", 100L);
+        PlanClosure.Result r = PlanClosure.close(k("R"), BigInteger.TEN, pR, view(pats, stock));
         assertTrue(r.converged);
-        assertEquals(10L, craftsOf(r, pY));
-        assertEquals(10L, drawOf(r, "X"));
+        // Y: pR 10 + pCat 10 consumed = pY 20 produced; cat: 20 consumed = 20 produced
+        assertEquals(10L, craftsOf(r, pR));
+        assertEquals(20L, craftsOf(r, pY));
+        assertEquals(10L, craftsOf(r, pCat));
+        assertEquals(20L, drawOf(r, "X"), "only X leaves the network");
         assertEquals(0L, drawOf(r, "cat"), "the catalyst's return covers its draw");
+        assertEquals(0L, drawOf(r, "Y"));
         assertTrue(r.missing.isEmpty());
+    }
+
+    @Test
+    void selfAdjacentCatalystDeclinesToTheWorkingCapitalMachinery() {
+        // X + cat -> X + Y re-consumes its OWN output — the catalyst/recursion
+        // family's dedicated seed semantics; the plain ledger must DECLINE it
+        // (converged == false) so the engine falls back to that machinery
+        BenchPatternDetails pX = pat(new String[]{"X", "Y"}, new long[]{1, 1},
+                "X", 1L, "cat", 1L);
+        List<BenchPatternDetails> pats = List.of(pX);
+        Map<String, Long> stock = Map.of("cat", 5L);
+        PlanClosure.Result r = PlanClosure.close(k("X"), BigInteger.TEN, pX, view(pats, stock));
+        assertFalse(r.converged, "a self-adjacent catalyst declines");
+        assertTrue(r.plans.isEmpty(), "a declined closure proposes no schedule");
     }
 }
