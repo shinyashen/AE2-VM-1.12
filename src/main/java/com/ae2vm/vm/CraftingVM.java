@@ -1146,8 +1146,81 @@ public class CraftingVM {
         // stalls are triaged): with the gate closed, ringNetBundles stays
         // empty and every post-solve block below degrades to no-ops, so the
         // plain propagation plan drives the whole aggregation.
+        // SOLVE↔EXPAND LOOP: the E-case's injected producer chains may draw on
+        // ring MEMBERS' outputs — draws the ring's solved production predates.
+        // Each round feeds the draws back as extra external floors and
+        // re-solves, so a net-gain ring GROWS to cover them (the injected
+        // chains ride the loop's gain) instead of the draw being billed as
+        // capital the network may not have. Converged when a round's draws
+        // equal the previous round's (the floors and the draws agree); the
+        // residual at the iteration cap is billed as startup capital.
+        Map<IAEItemStack, Long> memberDraw = new HashMap<>();
+        List<IAEItemStack> rescheduled = new ArrayList<>();
+        boolean ringConverged = true;
         if (AE2VMConfig.ringSolverEnabled) {
-            solveRings(total, itemDemand);
+            Map<IAEItemStack, BigInteger> preStrip = new HashMap<>(total);
+            Map<IAEItemStack, BigInteger> memberFloors = new HashMap<>();
+            Map<IAEItemStack, Long> prevDraws = new HashMap<>();
+            for (int round = 0; round < 8; round++) {
+                ringNetBundles.clear();
+                ringStartupBill.clear();
+                ringTaskOrder.clear();
+                rescheduled.clear();
+                memberDraw.clear();
+                total.clear();
+                total.putAll(preStrip);
+                solveRings(total, itemDemand, memberFloors);
+                for (Bundle net : ringNetBundles) {
+                    // E-case: an out-of-ring ingredient that has its own
+                    // pattern gets its extraction DEFICIT scheduled instead of
+                    // being reported as a raw-ingredient shortfall. RECURSIVE
+                    // and POST-ORDER ({@link #expandEcase}): an injected
+                    // producer's own short inputs are expanded into their
+                    // producers first; pattern-less leaves fall through to the
+                    // honest missing report. Top-level member arrivals decline
+                    // (the solver's consumers-first write-back owns ring-to-
+                    // ring draws); RECURSIVE member arrivals record as draws
+                    // for the next round's re-solve.
+                    Map<IAEItemStack, Long> ecaseAvailable = new HashMap<>();
+                    Map<IAEItemStack, Long> ecaseClaimed = new HashMap<>();
+                    // seed the claimed accumulator with the propagation's
+                    // non-ring demand for each external input — the producer
+                    // re-sizing replaces the propagation-era count that
+                    // covered those consumers
+                    for (var pe : net.propExternalClaimed.entrySet()) {
+                        long v = toLongSafe(pe.getValue(), "prop-ext");
+                        if (v > 0) ecaseClaimed.put(pe.getKey(), v);
+                    }
+                    Set<IAEItemStack> ecaseOnStack = new HashSet<>();
+                    for (var e : net.used.entrySet()) {
+                        long demand = toLongSafe(e.getValue(), "ring-use");
+                        if (demand <= 0 || containsRingMember(e.getKey())) continue;
+                        // Belt and braces: a key the bundle itself emits is ring flow.
+                        if (net.emitted.containsKey(e.getKey())) continue;
+                        expandEcase(total, e.getKey(), demand, ecaseAvailable, ecaseClaimed,
+                                ecaseOnStack, rescheduled, null);
+                    }
+                }
+                if (memberDraw.equals(prevDraws)) {
+                    ringConverged = true;
+                    break;
+                }
+                ringConverged = false;
+                for (var md : memberDraw.entrySet()) {
+                    long delta = md.getValue() - prevDraws.getOrDefault(md.getKey(), 0L);
+                    if (delta != 0) {
+                        memberFloors.merge(copyOf(md.getKey()), BigInteger.valueOf(delta),
+                                BigInteger::add);
+                    }
+                }
+                for (var pd : prevDraws.entrySet()) {
+                    if (!memberDraw.containsKey(pd.getKey())) {
+                        memberFloors.merge(copyOf(pd.getKey()),
+                                BigInteger.valueOf(-pd.getValue()), BigInteger::add);
+                    }
+                }
+                prevDraws = new HashMap<>(memberDraw);
+            }
         }
         // the released stock reservations of stripped ring keys go back into
         // the sandbox so the startup bill can draw them (the bill is
@@ -1178,49 +1251,11 @@ public class CraftingVM {
                 simInternal.add(e.getKey(), val);
             }
         }
-        for (Bundle net : ringNetBundles) {
-            // E-case: an out-of-ring ingredient that has its own pattern gets
-            // its extraction DEFICIT scheduled instead of being reported as a
-            // raw-ingredient shortfall the network can never fill. The
-            // expansion is RECURSIVE and POST-ORDER ({@link #expandEcase}): an
-            // injected producer's own short inputs are expanded into their
-            // producers first, and only pattern-less leaves fall through to
-            // the honest missing report. The one-level version silently
-            // dropped the injected amplifier's own inputs on the live gaia
-            // trace (mana resources absent from used AND missing — the
-            // MISSING-COVERAGE / INPUT-REACH violations). Simulate before the
-            // net extraction so the deficit is measured against untouched
-            // stock; applyOrdered's replay below then picks the injected
-            // totals up. Ring MEMBERS are excluded by the solver's
-            // membership: their demand is net flow (their own production
-            // feeds their consumption inside the bundle), and re-scheduling
-            // them would double-fire the pattern (the live gaia report showed
-            // the recycler at 2x its solution).
-            List<IAEItemStack> rescheduled = new ArrayList<>();
-            Map<IAEItemStack, Long> ecaseAvailable = new HashMap<>();
-            Map<IAEItemStack, Long> ecaseClaimed = new HashMap<>();
-            Map<IAEItemStack, Long> ecaseMemberDraw = new HashMap<>();
-            // seed the claimed accumulator with the propagation's non-ring
-            // demand for each external input — the producer re-sizing below
-            // replaces the propagation-era count that covered those consumers
-            for (var pe : net.propExternalClaimed.entrySet()) {
-                long v = toLongSafe(pe.getValue(), "prop-ext");
-                if (v > 0) ecaseClaimed.put(pe.getKey(), v);
-            }
-            Set<IAEItemStack> ecaseOnStack = new HashSet<>();
-            for (var e : net.used.entrySet()) {
-                long demand = toLongSafe(e.getValue(), "ring-use");
-                if (demand <= 0 || containsRingMember(e.getKey())) continue;
-                // Belt and braces: a key the bundle itself emits is ring flow.
-                if (net.emitted.containsKey(e.getKey())) continue;
-                expandEcase(total, e.getKey(), demand, ecaseAvailable, ecaseClaimed,
-                        ecaseOnStack, rescheduled, ecaseMemberDraw);
-            }
-            // Injected chains drawing on ring MEMBERS: bill the draw as
-            // startup capital (extract now, shortfall honestly missing) — the
-            // ring's solved production predates these patterns and the member
-            // billing skip would otherwise silence the draw entirely.
-            for (var md : ecaseMemberDraw.entrySet()) {
+        // The residual member draws at the iteration cap: bill as startup
+        // capital (extract now, shortfall honestly missing). At convergence
+        // the ring's grown production covers them and nothing is billed.
+        if (!ringConverged) {
+            for (var md : memberDraw.entrySet()) {
                 long bill = md.getValue();
                 simulation.addBytes(bill);
                 nodeCount++;
@@ -1228,6 +1263,8 @@ public class CraftingVM {
                 if (got > 0) usedItems.add(md.getKey(), got);
                 if (got < bill) missingItems.add(md.getKey(), bill - got);
             }
+        }
+        for (Bundle net : ringNetBundles) {
             applyBundleDirect(net, true);
             // Report the ring's TRUE surplus: gross emission minus the flow the
             // ring consumes internally AND minus the out-of-ring demand the
@@ -1330,12 +1367,13 @@ public class CraftingVM {
         if (demand <= 0) return;
         if (containsRingMember(key)) {
             // The ring predates this injection: its solved production does not
-            // include the injected chain's draw on a member output, and both
-            // the billing skip (ring-billed) and this expansion would
-            // otherwise drop it into a hole (the live web: injected machinery
-            // chains drew 31k spirits off an 9.7k-production ring). Record
-            // the draw — the caller bills it as startup capital.
-            if (demand > 0) memberDraw.merge(copyOf(key), demand, Long::sum);
+            // include the injected chain's draw on a member output. The caller
+            // records the draw ({@code memberDraw == null} marks a TOP-LEVEL
+            // arrival — a ring pattern's own input, owned by the solver's
+            // consumers-first write-back) and re-solves or bills it.
+            if (memberDraw != null && demand > 0) {
+                memberDraw.merge(copyOf(key), demand, Long::sum);
+            }
             return;
         }
         IAEItemStack norm = copyOf(key);
@@ -2472,7 +2510,8 @@ public class CraftingVM {
      */
 
     private void solveRings(Map<IAEItemStack, BigInteger> total,
-                            Map<IAEItemStack, BigInteger> itemDemand) {
+                            Map<IAEItemStack, BigInteger> itemDemand,
+                            Map<IAEItemStack, BigInteger> memberFloors) {
         List<RingSolver.RingPlan> plans;
         try {
         plans = RingSolver.solve(total, itemDemand, k -> {
@@ -2526,7 +2565,8 @@ public class CraftingVM {
                     return out;
                 }
             };
-        }, k -> BigInteger.valueOf(executeStartStock.get(k)), outputKey, this.requestAmount);
+        }, k -> BigInteger.valueOf(executeStartStock.get(k)), outputKey, this.requestAmount,
+                memberFloors);
         // gross flow accumulated across ALL folded rings — the startup bill
         // below is global (a downstream ring's production supplies an
         // upstream ring's draw, so per-plan netting would double-bill)

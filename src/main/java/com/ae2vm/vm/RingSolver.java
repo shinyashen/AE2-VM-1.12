@@ -137,6 +137,10 @@ final class RingSolver {
      * @param startStockOf key → starting stock (executeStartStock snapshot)
      * @param rootKey      the plan's delivery key
      * @param rootDeliver  the plan's delivery amount for {@code rootKey}
+     * @param extraExt     additional per-MEMBER external floors (the E-case's
+     *                     injected chains' draws on member outputs, fed back by
+     *                     the solve↔expand loop) — added on top of the
+     *                     itemDemand-derived floor
      */
     static List<RingPlan> solve(
             Map<IAEItemStack, BigInteger> total,
@@ -144,7 +148,8 @@ final class RingSolver {
             Function<IAEItemStack, RecipeView> recipeOf,
             Function<IAEItemStack, BigInteger> startStockOf,
             IAEItemStack rootKey,
-            BigInteger rootDeliver) {
+            BigInteger rootDeliver,
+            Map<IAEItemStack, BigInteger> extraExt) {
 
         List<RingPlan> plans = new ArrayList<>();
         // Node set: scheduled keys plus their pattern-having inputs — the
@@ -240,7 +245,8 @@ final class RingSolver {
                 if (touched) break;
             }
             if (touched) continue;
-            RingPlan plan = trySimpleRing(scc, total, floors, recipeOf, startStockOf, rootKey, rootDeliver);
+            RingPlan plan = trySimpleRing(scc, total, floors, recipeOf, startStockOf, rootKey,
+                    rootDeliver, extraExt);
             if (plan == null) continue;
             plans.add(plan);
             handled.addAll(plan.ringKeys);
@@ -279,7 +285,8 @@ final class RingSolver {
             Function<IAEItemStack, RecipeView> recipeOf,
             Function<IAEItemStack, BigInteger> startStockOf,
             IAEItemStack rootKey,
-            BigInteger rootDeliver) {
+            BigInteger rootDeliver,
+            Map<IAEItemStack, BigInteger> extraExt) {
 
         // ---- variables: the SCC's distinct PATTERNS. A pattern
         // with a primary and a byproduct output inside the ring is ONE
@@ -362,7 +369,8 @@ final class RingSolver {
                 inRing = inRing.add(total.getOrDefault(rootKey, BigInteger.ZERO)
                         .multiply(views.get(driverPattern).inputs().getOrDefault(k, BigInteger.ZERO)));
             }
-            BigInteger floor = dem.subtract(inRing);
+            BigInteger floor = dem.subtract(inRing).add(
+                    extraExt.getOrDefault(k, BigInteger.ZERO).max(BigInteger.ZERO));
             if (floor.signum() > 0) ext.put(k, floor);
         }
 
