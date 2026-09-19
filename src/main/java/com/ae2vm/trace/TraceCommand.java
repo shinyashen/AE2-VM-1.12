@@ -197,7 +197,11 @@ public final class TraceCommand extends CommandBase {
         // SHORT row: id + status (+ source). The request details ride in the
         // tooltip — long wrapping rows were exactly where the live client
         // lost every component style, while short styled parts survived.
-        StringBuilder sb = new StringBuilder("#").append(id)
+        // NO leading '#': the ids are date-based and '#202609' parses as a
+        // hex color (#RRGGBB = near-black) in chat pipelines that support
+        // inline hex colors — the summary rendered in that parsed color
+        // instead of the intended light purple.
+        StringBuilder sb = new StringBuilder("trace ").append(id)
                 .append(' ').append(TraceLang.format(statusKey)).append("  ");
         if (withSource) {
             sb.append(sourceLabel(f, ownerToken)).append("  ");

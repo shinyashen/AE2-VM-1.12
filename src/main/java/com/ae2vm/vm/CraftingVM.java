@@ -1199,6 +1199,7 @@ public class CraftingVM {
             List<IAEItemStack> rescheduled = new ArrayList<>();
             Map<IAEItemStack, Long> ecaseAvailable = new HashMap<>();
             Map<IAEItemStack, Long> ecaseClaimed = new HashMap<>();
+            Map<IAEItemStack, Long> ecaseMemberDraw = new HashMap<>();
             // seed the claimed accumulator with the propagation's non-ring
             // demand for each external input — the producer re-sizing below
             // replaces the propagation-era count that covered those consumers
@@ -1213,7 +1214,19 @@ public class CraftingVM {
                 // Belt and braces: a key the bundle itself emits is ring flow.
                 if (net.emitted.containsKey(e.getKey())) continue;
                 expandEcase(total, e.getKey(), demand, ecaseAvailable, ecaseClaimed,
-                        ecaseOnStack, rescheduled);
+                        ecaseOnStack, rescheduled, ecaseMemberDraw);
+            }
+            // Injected chains drawing on ring MEMBERS: bill the draw as
+            // startup capital (extract now, shortfall honestly missing) — the
+            // ring's solved production predates these patterns and the member
+            // billing skip would otherwise silence the draw entirely.
+            for (var md : ecaseMemberDraw.entrySet()) {
+                long bill = md.getValue();
+                simulation.addBytes(bill);
+                nodeCount++;
+                long got = simulation.extract(md.getKey(), bill, false);
+                if (got > 0) usedItems.add(md.getKey(), got);
+                if (got < bill) missingItems.add(md.getKey(), bill - got);
             }
             applyBundleDirect(net, true);
             // Report the ring's TRUE surplus: gross emission minus the flow the
@@ -1312,8 +1325,19 @@ public class CraftingVM {
      */
     private void expandEcase(Map<IAEItemStack, BigInteger> total, IAEItemStack key, long demand,
                              Map<IAEItemStack, Long> available, Map<IAEItemStack, Long> claimed,
-                             Set<IAEItemStack> onStack, List<IAEItemStack> rescheduled) {
-        if (demand <= 0 || containsRingMember(key)) return;
+                             Set<IAEItemStack> onStack, List<IAEItemStack> rescheduled,
+                             Map<IAEItemStack, Long> memberDraw) {
+        if (demand <= 0) return;
+        if (containsRingMember(key)) {
+            // The ring predates this injection: its solved production does not
+            // include the injected chain's draw on a member output, and both
+            // the billing skip (ring-billed) and this expansion would
+            // otherwise drop it into a hole (the live web: injected machinery
+            // chains drew 31k spirits off an 9.7k-production ring). Record
+            // the draw — the caller bills it as startup capital.
+            if (demand > 0) memberDraw.merge(copyOf(key), demand, Long::sum);
+            return;
+        }
         IAEItemStack norm = copyOf(key);
         if (!onStack.add(norm)) return; // true cycle: the ring owns it
         try {
@@ -1368,7 +1392,7 @@ public class CraftingVM {
                 // A returned/catalyst input is a seed, not a per-craft consumption.
                 if (PatternCompiler.detectReturnedInput(p, in) != null) continue;
                 expandEcase(total, in, crafts * in.getStackSize(), available, claimed,
-                        onStack, rescheduled);
+                        onStack, rescheduled, memberDraw);
             }
             BigInteger existing = total.getOrDefault(key, BigInteger.ZERO);
             total.put(key, existing.add(BigInteger.valueOf(crafts)));
