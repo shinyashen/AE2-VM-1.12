@@ -96,8 +96,67 @@ public final class NetworkCraftingSandbox implements SimulationState {
                 }
             }
         }
-        warnOnShrunkenStock(stock.size());
+        if (isCollapsed(stock.size())) {
+            // TRANSIENT storage-cache race: re-read the monitor once before
+            // giving up — a healthy re-read means the collapse was a momentary
+            // invalidation window, not real corruption
+            Log.LOG.warn("[AE2-VM] network stock view collapsed to {} item types; retrying the snapshot",
+                    stock.size());
+            stock = readMonitorStock(grid);
+        }
+        if (isCollapsed(stock.size())) {
+            // persistent collapse: refuse to plan on a poisoned view — every
+            // order built on it reports false missing and stalls mid-job
+            Log.LOG.error("[AE2-VM] network stock view is COLLAPSED ({} item types on a "
+                    + "multi-thousand-type network). Refusing to plan: the AE2 storage cache "
+                    + "looks corrupted — retry the order; if it persists, restart the server.",
+                    stock.size());
+            throw new IllegalStateException(
+                    "AE2-VM: network stock view collapsed — the AE2 storage cache looks "
+                            + "corrupted; retry the order or restart the server");
+        }
+        lastSnapshotItems = stock.size();
         return new NetworkCraftingSandbox(stock);
+    }
+
+    /** One read of the grid monitor into a fresh stock list (items + fluid drops). */
+    private static IItemList<IAEItemStack> readMonitorStock(IGrid grid) {
+        IItemStorageChannel itemChannel =
+                AEApi.instance().storage().getStorageChannel(IItemStorageChannel.class);
+        IItemList<IAEItemStack> stock = itemChannel.createList();
+        if (grid != null) {
+            IStorageGrid storageGrid = grid.getCache(IStorageGrid.class);
+            if (storageGrid != null) {
+                IMEMonitor<IAEItemStack> itemInventory = storageGrid.getInventory(itemChannel);
+                if (itemInventory != null) {
+                    IItemList<IAEItemStack> bridge = itemChannel.createList();
+                    itemInventory.getAvailableItems(new ItemListIgnoreCrafting<>(bridge));
+                    boolean fluidAuthoritative = false;
+                    if (AE2FCCompat.isAvailable()) {
+                        IFluidStorageChannel fluidChannel =
+                                AEApi.instance().storage().getStorageChannel(IFluidStorageChannel.class);
+                        IMEMonitor<IAEFluidStack> fluidInventory = storageGrid.getInventory(fluidChannel);
+                        if (fluidInventory != null) {
+                            IItemList<IAEFluidStack> fluids = fluidChannel.createList();
+                            fluidInventory.getAvailableItems(new ItemListIgnoreCrafting<>(fluids));
+                            for (IAEFluidStack fluid : fluids) {
+                                if (fluid == null || fluid.getStackSize() <= 0L) continue;
+                                IAEItemStack drop = AE2FCCompat.packFluid(fluid);
+                                if (drop != null) addStock(stock, drop, false);
+                            }
+                            fluidAuthoritative = true;
+                        }
+                    }
+                    for (IAEItemStack item : bridge) {
+                        if (fluidAuthoritative && AE2FCCompat.isFluidFakeItem(item)) {
+                            continue;
+                        }
+                        addStock(stock, item, false);
+                    }
+                }
+            }
+        }
+        return stock;
     }
 
     private static int lastSnapshotItems = -1;
@@ -105,20 +164,12 @@ public final class NetworkCraftingSandbox implements SimulationState {
     /**
      * A storage-cache corruption (AE2UEL-side; the sandbox only READS the
      * monitor) manifests as a dramatically shrunken stock view — the live
-     * case shipped a 59-item snapshot over a multi-thousand-type network and
-     * planned 93 false missing entries off it. Flag the collapse so the plan
-     * is not trusted and the server gets restarted before more jobs run on
-     * the poisoned view.
+     * case shipped a 61-item snapshot over a multi-thousand-type network and
+     * every order planned on it fell into false missing and mid-job stalls.
      */
-    private static void warnOnShrunkenStock(int size) {
+    private static boolean isCollapsed(int size) {
         int last = lastSnapshotItems;
-        lastSnapshotItems = size;
-        if (last > 200 && size < last / 4) {
-            Log.LOG.warn("[AE2-VM] network stock view collapsed: {} item types "
-                            + "(previously {}) — the storage cache looks corrupted; plans built "
-                            + "on this view will report false missing. Restart the server.",
-                    size, last);
-        }
+        return last > 200 && size < last / 4;
     }
 
     private static void addStock(IItemList<IAEItemStack> list, IAEItemStack item, boolean replace) {
