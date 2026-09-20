@@ -2,8 +2,8 @@ package com.ae2vm.vm;
 
 import appeng.api.networking.crafting.ICraftingPatternDetails;
 import appeng.api.storage.data.IAEItemStack;
-import appeng.api.config.FuzzyMode;
 import appeng.api.storage.data.IItemList;
+import com.ae2vm.compat.AE2FCCompat;
 import com.ae2vm.compat.PatternCompat;
 
 import java.util.ArrayList;
@@ -133,11 +133,27 @@ public final class PlanInvariants {
             return false;
         }
         try {
-            // SIBLING variants only: the exact key's stock is already inside
-            // `net` — counting it here again would absolve real shortfalls
+            // SIBLING variants only (same Item, other damage/NBT): the exact
+            // key's stock is already inside `net` — counting it here again
+            // would absolve real shortfalls. Iteration instead of findFuzzy:
+            // the audit's stock views are plain lists whose findFuzzy is not
+            // guaranteed to be a working fuzzy search.
             long family = 0;
-            for (IAEItemStack v : stock.findFuzzy(k, FuzzyMode.IGNORE_ALL)) {
-                if (v != null && !v.isSameType(k)) {
+            for (IAEItemStack v : stock) {
+                if (v == null || v.isSameType(k)) {
+                    continue;
+                }
+                if (v.getItem() != k.getItem()) {
+                    continue;
+                }
+                boolean fluid;
+                try {
+                    fluid = AE2FCCompat.isFluidFakeItem(v);
+                } catch (Throwable probeFailure) {
+                    // probe failure: count the sibling, never exclude on it
+                    fluid = false;
+                }
+                if (!fluid) {
                     family += Math.max(0L, v.getStackSize());
                 }
             }

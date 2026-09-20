@@ -248,8 +248,8 @@ class PlanInvariantsTest {
                 single(makeStick, 50));
         oak.setStackSize(1_000_000);
         FakeList stock = new FakeList().put(oak);
-        assertTrue(PlanInvariants.check(plan, makeStick.getOutputs()[0], 5L, stock).isEmpty(),
-                "the log@3 gap is family-covered by log@0 stock — no violation");
+        final List<String> v = PlanInvariants.check(plan, makeStick.getOutputs()[0], 5L, stock);
+        assertTrue(v.isEmpty(), "the log@3 gap is family-covered by log@0 stock — got " + v);
     }
 
     private static VMCounter counter(BenchAEItemStack k, long v) {

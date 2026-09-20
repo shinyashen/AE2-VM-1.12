@@ -3,6 +3,7 @@ package appeng.crafting;
 import appeng.api.networking.crafting.ICraftingPatternDetails;
 import appeng.api.storage.data.IAEItemStack;
 import com.ae2vm.AE2VM;
+import com.ae2vm.compat.AE2FCCompat;
 import com.ae2vm.compat.PatternCompat;
 import com.ae2vm.vm.VMPlan;
 
@@ -167,7 +168,6 @@ public final class VMTreeCompatibility {
             // balance legs) attach under the root as leftover processes.
             final List<Object> rootProcesses = new ArrayList<Object>();
             buildNode(rootOutput, rootProcesses, null, 0);
-            leftoverProcesses(rootProcesses, 1);
             final long rootMissing = takeMissing(rootOutput,
                     Math.max(1L, rootOutput.getStackSize()));
             return newNode(null, rootOutput, rootProcesses, rootMissing);
@@ -187,10 +187,12 @@ public final class VMTreeCompatibility {
                 if (pattern == null) {
                     break;
                 }
-                // per-edge SHARE, not the whole count: sibling branches demand
-                // the same pattern and must find crafts left
-                final long crafts = Math.min(pattern.remainingCrafts,
-                        ceilDiv(remaining, pattern.outputAmount()));
+                // SCHEDULE-DRIVEN: the first (primary) demand branch carries
+                // the pattern's FULL plan count — the tree's totals then equal
+                // the plan's exactly, one process per pattern. A sibling branch
+                // demanding the same key draws from stock/available and shows
+                // no red circle beyond the plan's own missing list.
+                final long crafts = pattern.remainingCrafts;
                 if (crafts <= 0L) {
                     break;
                 }
@@ -216,28 +218,7 @@ public final class VMTreeCompatibility {
             newNode(parent, output, processes, missingAmount);
         }
 
-        /**
-         * The plan's crafts that no walked demand edge consumed (the cycle
-         * balance legs — produced to feed the plan's own recycling flows).
-         * They ARE part of the plan, so they attach under the root; dropping
-         * them would make the tree totals fall short of the plan screen.
-         */
-        private void leftoverProcesses(final List<Object> processes,
-                                       final int depth) throws ReflectiveOperationException {
-            for (final PatternUse pattern : patterns) {
-                while (pattern.remainingCrafts > 0L && nodeCount < MAX_DISPLAY_NODES) {
-                    final List<Object> inputs = new ArrayList<Object>();
-                    final Object process = newProcess(inputs);
-                    final long crafts = pattern.remainingCrafts;
-                    pattern.remainingCrafts = 0L;
-                    nodeCount++;
-                    addInputs(inputs, process, pattern.pattern, crafts, depth + 1);
-                    processes.add(process);
-                }
-            }
-        }
-
-        private void addInputs(final List<Object> destination,
+    private void addInputs(final List<Object> destination,
                                final Object parent,
                                final ICraftingPatternDetails pattern,
                                final long crafts,
@@ -272,7 +253,10 @@ public final class VMTreeCompatibility {
             if (amount <= 0L) return 0L;
             long remaining = amount;
             for (final IAEItemStack item : available) {
-                if (item == null || item.getStackSize() <= 0L || !sameType(item, requested)) continue;
+                // FAMILY match: the plan withdraws whichever sibling variant
+                // (same item, any damage/NBT, fluid fakes exact) the network
+                // held — the closure's family allocation books the draw there
+                if (item == null || item.getStackSize() <= 0L || !family(item, requested)) continue;
                 final long taken = Math.min(remaining, item.getStackSize());
                 item.setStackSize(item.getStackSize() - taken);
                 remaining -= taken;
@@ -285,13 +269,35 @@ public final class VMTreeCompatibility {
             if (amount <= 0L) return 0L;
             long remaining = amount;
             for (final IAEItemStack item : missing) {
-                if (item == null || item.getStackSize() <= 0L || !sameType(item, requested)) continue;
+                if (item == null || item.getStackSize() <= 0L || !family(item, requested)) continue;
                 final long taken = Math.min(remaining, item.getStackSize());
                 item.setStackSize(item.getStackSize() - taken);
                 remaining -= taken;
                 if (remaining == 0L) break;
             }
             return amount - remaining;
+        }
+
+        /**
+         * Family identity for display matching: same Item, any damage/NBT —
+         * the same semantics the closure's family allocation and the CPU's
+         * processing default fuzzy use. Fluid fakes match exactly (their NBT
+         * IS the fluid identity).
+         */
+        private static boolean family(final IAEItemStack a, final IAEItemStack b) {
+            if (a == null || b == null) {
+                return false;
+            }
+            if (a.isSameType(b)) {
+                return true;
+            }
+            try {
+                return a.getItem() == b.getItem()
+                        && !AE2FCCompat.isFluidFakeItem(a)
+                        && !AE2FCCompat.isFluidFakeItem(b);
+            } catch (final Throwable t) {
+                return false;
+            }
         }
     }
 
@@ -329,13 +335,6 @@ public final class VMTreeCompatibility {
         final IAEItemStack key = source.copy();
         key.reset();
         return key;
-    }
-
-    private static long ceilDiv(final long amount, final long perCraft) {
-        if (perCraft <= 0L) {
-            return amount;
-        }
-        return (amount + perCraft - 1L) / perCraft;
     }
 
     private static long multiply(final long left, final long right) {

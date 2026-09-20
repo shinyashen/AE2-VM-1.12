@@ -168,10 +168,17 @@ public final class AE2VMCrafting {
             Function<IAEItemStack, Long> stock = liveStockLookup(grid);
             if (stock != null && entry.plan.planMatchesStock(stock)) {
                 if (rec != null) {
-                    rec.emit(TraceSegment.CALC, "PLAN_CACHE_HIT",
-                            Collections.<String, String>emptyMap());
-                    rec.planResult(entry.plan);
-                    rec.writeNow();
+                    // the recorder is diagnostics: a serialization failure must
+                    // never force the native fallback over a healthy plan
+                    try {
+                        rec.emit(TraceSegment.CALC, "PLAN_CACHE_HIT",
+                                Collections.<String, String>emptyMap());
+                        rec.planResult(entry.plan);
+                        rec.writeNow();
+                    } catch (Throwable recFailure) {
+                        AE2VM.LOGGER.warn("[AE2-VM] trace recorder failed on the cached plan",
+                                recFailure);
+                    }
                 }
                 return entry.plan;
             }
@@ -284,8 +291,14 @@ public final class AE2VMCrafting {
             PLAN_CACHE.computeIfAbsent(grid, g -> new ConcurrentHashMap<>())
                     .put(what, new PlanEntry(amount, PatternCompiler.patternSetVersion(), fixed));
             if (rec != null) {
-                rec.planResult(fixed);
-                rec.writeNow(); // evidence secured even if the confirm screen is abandoned
+                // evidence path: a recorder failure must not discard the plan
+                try {
+                    rec.planResult(fixed);
+                    rec.writeNow(); // evidence secured even if the confirm screen is abandoned
+                } catch (Throwable recFailure) {
+                    AE2VM.LOGGER.warn("[AE2-VM] trace recorder failed on the fresh plan",
+                            recFailure);
+                }
             }
         } else if (rec != null) {
             rec.fallback("null-plan", "engine produced no plan");
