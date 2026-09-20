@@ -1216,7 +1216,12 @@ public class CraftingVM {
                     }
                 }
                 if (!adopted) {
-                    Log.LOG.warn("[AE2-VM] plan closure rejected by the faithful CPU "
+                    // DEBUG, not WARN: the multi-pattern repair loop re-runs
+                    // this closure once per pass, and a per-pass console storm
+                    // drowns the log; the rejection still lands as evidence in
+                    // the trace's AUDIT segment and in the fallback WARN that
+                    // the pipeline path itself emits when its plan stalls.
+                    Log.LOG.debug("[AE2-VM] plan closure rejected by the faithful CPU "
                             + "({}); falling back to the stage pipeline", closest);
                     patternTimes.clear();
                     patternTimes.putAll(patternTimesBefore);
