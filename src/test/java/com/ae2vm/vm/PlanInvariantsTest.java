@@ -5,11 +5,12 @@ import appeng.api.storage.data.IAEItemStack;
 import appeng.api.storage.data.IItemList;
 import appeng.api.config.FuzzyMode;
 import com.ae2vm.test.fakes.BenchAEItemStack;
+import com.ae2vm.test.fakes.BenchPatternDetails;
 import com.ae2vm.trace.VirtualPatternDetails;
 import org.junit.jupiter.api.Test;
 
 import java.util.Collection;
-import java.util.Collections;
+import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -53,7 +54,15 @@ class PlanInvariantsTest {
 
         @Override
         public Collection<IAEItemStack> findFuzzy(IAEItemStack input, FuzzyMode fuzzy) {
-            return Collections.emptyList();
+            // AE2 IGNORE_ALL semantics: every damage/NBT variant of the item
+            List<IAEItemStack> family = new ArrayList<>();
+            String id = ((BenchAEItemStack) input).id;
+            for (IAEItemStack s : map.values()) {
+                if (((BenchAEItemStack) s).id.equals(id)) {
+                    family.add(s);
+                }
+            }
+            return family;
         }
 
         @Override
@@ -222,4 +231,45 @@ class PlanInvariantsTest {
         assertTrue(v.stream().anyMatch(s -> s.startsWith("MISSING-COVERAGE:" + IRON)
                 || s.startsWith("INPUT-REACH:" + IRON)), v.toString());
     }
+
+    @Test
+    void damageVariantFamilyCoversWithoutViolations() {
+        // the live 3ZIlM7W false alarm: the plan consumes minecraft:log@3 whose
+        // exact stock is zero, but the network holds sibling damage variants —
+        // the closure legitimately withdrew a variant (processing default
+        // fuzzy) and the audit must NOT cry MISSING-COVERAGE / INPUT-REACH
+        BenchAEItemStack oak = new BenchAEItemStack("minecraft:log", 0, 0, 1);
+        BenchAEItemStack jungle = new BenchAEItemStack("minecraft:log", 3, 0, 1);
+        BenchPatternDetails makeStick = BenchPatternDetails.custom(
+                new IAEItemStack[]{jungle.setStackSize(2)},
+                new IAEItemStack[]{new BenchAEItemStack("stick", 0, 0, 1).setStackSize(1)});
+        VMPlan plan = new VMPlan(makeStick.getOutputs()[0], 5, 0, true,
+                counter(jungle, 100), missing(), emitted(),
+                single(makeStick, 50));
+        oak.setStackSize(1_000_000);
+        FakeList stock = new FakeList().put(oak);
+        assertTrue(PlanInvariants.check(plan, makeStick.getOutputs()[0], 5L, stock).isEmpty(),
+                "the log@3 gap is family-covered by log@0 stock — no violation");
+    }
+
+    private static VMCounter counter(BenchAEItemStack k, long v) {
+        VMCounter c = new VMCounter();
+        c.add(k, v);
+        return c;
+    }
+
+    private static VMCounter missing() {
+        return new VMCounter();
+    }
+
+    private static VMCounter emitted() {
+        return new VMCounter();
+    }
+
+    private static Map<ICraftingPatternDetails, Long> single(ICraftingPatternDetails p, long t) {
+        Map<ICraftingPatternDetails, Long> m = new LinkedHashMap<>();
+        m.put(p, t);
+        return m;
+    }
+
 }

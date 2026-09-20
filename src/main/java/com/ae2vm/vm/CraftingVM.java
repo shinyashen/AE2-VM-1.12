@@ -1080,22 +1080,33 @@ public class CraftingVM {
         // ledger is balanced for keys whose production CIRCULATES (net-zero
         // cycles, self-returned catalysts), but a real CPU's first craft in a
         // cycle precedes the first return — the probe forces the priming
-        // inventory the task order needs, with the closure's net draw as its
-        // netDrawOf (a DAG's deferral never forces: a pass that fires nothing
-        // is a true cycle deadlock, not a waiting consumer).
+        // inventory the CYCLE needs, with the closure's net draw as its
+        // netDrawOf. The probe's scope is dependency CYCLES only (SCCs of the
+        // plan's pattern graph): DAG chains self-feed by task deferral, and a
+        // whole-web probe force-fires deep chains into phantom floors on
+        // hundreds of stockless keys (the live 3ZIlM7W 293-missing rejection).
+        Set<IAEItemStack> cycleItems = cycleItemsOf(r.plans.keySet());
         RingSolver.RingPlan closurePlan = new RingSolver.RingPlan();
-        closurePlan.patterns.putAll(r.plans);
         Set<IAEItemStack> members = new LinkedHashSet<>();
         for (ICraftingPatternDetails p : r.plans.keySet()) {
-            for (IAEItemStack ok : perCraftCondensedOutputs(p).keySet()) {
-                members.add(copyOf(ok));
+            Map<IAEItemStack, BigInteger> ins = perCraftPrimings(p);
+            Map<IAEItemStack, BigInteger> outs = perCraftCondensedOutputs(p);
+            boolean feeds = containsAny(cycleItems, ins.keySet());
+            boolean drains = containsAny(cycleItems, outs.keySet());
+            if (feeds && drains) {
+                closurePlan.patterns.put(p, r.plans.get(p));
+                for (IAEItemStack ok : outs.keySet()) {
+                    members.add(copyOf(ok));
+                }
             }
         }
-        RingSolver.FloorPlan floors = RingSolver.startupFloors(
-                Collections.singletonList(closurePlan),
-                CraftingVM::perCraftPrimings, CraftingVM::perCraftOutputs,
-                k -> r.netDraw.getOrDefault(copyOf(k), BigInteger.ZERO),
-                outputKey, members);
+        RingSolver.FloorPlan floors = closurePlan.patterns.isEmpty()
+                ? new RingSolver.FloorPlan(new LinkedHashMap<>(), new ArrayList<>())
+                : RingSolver.startupFloors(
+                        Collections.singletonList(closurePlan),
+                        CraftingVM::perCraftPrimings, CraftingVM::perCraftOutputs,
+                        k -> r.netDraw.getOrDefault(copyOf(k), BigInteger.ZERO),
+                        outputKey, members);
         ringTaskOrder.clear();
         ringTaskOrder.addAll(floors.order());
         patternTimes.clear();
@@ -1208,6 +1219,44 @@ public class CraftingVM {
                         .reduce(0L, Long::sum),
                 usedItems.size(), missingItems.size(), emittedItems.size()));
         return true;
+    }
+
+    /**
+     * The items caught in dependency cycles among the planned patterns: an
+     * edge I -> O exists for every planned pattern that consumes I and
+     * produces O; SCCs of size >= 2 are the cycles. The priming probe's
+     * jurisdiction — DAG chains are deferral-fed and need no priming.
+     */
+    private Set<IAEItemStack> cycleItemsOf(Set<ICraftingPatternDetails> plans) {
+        Map<IAEItemStack, Set<IAEItemStack>> graph = new LinkedHashMap<>();
+        for (ICraftingPatternDetails p : plans) {
+            Set<IAEItemStack> ins = perCraftPrimings(p).keySet();
+            Set<IAEItemStack> outs = perCraftCondensedOutputs(p).keySet();
+            for (IAEItemStack i : ins) {
+                if (i == null) continue;
+                for (IAEItemStack o : outs) {
+                    if (o == null || o.isSameType(i)) continue;
+                    graph.computeIfAbsent(copyOf(i), x -> new LinkedHashSet<>()).add(copyOf(o));
+                }
+            }
+        }
+        Set<IAEItemStack> cycleItems = new LinkedHashSet<>();
+        for (Set<IAEItemStack> scc : tarjanScc(graph)) {
+            if (scc.size() >= 2) {
+                cycleItems.addAll(scc);
+            }
+        }
+        return cycleItems;
+    }
+
+    /** True when any of {@code keys} isSameType-matches a member of {@code set}. */
+    private static boolean containsAny(Set<IAEItemStack> set, Set<IAEItemStack> keys) {
+        for (IAEItemStack k : keys) {
+            if (containsKey(set, k)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

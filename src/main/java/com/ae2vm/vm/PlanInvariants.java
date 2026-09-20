@@ -2,6 +2,7 @@ package com.ae2vm.vm;
 
 import appeng.api.networking.crafting.ICraftingPatternDetails;
 import appeng.api.storage.data.IAEItemStack;
+import appeng.api.config.FuzzyMode;
 import appeng.api.storage.data.IItemList;
 import com.ae2vm.compat.PatternCompat;
 
@@ -90,12 +91,8 @@ public final class PlanInvariants {
         // net position per ledger key: stock + produced - consumed
         for (IAEItemStack k : ledger.keys()) {
             long net = stockOf(stock, k) + ledger.producedOf(k) - ledger.consumedOf(k);
-            boolean familyCovered = k.hasTagCompound(); // NBT-variant deferral
             if (net < 0) {
-                if (!missingCovers(plan, k)) {
-                    if (familyCovered) {
-                        continue; // conservative: family substitution may absorb it
-                    }
+                if (!missingCovers(plan, k) && !familyCovers(stock, k, -net)) {
                     out.add("MISSING-COVERAGE:" + token(k)
                             + " net=" + net);
                 }
@@ -112,18 +109,42 @@ public final class PlanInvariants {
                 if (i == null) {
                     continue;
                 }
-                boolean familyCovered = i.hasTagCompound();
-                if (familyCovered) {
-                    continue;
-                }
                 long net = stockOf(stock, i) + ledger.producedOf(i) - ledger.consumedOf(i);
-                if (net < 0 && !missingCovers(plan, i)) {
+                if (net < 0 && !missingCovers(plan, i) && !familyCovers(stock, i, -net)) {
                     out.add("INPUT-REACH:" + token(i));
                 }
             }
         }
 
         return out;
+    }
+
+    /**
+     * True when the key's SAME-ITEM family stock covers the gap — the plan's
+     * family allocation legitimately withdraws a sibling variant (1.12 damage
+     * axes, NBT variants) and the CPU's extraction consumes it for the slot.
+     * The old NBT-only deferral (hasTagCompound) was blind to damage-variant
+     * processing inputs (minecraft:log@3 backed by log@0 stock) and cried
+     * wolf on the closure's correct plans.
+     */
+    private static boolean familyCovers(IItemList<IAEItemStack> stock, IAEItemStack k,
+                                        long gap) {
+        if (stock == null || gap <= 0) {
+            return false;
+        }
+        try {
+            // SIBLING variants only: the exact key's stock is already inside
+            // `net` — counting it here again would absolve real shortfalls
+            long family = 0;
+            for (IAEItemStack v : stock.findFuzzy(k, FuzzyMode.IGNORE_ALL)) {
+                if (v != null && !v.isSameType(k)) {
+                    family += Math.max(0L, v.getStackSize());
+                }
+            }
+            return family >= gap;
+        } catch (Throwable t) {
+            return false;
+        }
     }
 
     // ------------------------------------------------------------------

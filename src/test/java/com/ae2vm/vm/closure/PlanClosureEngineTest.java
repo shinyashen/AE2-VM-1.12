@@ -128,4 +128,35 @@ class PlanClosureEngineTest {
         for (var p : Bench.PATTERNS.values()) PatternCompiler.compileIfAbsent(p);
         return Bench.run(pR, 10, new BenchSimulationState());
     }
+
+    @Test
+    void dagChainGetsNoPrimingFloors() {
+        Bootstrap.register();
+        Bench.reset();
+        // live 3ZIlM7W regression (435-pattern controller web, 293 false
+        // missing): the priming probe once ran over the WHOLE plan — its
+        // forced-fire model turned deep DAG chains into phantom priming
+        // floors billed beyond stock. The probe's scope is dependency cycles;
+        // a pure-DAG chain is deferral-fed and bills exactly its ledger draw.
+        BenchPatternDetails pC2 = Bench.patEx(new String[]{"c2"}, new long[]{1}, "leaf", 2L);
+        BenchPatternDetails pC1 = Bench.patEx(new String[]{"c1"}, new long[]{1}, "c2", 3L);
+        BenchPatternDetails pR = Bench.patEx(new String[]{"R"}, new long[]{1}, "c1", 2L, "ore", 1L);
+        Bench.register(pC2);
+        Bench.register(pC1);
+        Bench.register(pR);
+        for (var p : Bench.PATTERNS.values()) PatternCompiler.compileIfAbsent(p);
+
+        BenchSimulationState sim = new BenchSimulationState()
+                .seed("leaf", 1_000_000L)
+                .seed("ore", 1_000_000L);
+        VMPlan plan = Bench.run(pR, 100, sim);
+        assertEquals(Long.valueOf(600L), plan.getPatternTimes().get(pC2),
+                "the ledger sizes the whole chain: 100 R x2 c1 -> 200 c1 crafts x3 c2 = 600 -> 600");
+        assertEquals(Long.valueOf(200L), plan.getPatternTimes().get(pC1), "ceil(200/1)");
+        assertTrue(plan.getMissingItems().isEmpty(),
+                "a pure-DAG web is deferral-fed: nothing missing: " + plan.getMissingItems());
+        assertFalse(plan.isSimulation(), "the order must be acceptable");
+        CpuLifecycleAssert.complete(plan, PatternCompat.getPrimaryOutput(pR), 100);
+    }
+
 }
