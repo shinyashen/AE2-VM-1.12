@@ -192,13 +192,6 @@ public final class PlanClosure {
             return new Result(plans, new LinkedHashMap<>(), new LinkedHashMap<>(),
                     new LinkedHashMap<>(), new LinkedHashMap<>(), 0, false);
         }
-        // self-adjacent patterns (a catalyst or recursion amplifier re-consuming
-        // its own output) have dedicated seed/amplifier semantics — the working-
-        // capital machinery owns them, the plain ledger cannot count them
-        if (isSelfAdjacent(view, rootPattern)) {
-            return new Result(plans, new LinkedHashMap<>(), new LinkedHashMap<>(),
-                    new LinkedHashMap<>(), new LinkedHashMap<>(), 0, false);
-        }
         plans.put(rootPattern, ceilDiv(deliver, rootOutPer));
 
         int rounds = 0;
@@ -219,7 +212,6 @@ public final class PlanClosure {
             // sum (key-level bumping double-fires byproduct producers, the
             // exact trap RingSolver's pattern-level variables avoid)
             Map<ICraftingPatternDetails, BigInteger> bumps = new LinkedHashMap<>();
-            Set<ICraftingPatternDetails> selfAdjacentProducers = new LinkedHashSet<>();
             for (var e : alloc.uncovered.entrySet()) {
                 BigInteger gap = e.getValue();
                 if (gap.signum() <= 0) {
@@ -232,24 +224,25 @@ public final class PlanClosure {
                     continue;
                 }
                 ICraftingPatternDetails producer = view.producerOf(k);
-                BigInteger outPer = producer == null ? ZERO : outputOf(view, producer, k);
-                if (producer == null || outPer.signum() <= 0) {
+                if (producer == null) {
                     continue; // leaf: honest missing, pinned at the fixpoint
                 }
-                if (isSelfAdjacent(view, producer)) {
-                    // catalyst/recursion amplifier: dedicated machinery's domain
-                    selfAdjacentProducers.add(producer);
-                    continue;
+                // the bump is driven by the pattern's per-craft NET output of
+                // the key (out - in): a self-adjacent pattern (X + cat -> X + Y,
+                // X + A -> 2X) nets its surplus per craft, and a pattern whose
+                // net output of the key is zero can NEVER close the gap — its
+                // demand discloses instead of diverging on dead bumps
+                BigInteger outPer = outputOf(view, producer, k);
+                BigInteger inPer = inputOf(view, producer, k);
+                BigInteger netPer = outPer.subtract(inPer);
+                if (netPer.signum() <= 0) {
+                    continue; // net-zero/negative: honest missing, not bumpable
                 }
-                BigInteger need = ceilDiv(gap, outPer);
+                BigInteger need = ceilDiv(gap, netPer);
                 BigInteger prev = bumps.getOrDefault(producer, ZERO);
                 if (need.compareTo(prev) > 0) {
                     bumps.put(producer, need);
                 }
-            }
-            if (!selfAdjacentProducers.isEmpty()) {
-                return new Result(plans, new LinkedHashMap<>(), new LinkedHashMap<>(),
-                        new LinkedHashMap<>(), new LinkedHashMap<>(), rounds, false);
             }
             for (var e : bumps.entrySet()) {
                 BigInteger next = plans.getOrDefault(e.getKey(), ZERO).add(e.getValue());
@@ -537,25 +530,20 @@ public final class PlanClosure {
         }
     }
 
-    /**
-     * True when {@code pattern} re-consumes its own output (the catalyst /
-     * recursion-amplifier family — owned by the working-capital machinery,
-     * never counted by the plain ledger).
-     */
-    private static boolean isSelfAdjacent(View view, ICraftingPatternDetails pattern) {
+    /** The pattern's per-craft input of {@code key} (zero when absent). */
+    private static BigInteger inputOf(View view, ICraftingPatternDetails pattern,
+                                      IAEItemStack key) {
         Map<IAEItemStack, BigInteger> ins = view.inputsOf(pattern);
-        Map<IAEItemStack, BigInteger> outs = view.outputsOf(pattern);
-        if (ins == null || outs == null) {
-            return false;
+        if (ins == null) {
+            return ZERO;
         }
-        for (IAEItemStack i : ins.keySet()) {
-            for (IAEItemStack o : outs.keySet()) {
-                if (i.isSameType(o)) {
-                    return true;
-                }
+        for (Map.Entry<IAEItemStack, BigInteger> e : ins.entrySet()) {
+            if (e.getKey() != null && e.getKey().isSameType(key)
+                    && e.getValue() != null && e.getValue().signum() > 0) {
+                return e.getValue();
             }
         }
-        return false;
+        return ZERO;
     }
 
     /** One full ledger pass over the current plans (slot-aware consumption). */

@@ -155,15 +155,30 @@ public final class VMTreeCompatibility {
         }
 
         private Object build() throws ReflectiveOperationException {
-            return buildNode(rootOutput, null, 0);
+            // SCHEDULE PROJECTION: the tree IS the plan. The closure's counts
+            // are LEDGER-sized (globally consistent, family-substituted), so a
+            // demand-driven replay that drains a pattern's full count at its
+            // first demanding branch starves the sibling branches and invents
+            // missing lines (the live oZmeqS9 tree: 424 phantom red-circle
+            // nodes on a ZERO-missing plan). Instead every demand edge
+            // schedules ceil(remaining / outPer) crafts capped by the
+            // pattern's plan count — per-key totals then equal the plan's —
+            // and crafts the plan schedules beyond the walked demand (cycle
+            // balance legs) attach under the root as leftover processes.
+            final List<Object> rootProcesses = new ArrayList<Object>();
+            buildNode(rootOutput, rootProcesses, null, 0);
+            leftoverProcesses(rootProcesses, 1);
+            final long rootMissing = takeMissing(rootOutput,
+                    Math.max(1L, rootOutput.getStackSize()));
+            return newNode(null, rootOutput, rootProcesses, rootMissing);
         }
 
-        private Object buildNode(final IAEItemStack requested,
-                                 final Object parent,
-                                 final int depth) throws ReflectiveOperationException {
+        private void buildNode(final IAEItemStack requested,
+                               final List<Object> processes,
+                               final Object parent,
+                               final int depth) throws ReflectiveOperationException {
             final long requestedAmount = Math.max(1L, requested.getStackSize());
             final IAEItemStack output = sized(requested, requestedAmount);
-            final List<Object> processes = new ArrayList<Object>();
             long remaining = requestedAmount;
 
             remaining -= takeAvailable(output, remaining);
@@ -172,14 +187,10 @@ public final class VMTreeCompatibility {
                 if (pattern == null) {
                     break;
                 }
-                // SCHEDULE-DRIVEN: consume the plan's full craft count. For a
-                // plain DAG the schedule equals the demand-derived count, so
-                // this matches the old demand-driven replay exactly; for a
-                // ring the schedule is the balance-solution value (larger than
-                // what the root demand alone needs — the surplus feeds the
-                // recycling leg), and showing it keeps every number on the
-                // tree consistent with the plan screen.
-                final long crafts = pattern.remainingCrafts;
+                // per-edge SHARE, not the whole count: sibling branches demand
+                // the same pattern and must find crafts left
+                final long crafts = Math.min(pattern.remainingCrafts,
+                        ceilDiv(remaining, pattern.outputAmount()));
                 if (crafts <= 0L) {
                     break;
                 }
@@ -202,7 +213,28 @@ public final class VMTreeCompatibility {
             }
 
             final long missingAmount = takeMissing(output, remaining);
-            return newNode(parent, output, processes, missingAmount);
+            newNode(parent, output, processes, missingAmount);
+        }
+
+        /**
+         * The plan's crafts that no walked demand edge consumed (the cycle
+         * balance legs — produced to feed the plan's own recycling flows).
+         * They ARE part of the plan, so they attach under the root; dropping
+         * them would make the tree totals fall short of the plan screen.
+         */
+        private void leftoverProcesses(final List<Object> processes,
+                                       final int depth) throws ReflectiveOperationException {
+            for (final PatternUse pattern : patterns) {
+                while (pattern.remainingCrafts > 0L && nodeCount < MAX_DISPLAY_NODES) {
+                    final List<Object> inputs = new ArrayList<Object>();
+                    final Object process = newProcess(inputs);
+                    final long crafts = pattern.remainingCrafts;
+                    pattern.remainingCrafts = 0L;
+                    nodeCount++;
+                    addInputs(inputs, process, pattern.pattern, crafts, depth + 1);
+                    processes.add(process);
+                }
+            }
         }
 
         private void addInputs(final List<Object> destination,
@@ -219,7 +251,9 @@ public final class VMTreeCompatibility {
                     continue;
                 }
                 final long amount = multiply(input.getStackSize(), crafts);
-                destination.add(buildNode(sized(input, amount), parent, depth));
+                final List<Object> inputProcesses = new ArrayList<Object>();
+                buildNode(sized(input, amount), inputProcesses, parent, depth);
+                destination.add(newNode(parent, input, inputProcesses, 0L));
             }
         }
 
@@ -295,6 +329,13 @@ public final class VMTreeCompatibility {
         final IAEItemStack key = source.copy();
         key.reset();
         return key;
+    }
+
+    private static long ceilDiv(final long amount, final long perCraft) {
+        if (perCraft <= 0L) {
+            return amount;
+        }
+        return (amount + perCraft - 1L) / perCraft;
     }
 
     private static long multiply(final long left, final long right) {

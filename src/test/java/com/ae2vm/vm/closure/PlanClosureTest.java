@@ -205,16 +205,34 @@ class PlanClosureTest {
     }
 
     @Test
-    void selfAdjacentCatalystDeclinesToTheWorkingCapitalMachinery() {
-        // X + cat -> X + Y re-consumes its OWN output — the catalyst/recursion
-        // family's dedicated seed semantics; the plain ledger must DECLINE it
-        // (converged == false) so the engine falls back to that machinery
+    void selfConsumingRootDisclosesTheSiphonedDemand() {
+        // X + cat -> X + Y rooted at X: every produced X is DELIVERED (:265),
+        // so the pattern's net output of X is zero — the seed cannot be
+        // crafted away and the whole delivery discloses as honest missing
         BenchPatternDetails pX = pat(new String[]{"X", "Y"}, new long[]{1, 1},
                 "X", 1L, "cat", 1L);
         List<BenchPatternDetails> pats = List.of(pX);
         Map<String, Long> stock = Map.of("cat", 5L);
         PlanClosure.Result r = PlanClosure.close(k("X"), BigInteger.TEN, pX, view(pats, stock));
-        assertFalse(r.converged, "a self-adjacent catalyst declines");
-        assertTrue(r.plans.isEmpty(), "a declined closure proposes no schedule");
+        assertTrue(r.converged, "net-zero self-consumption discloses, never diverges");
+        assertEquals(10L, craftsOf(r, pX), "the delivery seed");
+        assertEquals(10L, r.missing.get(k("X")).longValue(),
+                "the siphoned self-consumption is the honest disclosure");
+    }
+
+    @Test
+    void recursionAmplifierBumpsByNetOutput() {
+        // X + A -> 2X: each craft NETS one X and burns one A — the bump is
+        // ceil(gap / netPer) and the ledger closes on A's stock
+        BenchPatternDetails pX = pat(new String[]{"X"}, new long[]{2}, "X", 1L, "A", 1L);
+        List<BenchPatternDetails> pats = List.of(pX);
+        Map<String, Long> stock = Map.of("X", 5L, "A", 100L);
+        PlanClosure.Result r = PlanClosure.close(k("X"), BigInteger.TEN, pX, view(pats, stock));
+        assertTrue(r.converged);
+        // seed ceil(10/2) = 5 crafts produce the whole delivery; the siphon
+        // keeps their 5 self-consumed X on stock (5 >= 5) — no bump, no more
+        assertEquals(5L, craftsOf(r, pX), "ceil(deliver / outPer)");
+        assertEquals(5L, drawOf(r, "A"), "each craft burns one A");
+        assertTrue(r.missing.isEmpty());
     }
 }

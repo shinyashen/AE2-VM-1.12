@@ -66,9 +66,12 @@ class VmSemanticsTest {
         assertEquals(5L, plan.getUsedItems().get(key(1)));
     }
 
-    /** Amplifier A + B -> 2A: craft count driven by NET growth, seeded from stock. */
+    /** Amplifier A + B -> 2A rooted at A: the siphon (:265) keeps every
+     * crafted A out of the inventory, so each delivery craft burns a FRESH A —
+     * the closure discloses the unstocked crafts' A instead of shipping a
+     * plan the faithful CPU starves on. */
     @Test
-    void recursionAmplifierUsesNetGrowth() {
+    void recursionAmplifierDisclosesTheSiphonedSelfConsumption() {
         BenchPatternDetails amp = processing(
                 new long[][]{{0, 1}, {1, 1}}, new long[][]{{0, 2}});
         Bench.register(amp);
@@ -76,22 +79,17 @@ class VmSemanticsTest {
                 .seed("A", 1)
                 .seed("B", 3);
         VMPlan plan = Bench.run(amp, 4, sim);
-        VirtualCPUCluster.TRACE = true;
-        // Faithful runtime divergence: A is finalOutput AND self-consumed — a real
-        // CPU delivers finalOutput returns (CraftingCPUCluster :265) instead of
-        // circulating them, so the run starves once the seed is spent
-        CpuLifecycleAssert.stalls(plan, "S2");
-        assertFalse(plan.isSimulation(), "amplifier must be feasible: missing=" + dump(plan));
-        // request 4, stocked seed 1, net gain 1 per craft -> 3 crafts
-        assertEquals(3L, plan.getPatternTimes().get(amp));
+        // ceil(4/2) = 2 delivery crafts; their 2 self-consumed A meet 1 stocked
+        // -> the honest disclosure is exactly A x1
+        assertEquals(2L, plan.getPatternTimes().get(amp), "ceil(deliver / outPer)");
+        assertTrue(plan.isSimulation(), "the siphoned self-consumption is disclosed");
+        assertEquals(1L, plan.getMissingItems().get(key(0)), "crafts 2 - stock 1");
 
-        // no A stocked -> the loop cannot be primed -> exactly A=1 missing
-        // (the original RecursionReferenceTest "恰报缺 1 种子" semantics)
+        // no A stocked -> both crafts' A disclose
         BenchSimulationState starved = new BenchSimulationState().seed("B", 3);
         VMPlan starvedPlan = Bench.run(amp, 4, starved);
-        CpuLifecycleAssert.auto(starvedPlan);
         assertTrue(starvedPlan.isSimulation(), "starved amplifier must report its seed");
-        assertEquals(1L, starvedPlan.getMissingItems().get(key(0)));
+        assertEquals(2L, starvedPlan.getMissingItems().get(key(0)), "crafts 2 - stock 0");
     }
 
     /** Catalyst feedback loop A -> 2B; 2B + C -> E + D: closes with C as working capital. */

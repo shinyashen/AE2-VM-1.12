@@ -10,6 +10,8 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
 import java.util.Map;
 
 import static com.ae2vm.test.harness.Bench.UNBOUNDED_STOCK;
@@ -82,17 +84,19 @@ class RecursionReferenceTest {
     // ---- recursion/amplifier: A + B -> 2A, seed = 1 A, B = n-1 ----
 
     @Test
-    void amplifierMinimumFeasible() {
-        // stock {A:1, B:7} — the 1-A seed primes the amplifier; 7 B net +7 A → 8 A.
+    void amplifierRootSelfConsumptionDisclosesFreshSeedCapital() {
+        // stock {A:1, B:7} — request 8 A: the siphon (:265) keeps every crafted
+        // A out of the inventory, so each of the ceil(8/2)=4 delivery crafts
+        // burns a fresh A: the stocked 1 covers one, 3 disclose honestly (the
+        // legacy "feasible" plan starved the faithful CPU at 2 delivered).
         BenchPatternDetails amp = amplifier();
         Bench.register(amp);
         BenchSimulationState sim = new BenchSimulationState().seed("A", 1).seed("B", 7);
         VMPlan plan = Bench.run(amp, 8, sim);
-        // Faithful runtime divergence: A is finalOutput AND self-consumed —
-        // delivered units never circulate (AE2UEL :265; see class note)
-        CpuLifecycleAssert.stalls(plan, "S2");
-        assertTrue(feasible(plan),
-                "amplifier with A=1 seed + B=n-1 must be feasible, got " + dump(plan));
+        assertEquals(Long.valueOf(4L), plan.getPatternTimes().get(amp), "ceil(8/2) delivery crafts");
+        assertFalse(feasible(plan), "the siphoned self-consumption is disclosed, got " + dump(plan));
+        assertTrue(infeasibleMatches(plan, Map.of("A", 3L)),
+                "crafts 4 - stock 1 = A x3, got " + dump(plan));
     }
 
     @Test
@@ -102,11 +106,9 @@ class RecursionReferenceTest {
         BenchSimulationState sim = new BenchSimulationState()
                 .seed("A", UNBOUNDED_STOCK).seed("B", UNBOUNDED_STOCK);
         VMPlan plan = Bench.run(amp, 8, sim);
-        // Faithful runtime divergence (idle-plan shape): unbounded stock closes
-        // the solve at zero crafts — the plan pre-extracts the 8 A but nothing
-        // is scheduled to push a finalOutput return, so a real CPU sits on the
-        // stock forever (S4; see class note)
-        CpuLifecycleAssert.stalls(plan, "S4");
+        // ceil(8/2) = 4 delivery crafts; unbounded A/B covers their draw and
+        // the faithful CPU completes the delivery
+        assertEquals(Long.valueOf(4L), plan.getPatternTimes().get(amp), "ceil(8/2) delivery crafts");
         assertTrue(feasible(plan),
                 "amplifier with unbounded A/B must be feasible, got " + dump(plan));
     }
