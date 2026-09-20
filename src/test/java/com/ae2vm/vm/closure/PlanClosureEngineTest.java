@@ -2,11 +2,13 @@ package com.ae2vm.vm.closure;
 
 import com.ae2vm.compat.PatternCompat;
 import com.ae2vm.compiler.PatternCompiler;
+import com.ae2vm.test.fakes.BenchAEItemStack;
 import com.ae2vm.test.fakes.BenchPatternDetails;
 import com.ae2vm.test.fakes.BenchSimulationState;
 import com.ae2vm.test.harness.Bench;
 import com.ae2vm.test.harness.CpuLifecycleAssert;
 import com.ae2vm.vm.VMPlan;
+import appeng.api.storage.data.IAEItemStack;
 import net.minecraft.init.Bootstrap;
 import org.junit.jupiter.api.Test;
 
@@ -157,6 +159,34 @@ class PlanClosureEngineTest {
                 "a pure-DAG web is deferral-fed: nothing missing: " + plan.getMissingItems());
         assertFalse(plan.isSimulation(), "the order must be acceptable");
         CpuLifecycleAssert.complete(plan, PatternCompat.getPrimaryOutput(pR), 100);
+    }
+
+    @Test
+    void craftableConsumerFamilyDrawSurvivesTheGate() {
+        Bootstrap.register();
+        Bench.reset();
+        // K is a processing input (pK registers it), so the closure's family
+        // pool covers it; the craftable consumer draws the NBT variant and
+        // the gate's ITEM-level pool must ACCEPT that plan (§5.10 — the old
+        // per-identity gate under-counted the variant and falsely rejected
+        // it into the ungated fallback)
+        BenchAEItemStack encoded = new BenchAEItemStack("bonded_k", 0, 0, 1);
+        BenchAEItemStack variant = new BenchAEItemStack("bonded_k", 0, 0, 1).withNbt("B");
+        BenchPatternDetails proc = BenchPatternDetails.custom(
+                new IAEItemStack[]{encoded}, new IAEItemStack[]{Bench.k("P")});
+        BenchPatternDetails craft = BenchPatternDetails.custom(
+                new IAEItemStack[]{encoded}, new IAEItemStack[]{Bench.k("R")}).asCraftable();
+        Bench.register(proc);
+        Bench.register(craft);
+        for (var p : Bench.PATTERNS.values()) PatternCompiler.compileIfAbsent(p);
+
+        BenchSimulationState sim = new BenchSimulationState().seedNbt("bonded_k", "B", 5);
+        VMPlan plan = Bench.run(craft, 5, sim);
+        assertFalse(plan.isSimulation(),
+                "the family draw covers the craftable share: " + plan.getMissingItems());
+        assertEquals(5L, plan.getUsedItems().get(variant),
+                "the ACTUAL variant is withdrawn");
+        CpuLifecycleAssert.complete(plan, PatternCompat.getPrimaryOutput(craft), 5);
     }
 
 }

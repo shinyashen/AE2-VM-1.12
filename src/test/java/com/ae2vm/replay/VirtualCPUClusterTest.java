@@ -3,6 +3,7 @@ package com.ae2vm.replay;
 import appeng.api.networking.crafting.ICraftingPatternDetails;
 import appeng.api.storage.data.IAEItemStack;
 import com.ae2vm.test.fakes.BenchAEItemStack;
+import com.ae2vm.test.fakes.BenchPatternDetails;
 import com.ae2vm.trace.VirtualPatternDetails;
 import com.ae2vm.vm.VMCounter;
 import com.ae2vm.vm.VMPlan;
@@ -103,5 +104,68 @@ class VirtualCPUClusterTest {
         VirtualCPUCluster.Stock s = new VirtualCPUCluster.Stock();
         s.add(k(IRON, 1), iron);
         return s;
+    }
+
+    // ------------------------------------------------------------------
+    // Stock matching axes (§5.10): the exact-key reads are findPrecise-
+    // faithful (real AEItemStack.isSameType compares the SharedStack — FULL
+    // identity), while the craftable slot pool matches at ITEM level
+    // (findFuzzy IGNORE_ALL). A per-identity craftable pool once
+    // under-counted variant stock and made the gate falsely reject plans
+    // the real CPU completes. (Bench items intern per maxDamage and the
+    // project models damage as item identity — so the variant axis here is
+    // NBT, which shares the Item instance.)
+
+    @Test
+    void processingSlotRejectsNbtVariantStock() {
+        // a processing pattern's slot is findPrecise-exact (:445-453): an
+        // NBT variant of the input in the CPU inventory can NEVER feed it
+        BenchAEItemStack encoded = k("bonded_k", 1);
+        BenchAEItemStack variant = k("bonded_k", 1).withNbt("B");
+        ICraftingPatternDetails p = new VirtualPatternDetails(
+                new IAEItemStack[]{encoded}, new IAEItemStack[]{k(STONE, 1)}, false, false);
+        VirtualCPUCluster.Verdict v = runSingle(p, encoded, variant, 1000);
+        assertEquals(VirtualCPUCluster.Verdict.Status.STALL, v.status, v.toString());
+        assertEquals("S2", v.stallClass, v.toString());
+    }
+
+    @Test
+    void craftableSlotPoolsNbtVariantsOfItsInput() {
+        // craftable, no substitute list: findFuzzy(input, IGNORE_ALL) (:499)
+        // matches every variant of the input's own item
+        BenchAEItemStack encoded = new BenchAEItemStack("tf_alloy", 0, 0, 1);
+        BenchAEItemStack variant = new BenchAEItemStack("tf_alloy", 0, 0, 1).withNbt("B");
+        ICraftingPatternDetails p = new VirtualPatternDetails(
+                new IAEItemStack[]{encoded}, new IAEItemStack[]{k(STONE, 1)}, true, false);
+        VirtualCPUCluster.Verdict v = runSingle(p, encoded, variant, 1000);
+        assertEquals(VirtualCPUCluster.Verdict.Status.COMPLETE, v.status, v.toString());
+    }
+
+    @Test
+    void craftableSlotPoolsVariantsOfListedAlternates() {
+        // a listed alternate's variant feeds the slot too (:466
+        // findFuzzy(substitute, IGNORE_ALL))
+        BenchAEItemStack encoded = new BenchAEItemStack("gray_dye", 0, 0, 1);
+        BenchPatternDetails p = BenchPatternDetails.withSlotSubstitute(
+                BenchPatternDetails.custom(
+                        new IAEItemStack[]{encoded},
+                        new IAEItemStack[]{k(STONE, 1)}).asCraftable(),
+                new int[]{0}, "white");
+        BenchAEItemStack whiteVariant = new BenchAEItemStack("white", 0, 0, 1).withNbt("D");
+        VirtualCPUCluster.Verdict v = runSingle(p, encoded, whiteVariant, 1000);
+        assertEquals(VirtualCPUCluster.Verdict.Status.COMPLETE, v.status, v.toString());
+    }
+
+    /** One input line of {@code perCraft}/craft, the whole supply in {@code stocked}. */
+    private static VirtualCPUCluster.Verdict runSingle(ICraftingPatternDetails p,
+                                                       IAEItemStack input, IAEItemStack stocked,
+                                                       long crafts) {
+        Map<ICraftingPatternDetails, Long> times = new LinkedHashMap<>();
+        times.put(p, crafts);
+        VMCounter used = new VMCounter();
+        used.add(stocked, crafts * input.getStackSize());
+        VMPlan plan = new VMPlan(k(STONE, 1), 1000, 0, false, used, new VMCounter(),
+                new VMCounter(), times);
+        return new VirtualCPUCluster(plan, k(STONE, 1), 1000).run(10_000, 0);
     }
 }

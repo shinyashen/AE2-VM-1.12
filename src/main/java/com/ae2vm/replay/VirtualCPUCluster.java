@@ -25,6 +25,15 @@ import java.util.Collections;
  *       paths (:656 canSubstitute / :672 damageable fallback) live in the
  *       <em>craftable</em> branch only; processing patterns never substitute
  *       at the CPU.</li>
+ *   <li><b>Stock matching axes.</b> {@code isSameType} on real
+ *       {@code AEItemStack}s compares SharedStack equality =
+ *       {@code ItemStack.areItemStacksEqual} — the FULL identity — so the
+ *       Stock's exact-key reads are findPrecise-faithful (:445-453). The
+ *       craftable slot pool is matched at ITEM level instead
+ *       ({@code findFuzzy(IGNORE_ALL)} :466/:499 matches every damage/NBT
+ *       variant of an accepted item) — a per-identity sum here once
+ *       UNDER-counted variant stock and made the gate falsely reject plans
+ *       the real CPU completes (the false-fallback source, §5.10).</li>
  *   <li><b>injectItems is waitingFor-gated.</b> :218 finds the entry
  *       precisely; an item the CPU is not waiting for is REFUSED whole
  *       (:253 falls through to {@code return input}). Items matching
@@ -103,6 +112,58 @@ public final class VirtualCPUCluster {
                 }
             }
             return taken;
+        }
+
+        /**
+         * {@code findFuzzy(key, IGNORE_ALL)} pool: the total stock of every
+         * entry sharing the key's own ITEM or any alternate's ITEM (AE2UEL
+         * canCraft :466/:499 matches by Item, any damage/NBT; the slot list
+         * always carries the original input — PatternHelper :289). Entries
+         * count once even when several alternates share an Item.
+         */
+        public long amountOfItemFamily(IAEItemStack k, Collection<IAEItemStack> alternates) {
+            long s = 0;
+            for (int i = 0; i < keys.size(); i++) {
+                if (amounts.get(i) > 0 && acceptsItem(keys.get(i), k, alternates)) {
+                    s = satAdd(s, amounts.get(i));
+                }
+            }
+            return s;
+        }
+
+        /**
+         * Drains up to {@code n} from the IGNORE_ALL pool: the exact identity
+         * first (canCraft's findPrecise precedes its findFuzzy loop), then
+         * every other accepted-item entry in insertion order.
+         */
+        public long extractItemFamily(IAEItemStack k, Collection<IAEItemStack> alternates, long n) {
+            long taken = extract(k, n);
+            for (int i = 0; i < keys.size() && taken < n; i++) {
+                if (amounts.get(i) <= 0 || keys.get(i).isSameType(k)) {
+                    continue; // the exact tier is already drained
+                }
+                if (!acceptsItem(keys.get(i), k, alternates)) {
+                    continue;
+                }
+                long take = Math.min(amounts.get(i), n - taken);
+                amounts.set(i, amounts.get(i) - take);
+                taken += take;
+            }
+            return taken;
+        }
+
+        /** Item-level acceptance for the IGNORE_ALL pool (key's own item included). */
+        private static boolean acceptsItem(IAEItemStack entry, IAEItemStack k,
+                                           Collection<IAEItemStack> alternates) {
+            if (entry.getItem() == k.getItem()) {
+                return true;
+            }
+            for (IAEItemStack alt : alternates) {
+                if (alt != null && entry.getItem() == alt.getItem()) {
+                    return true;
+                }
+            }
+            return false;
         }
 
         public boolean isEmpty() {
@@ -367,12 +428,14 @@ public final class VirtualCPUCluster {
      * a craft fits when every slot's available pool covers its per-craft
      * need, and within a pass nothing refills the inventory, so the per-
      * craft loop's stopping point is the min over slots of floor(available
-     * / needed), capped by the remaining count. Craftable branch (:454-516):
-     * a slot's pool sums its alternates exactly as canCraft did (plain
-     * addition, so the one-craft verdict matches bit-for-bit); extraction
-     * still drains the exact key first (see {@link #extractInputs}).
-     * Simplified from the real code's per-non-condensed-slot reservation,
-     * which only matters when two slots share an alternate; no fixture does.
+     * / needed), capped by the remaining count. Stock matching is the FULL
+     * identity (real {@code AEItemStack.isSameType} compares SharedStack
+     * equality = {@code areItemStacksEqual}) — a findPrecise-faithful
+     * reading of :445-453; no NBT/damage variant serves a processing slot.
+     * Craftable branch (:454-516): a slot's pool is the IGNORE_ALL item
+     * family — the input's own item plus every alternate's item, any
+     * damage/NBT ({@code findFuzzy(substitute, IGNORE_ALL)}), the slot
+     * list carrying the original (PatternHelper :289).
      * Inputs-less patterns answer "all of them".
      */
     private long firesBeforeInputsRunDry(ICraftingPatternDetails d, long remaining) {
@@ -392,14 +455,9 @@ public final class VirtualCPUCluster {
             if (in == null || in.getStackSize() <= 0) {
                 continue;
             }
-            long available = inventory.amountOf(in);
-            if (craftable) {
-                for (IAEItemStack alt : substitutesOf(d, slot)) {
-                    if (alt != null) {
-                        available += inventory.amountOf(alt);
-                    }
-                }
-            }
+            long available = craftable
+                    ? inventory.amountOfItemFamily(in, substitutesOf(d, slot))
+                    : inventory.amountOf(in);
             long bySlot = available / in.getStackSize();
             if (bySlot < fires) {
                 fires = bySlot;
@@ -409,12 +467,12 @@ public final class VirtualCPUCluster {
     }
 
     /**
-     * Extracts {@code fires} crafts' inputs: exact keys first, alternates
-     * (craftable branch :656-692, findFuzzy + isValidItemForSlot) for
-     * whatever the exact pool cannot cover — the same preference the
-     * per-craft loop produced, applied to the batch total. fires x need
-     * cannot overflow: {@link #firesBeforeInputsRunDry} bounded fires by
-     * every slot's availability.
+     * Extracts {@code fires} crafts' inputs: processing slots drain the
+     * exact identity (:445-453); craftable slots drain the IGNORE_ALL item
+     * family (:454-516) — exact identity first, then every other accepted
+     * variant, the same preference the per-craft loop produced. fires x
+     * need cannot overflow: {@link #firesBeforeInputsRunDry} bounded fires
+     * by every slot's availability.
      */
     private void extractInputs(ICraftingPatternDetails d, long fires) {
         IAEItemStack[] inputs = d.getCondensedInputs();
@@ -433,14 +491,10 @@ public final class VirtualCPUCluster {
                 continue;
             }
             long left = fires * in.getStackSize();
-            left -= inventory.extract(in, left);
-            if (left > 0 && craftable) {
-                for (IAEItemStack alt : substitutesOf(d, slot)) {
-                    if (alt == null || left <= 0) {
-                        continue;
-                    }
-                    left -= inventory.extract(alt, left);
-                }
+            if (craftable) {
+                left -= inventory.extractItemFamily(in, substitutesOf(d, slot), left);
+            } else {
+                left -= inventory.extract(in, left);
             }
         }
     }
