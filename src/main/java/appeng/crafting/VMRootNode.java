@@ -16,6 +16,7 @@ import com.ae2vm.api.AE2VMCraftingRegistry;
 import com.ae2vm.config.AE2VMConfig;
 import com.ae2vm.trace.TraceRecorder;
 import com.ae2vm.trace.TraceSessions;
+import com.ae2vm.vm.NetworkCraftingSandbox;
 import com.ae2vm.vm.VMPlan;
 import net.minecraft.world.World;
 
@@ -161,7 +162,9 @@ public final class VMRootNode extends CraftingTreeNode {
     /** Null when no root pattern exists — the caller falls back natively. */
     private VMPlan calculate(long amount) {
         TraceRecorder live = traceRecorder != null && !traceRecorder.isClosed() ? traceRecorder : null;
-        return AE2VMCrafting.calculate(grid, world, requestedOutput, amount, live);
+        // the job's MAIN-THREAD stock capture: race-free by construction
+        return AE2VMCrafting.calculate(grid, world, requestedOutput, amount, live,
+                NetworkCraftingSandbox.takeJobStock(craftingJob));
     }
 
     @Override

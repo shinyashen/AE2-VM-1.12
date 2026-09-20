@@ -130,6 +130,13 @@ public final class AE2VMCrafting {
      */
     public static VMPlan calculate(IGrid grid, World world,
                                    IAEItemStack what, long amount, TraceRecorder rec) {
+        return calculate(grid, world, what, amount, rec, null);
+    }
+
+    /** The race-free form carries the job's MAIN-THREAD stock snapshot. */
+    public static VMPlan calculate(IGrid grid, World world,
+                                   IAEItemStack what, long amount, TraceRecorder rec,
+                                   IItemList<IAEItemStack> jobStock) {
         ICraftingGrid craftingGrid = grid.getCache(ICraftingGrid.class);
         if (craftingGrid == null) {
             if (rec != null) {
@@ -142,14 +149,15 @@ public final class AE2VMCrafting {
             TraceRecorder.setCurrent(rec);
         }
         try {
-            return calculateArmed(grid, world, what, amount, rec);
+            return calculateArmed(grid, world, what, amount, rec, jobStock);
         } finally {
             TraceRecorder.setCurrent(null);
         }
     }
 
     private static VMPlan calculateArmed(IGrid grid, World world,
-                                         IAEItemStack what, long amount, TraceRecorder rec) {
+                                         IAEItemStack what, long amount, TraceRecorder rec,
+                                         IItemList<IAEItemStack> jobStock) {
         ICraftingGrid craftingGrid = grid.getCache(ICraftingGrid.class);
 
         CraftingVM vm = vmFor(grid);
@@ -222,7 +230,8 @@ public final class AE2VMCrafting {
         // Pristine stock view for the repair model: never executed against, so
         // its stock reflects the network rather than a pass's consumption
         // (simulate extracts leave it untouched).
-        final NetworkCraftingSandbox stockView = NetworkCraftingSandbox.snapshot(grid);
+        final NetworkCraftingSandbox stockView =
+                NetworkCraftingSandbox.snapshot(grid, jobStock);
         if (rec != null) {
             rec.stampSnapshot(stockView);
         }

@@ -9,6 +9,7 @@ import appeng.crafting.AE2VMTreeDepth;
 import appeng.crafting.CraftingJob;
 import appeng.crafting.CraftingTreeNode;
 import appeng.crafting.VMRootNode;
+import com.ae2vm.vm.NetworkCraftingSandbox;
 import net.minecraft.world.World;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
@@ -44,6 +45,12 @@ public abstract class CraftingJobMixin {
         if (grid == null || output == null) {
             return;
         }
+        // MAIN THREAD: capture the network stock snapshot for this job NOW —
+        // the same thread grid ticks run on, so the read cannot race a
+        // concurrent storage mutation (the pool-thread read could, and the
+        // interrupted enumeration once shipped a 61-type poisoned stock view
+        // that stalled every job planned on it).
+        NetworkCraftingSandbox.captureJobStock((CraftingJob) (Object) this, grid);
         ICraftingGrid craftingGrid = grid.getCache(ICraftingGrid.class);
         if (craftingGrid != null) {
             this.tree = new VMRootNode(
