@@ -472,7 +472,11 @@ public class CraftingVM {
                             usedItems.add(key, fromNetwork);
                         }
                     }
-                    // Processing-recipe default fuzzy: same-item NBT variants satisfy the slot.
+                    // FALLBACK-PATH family draw (the closure allocates its own,
+                    // per-consumer-class): same-item NBT variants may cover a
+                    // processing slot here — the legacy semantics. The audit
+                    // flags the strict shortfall when it survives (a real CPU
+                    // extracts findPrecise-exact, canCraft :445-453).
                     if (got < needed && PatternCompiler.isProcessingInput(key)) {
                         long remaining = needed - got;
                         TraceRecorder _rec = TraceRecorder.current();
@@ -1028,9 +1032,11 @@ public class CraftingVM {
 
             @Override
             public List<IAEItemStack> nbtFamilyOf(IAEItemStack key) {
-                // processing default fuzzy: same-item damage-equal variants
-                // present in the network stock (fluid fakes excluded — the NBT
-                // IS the fluid identity)
+                // the family pool's inventory scope: same-item damage-equal
+                // variants present in the network stock, keyed on the web's
+                // NBT-variant axes (processing inputs); WHO may draw it is the
+                // consumer-class gate (PlanClosure.View.isFuzzyConsumer).
+                // Fluid fakes excluded — the NBT IS the fluid identity
                 List<IAEItemStack> family = new ArrayList<>();
                 if (!PatternCompiler.isProcessingInput(key)
                         || AE2FCCompat.isFluidFakeItem(key)) {
@@ -1044,12 +1050,6 @@ public class CraftingVM {
                     family.add(v);
                 }
                 return family;
-            }
-
-            @Override
-            public boolean isProcessingInput(IAEItemStack key) {
-                return PatternCompiler.isProcessingInput(key)
-                        && !AE2FCCompat.isFluidFakeItem(key);
             }
 
             @Override
@@ -2274,10 +2274,12 @@ public class CraftingVM {
     }
 
     /**
-     * Same-item SAME-dAMAGE NBT variants present in the network stock — the
-     * PROCESSING default fuzzy family (usable by ANY processing slot,
-     * unlike the compile-time replacement group which only applies to
-     * replacement-enabled slots). Damage variants are a different item in 1.12.
+     * Same-item SAME-damage NBT variants present in the network stock — the
+     * family POOL's inventory scope. WHO may draw a member is the consumer's
+     * extraction class (closure: {@code PlanClosure.View.isFuzzyConsumer};
+     * audit: the same gate) — a processing consumer extracts findPrecise-
+     * exact and no variant serves it (canCraft :445-453). Damage variants
+     * are a different item in 1.12.
      */
     private List<IAEItemStack> nbtFamilyOf(IAEItemStack key) {
         return simulation.findFuzzyFamily(key);

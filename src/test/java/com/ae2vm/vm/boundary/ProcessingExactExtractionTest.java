@@ -19,25 +19,26 @@ import java.util.TreeMap;
 
 import static com.ae2vm.test.fakes.BenchPatternDetails.custom;
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 import appeng.api.networking.crafting.ICraftingPatternDetails;
 import net.minecraft.init.Bootstrap;
 
 /**
- * Port of the original ProcessingDefaultFuzzyTest — processing recipes (处理配方)
- * DEFAULT to fuzzy matching. A processing pattern input is a single exact variant,
- * but the real ME network may hold the SAME item under a DIFFERENT NBT variant —
- * the GTL greenhouse fake-craft block / Mystical Agriculture essence ("材料缺失但
- * 不知道哪里缺失"). The VM must count the item's NBT family (same item, same
- * damage, different NBT) as satisfying the slot, mirroring AE2 native's
- * {@code getValidItemTemplates} → {@code findFuzzyTemplates}.
+ * Processing patterns extract findPrecise-EXACT (2026-09-20 reversal,
+ * CLOSURE-DESIGN §5.9): AE2UEL {@code CraftingCPUCluster.canCraft} :445-453
+ * SIMULATE-extracts every condensed input of a {@code !isCraftable()} pattern
+ * through {@code MECraftingInventory} → {@code findPrecise} — the FULL stack
+ * identity (item + damage + NBT), so NO variant of the encoded input can
+ * satisfy the slot. The old "processing default fuzzy" model here (mirroring
+ * AE2 native's PLANNING-side {@code getValidItemTemplates} →
+ * {@code findFuzzyTemplates}) produced plans the real CPU starves on — the
+ * live "sometimes the CPU stalls" half. The family pools now serve only
+ * craftable consumers ({@code canCraft} :454-516 fuzzy-extracts).
  *
  * <p>The damage axis is item IDENTITY in 1.12 (Thermal materials encode the
- * material there): a damage variant is a DIFFERENT item and must never
- * substitute — the family is supplied by {@code SimulationState.findFuzzyFamily}
- * and contains only same-damage NBT variants.
+ * material there) and the NBT axis is identity too at the CPU — neither
+ * substitutes for a processing slot.
  */
-class ProcessingDefaultFuzzyTest {
+class ProcessingExactExtractionTest {
 
     /** The encoded input is greenhouse_block{NBT A}; the network holds NBT B. */
     private static final String ITEM = "greenhouse_block";
@@ -89,24 +90,22 @@ class ProcessingDefaultFuzzyTest {
      * GTL greenhouse fake-craft: the processing pattern input is encoded as the exact
      * NBT variant {@code greenhouse_block{A}}, but the network holds
      * {@code greenhouse_block{B}} — a different NBT variant of the same item at the
-     * same damage. The VM must treat B as satisfying the slot: NO missing, and
-     * usedItems names the ACTUAL variant B (so the CPU extracts the real key at
-     * submit time).
+     * same damage. The CPU's findPrecise-exact extraction can NEVER push the pattern
+     * with B in the CPU inventory, so the plan must disclose the encoded variant as
+     * missing (the job is refused) instead of booking a withdrawal that stalls.
      */
     @Test
-    void processingInputSatisfiedByDifferentNbtVariant() {
+    void differentNbtVariantDoesNotSatisfyAProcessingInput() {
         BenchAEItemStack encoded = new BenchAEItemStack(ITEM, 0, 0, 1);                  // NBT A
         BenchAEItemStack stored = new BenchAEItemStack(ITEM, 0, 0, 1).withNbt("B");      // NBT B
         BenchSimulationState sim = new BenchSimulationState().seedNbt(ITEM, "B", 5);
 
         VMPlan plan = run(5, sim);
-        assertTrue(plan.getMissingItems().isEmpty(),
-                "processing input must be satisfied by a different-NBT variant of the same item, missing="
+        assertEquals(5L, plan.getMissingItems().get(encoded),
+                "the exact-identity gap must disclose, not a family draw: missing="
                         + missing(plan));
-        assertEquals(5L, plan.getUsedItems().get(stored),
-                "the ACTUAL variant (B) must be recorded in usedItems, used=" + used(plan));
-        assertEquals(0L, plan.getUsedItems().get(encoded),
-                "the empty encoded variant (A) must not be recorded, used=" + used(plan));
+        assertEquals(0L, plan.getUsedItems().get(stored),
+                "the sibling variant must not be withdrawn, used=" + used(plan));
     }
 
     /**

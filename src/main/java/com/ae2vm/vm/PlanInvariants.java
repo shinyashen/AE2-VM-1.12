@@ -27,9 +27,12 @@ import java.util.Set;
  *                     producer and no missing entry (silent stall shape)
  *
  * Fuzzy note: NBT-variant substitution moves demand between family
- * members, so rules that inspect per-key ledgers DEFER when the key
- * carries NBT (family-covered) — flagged as conservative; the strict
- * checks (deliver/output/emitable) are family-independent.
+ * members, so rules that inspect per-key ledgers gate on the CONSUMING
+ * pattern's extraction class — a craftable pattern fuzzy-extracts
+ * (canCraft :454-516) and family stock absolves its gap; a processing
+ * pattern extracts findPrecise-exact (:445-453) and only exact units
+ * (stock + production) can cover it. The strict checks
+ * (deliver/output/emitable) are family-independent.
  */
 public final class PlanInvariants {
 
@@ -61,12 +64,13 @@ public final class PlanInvariants {
             if (times <= 0L || e.getKey() == null) {
                 continue;
             }
+            boolean strict = !isCraftable(e.getKey());
             IAEItemStack[] inputs = e.getKey().getCondensedInputs();
             IAEItemStack[] outputs = safeOutputs(e.getKey());
             if (inputs != null) {
                 for (IAEItemStack i : inputs) {
                     if (i != null) {
-                        ledger.consume(i, satMul(times, i.getStackSize()));
+                        ledger.consume(i, satMul(times, i.getStackSize()), strict);
                     }
                 }
             }
@@ -88,11 +92,19 @@ public final class PlanInvariants {
             }
         }
 
-        // net position per ledger key: stock + produced - consumed
+        // net position per ledger key: stock + produced - consumed. The
+        // family may only absolve the CRAFTABLE share of a gap: a processing
+        // consumer extracts findPrecise-exact (canCraft :445-453), so when
+        // the exact units (stock + production) cannot cover the strict
+        // demand the shortfall is real no matter what sibling stock exists.
         for (IAEItemStack k : ledger.keys()) {
-            long net = stockOf(stock, k) + ledger.producedOf(k) - ledger.consumedOf(k);
+            long exact = stockOf(stock, k) + ledger.producedOf(k);
+            long net = exact - ledger.consumedOf(k);
             if (net < 0) {
-                if (!missingCovers(plan, k) && !familyCovers(stock, k, -net)) {
+                long strictShort = ledger.strictConsumedOf(k) - exact;
+                if (!missingCovers(plan, k)
+                        && (strictShort > 0
+                            || !familyCovers(stock, k, -net))) {
                     out.add("MISSING-COVERAGE:" + token(k)
                             + " net=" + net);
                 }
@@ -105,12 +117,14 @@ public final class PlanInvariants {
             if (inputs == null) {
                 continue;
             }
+            boolean fuzzyConsumer = isCraftable(e.getKey());
             for (IAEItemStack i : inputs) {
                 if (i == null) {
                     continue;
                 }
                 long net = stockOf(stock, i) + ledger.producedOf(i) - ledger.consumedOf(i);
-                if (net < 0 && !missingCovers(plan, i) && !familyCovers(stock, i, -net)) {
+                if (net < 0 && !missingCovers(plan, i)
+                        && !(fuzzyConsumer && familyCovers(stock, i, -net))) {
                     out.add("INPUT-REACH:" + token(i));
                 }
             }
@@ -120,12 +134,15 @@ public final class PlanInvariants {
     }
 
     /**
-     * True when the key's SAME-ITEM family stock covers the gap — the plan's
-     * family allocation legitimately withdraws a sibling variant (1.12 damage
-     * axes, NBT variants) and the CPU's extraction consumes it for the slot.
-     * The old NBT-only deferral (hasTagCompound) was blind to damage-variant
-     * processing inputs (minecraft:log@3 backed by log@0 stock) and cried
-     * wolf on the closure's correct plans.
+     * True when the key's SAME-ITEM family stock covers the gap — valid only
+     * for CRAFTABLE consumers (canCraft :454-516 fuzzy-extracts through
+     * findFuzzy(IGNORE_ALL) / the slot lists); a processing consumer's gap is
+     * findPrecise-exact and is never absolved here (the callers gate).
+     * The plan's family allocation legitimately withdraws a sibling variant
+     * (1.12 damage axes, NBT variants) and the CPU's extraction consumes it
+     * for the slot. The old NBT-only deferral (hasTagCompound) was blind to
+     * damage-variant processing inputs (minecraft:log@3 backed by log@0
+     * stock) and cried wolf on the closure's correct plans.
      */
     private static boolean familyCovers(IItemList<IAEItemStack> stock, IAEItemStack k,
                                         long gap) {
@@ -163,6 +180,19 @@ public final class PlanInvariants {
         }
     }
 
+    /**
+     * The pattern's CPU-side extraction class (AE2UEL canCraft :444-521):
+     * craftable = fuzzy-capable, processing = findPrecise-exact. Probe
+     * failure reads as processing — the strict side.
+     */
+    private static boolean isCraftable(ICraftingPatternDetails d) {
+        try {
+            return d.isCraftable();
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
     // ------------------------------------------------------------------
 
     private static final class Ledger {
@@ -171,6 +201,8 @@ public final class PlanInvariants {
         final List<Long> producedAmounts = new ArrayList<>();
         final List<IAEItemStack> consumedKeys = new ArrayList<>();
         final List<Long> consumedAmounts = new ArrayList<>();
+        final List<IAEItemStack> strictKeys = new ArrayList<>();
+        final List<Long> strictAmounts = new ArrayList<>();
 
         void produce(IAEItemStack k, long n) {
             if (n <= 0) return;
@@ -179,11 +211,15 @@ public final class PlanInvariants {
             producedAmounts.add(n);
         }
 
-        void consume(IAEItemStack k, long n) {
+        void consume(IAEItemStack k, long n, boolean strict) {
             if (n <= 0) return;
             keys.add(k);
             consumedKeys.add(k);
             consumedAmounts.add(n);
+            if (strict) {
+                strictKeys.add(k);
+                strictAmounts.add(n);
+            }
         }
 
         List<IAEItemStack> keys() {
@@ -205,6 +241,17 @@ public final class PlanInvariants {
             for (int i = 0; i < consumedKeys.size(); i++) {
                 if (consumedKeys.get(i).isSameType(k)) {
                     s = satAdd(s, consumedAmounts.get(i));
+                }
+            }
+            return s;
+        }
+
+        /** Consumption by PROCESSING patterns — findPrecise-exact at the CPU. */
+        long strictConsumedOf(IAEItemStack k) {
+            long s = 0;
+            for (int i = 0; i < strictKeys.size(); i++) {
+                if (strictKeys.get(i).isSameType(k)) {
+                    s = satAdd(s, strictAmounts.get(i));
                 }
             }
             return s;

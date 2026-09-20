@@ -24,7 +24,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * withdraw exactly the net draw, injected chains re-balance a ring to cover
  * (the EcaseMemberRebalance requirement — coverage, not billing), net-losing
  * cycles diverge into the escape hatch, the delivery root's own shortfall is
- * production-invariant and disclosed, and catalysts net to zero.
+ * production-invariant and disclosed, catalysts net to zero — and the family
+ * allocation's per-consumer extraction semantics (AE2UEL canCraft :444-521):
+ * a processing consumer is findPrecise-exact and never family-covered, a
+ * craftable consumer fuzzy-extracts and may draw the sibling pools.
  */
 class PlanClosureTest {
 
@@ -50,6 +53,20 @@ class PlanClosureTest {
     /** A closure view over the given patterns (one producer per key asserted). */
     private static PlanClosure.View view(List<BenchPatternDetails> patterns,
                                          Map<String, Long> stock) {
+        return view(patterns, stock, Map.of(), Map.of(), Map.of());
+    }
+
+    /**
+     * Family-aware view: {@code nbtFamilies}/{@code substitutes} map a key id
+     * to its sibling/substitute ids (their stock is the shared stock map),
+     * {@code fuzzyShares} maps a pattern to its replacement-slot per-craft
+     * shares.
+     */
+    private static PlanClosure.View view(List<BenchPatternDetails> patterns,
+                                         Map<String, Long> stock,
+                                         Map<String, List<String>> nbtFamilies,
+                                         Map<String, List<String>> substitutes,
+                                         Map<BenchPatternDetails, Map<String, Long>> fuzzyShares) {
         Map<BenchAEItemStack, ICraftingPatternDetails> producers = new LinkedHashMap<>();
         for (BenchPatternDetails p : patterns) {
             for (IAEItemStack o : p.getCondensedOutputs()) {
@@ -84,6 +101,38 @@ class PlanClosureTest {
                 return stockMap.getOrDefault(
                         (BenchAEItemStack) key.copy().reset().setStackSize(1),
                         BigInteger.ZERO);
+            }
+
+            @Override
+            public Map<IAEItemStack, BigInteger> fuzzyInputsOf(ICraftingPatternDetails p) {
+                Map<String, Long> shares = fuzzyShares.get(p);
+                Map<IAEItemStack, BigInteger> out = new LinkedHashMap<>();
+                if (shares != null) {
+                    for (var e : shares.entrySet()) {
+                        out.put(k(e.getKey()), BigInteger.valueOf(e.getValue()));
+                    }
+                }
+                return out;
+            }
+
+            @Override
+            public List<IAEItemStack> nbtFamilyOf(IAEItemStack key) {
+                return familyOf(key, nbtFamilies);
+            }
+
+            @Override
+            public List<IAEItemStack> substitutesOf(IAEItemStack key) {
+                return familyOf(key, substitutes);
+            }
+
+            private List<IAEItemStack> familyOf(IAEItemStack key,
+                                                Map<String, List<String>> table) {
+                List<IAEItemStack> out = new ArrayList<>();
+                String id = ((BenchAEItemStack) key.copy().reset().setStackSize(1)).id;
+                for (String s : table.getOrDefault(id, List.of())) {
+                    out.add(k(s));
+                }
+                return out;
             }
         };
     }
@@ -234,5 +283,92 @@ class PlanClosureTest {
         assertEquals(5L, craftsOf(r, pX), "ceil(deliver / outPer)");
         assertEquals(5L, drawOf(r, "A"), "each craft burns one A");
         assertTrue(r.missing.isEmpty());
+    }
+
+    // ------------------------------------------------------------------
+    // per-consumer extraction semantics: AE2UEL canCraft :444-521 — a
+    // processing pattern SIMULATE-extracts findPrecise (FULL identity, no
+    // variant serves it); a craftable pattern fuzzy-extracts. A family
+    // member may therefore only ever serve a craftable consumer's share.
+
+    @Test
+    void processingConsumerIsNeverFamilyCovered() {
+        // the pre-fix shape that stalled the live CPU: K leaf, sibling V
+        // stocked — the allocation drew V for a PROCESSING consumer, the
+        // withdrawal booked V, and the CPU's findPrecise(K) starved. The
+        // gap must disclose on K instead.
+        BenchPatternDetails pR = pat(new String[]{"R"}, new long[]{1}, "K", 1L);
+        List<BenchPatternDetails> pats = List.of(pR);
+        PlanClosure.Result r = PlanClosure.close(k("R"), BigInteger.TEN, pR,
+                view(pats, Map.of("V", 50L), Map.of("K", List.of("V")),
+                        Map.of("K", List.of("V")), Map.of()));
+        assertTrue(r.converged);
+        assertEquals(10L, craftsOf(r, pR));
+        assertEquals(10L, r.missing.get(k("K")).longValue(),
+                "the strict gap discloses on the exact key");
+        assertTrue(r.missing.size() == 1, "no sibling leakage: " + r.missing);
+        assertTrue(r.withdraw.isEmpty(),
+                "a processing consumer's plan must not withdraw the sibling: " + r.withdraw);
+        assertEquals(10L, drawOf(r, "K"));
+        assertEquals(0L, drawOf(r, "V"));
+    }
+
+    @Test
+    void craftableConsumerDrawsTheFamily() {
+        // the same shape with a CRAFTABLE consumer: the fuzzy-extracting
+        // branch (:454-516) accepts the damage-equal sibling — the family
+        // draw is executable and the gap closes without crafting
+        BenchPatternDetails pR = pat(new String[]{"R"}, new long[]{1}, "K", 1L).asCraftable();
+        List<BenchPatternDetails> pats = List.of(pR);
+        PlanClosure.Result r = PlanClosure.close(k("R"), BigInteger.TEN, pR,
+                view(pats, Map.of("V", 50L), Map.of("K", List.of("V")),
+                        Map.of("K", List.of("V")), Map.of()));
+        assertTrue(r.converged);
+        assertEquals(10L, craftsOf(r, pR));
+        assertTrue(r.missing.isEmpty(), "the family covers the craftable share: " + r.missing);
+        assertEquals(10L, r.withdraw.get(k("V")).longValue(),
+                "the withdrawal books the ACTUAL (sibling) key");
+        assertEquals(10L, drawOf(r, "V"),
+                "the draw lands on V as pending consumption");
+    }
+
+    @Test
+    void mixedConsumersSplitTheShare() {
+        // K consumed by a processing leg AND a craftable leg: only the
+        // craftable 10 may draw the sibling; the strict 10 discloses
+        BenchPatternDetails pR = pat(new String[]{"R"}, new long[]{1}, "M1", 1L, "M2", 1L);
+        BenchPatternDetails pM1 = pat(new String[]{"M1"}, new long[]{1}, "K", 1L);
+        BenchPatternDetails pM2 = pat(new String[]{"M2"}, new long[]{1}, "K", 1L).asCraftable();
+        List<BenchPatternDetails> pats = List.of(pR, pM1, pM2);
+        PlanClosure.Result r = PlanClosure.close(k("R"), BigInteger.TEN, pR,
+                view(pats, Map.of("V", 50L), Map.of("K", List.of("V")),
+                        Map.of("K", List.of("V")), Map.of()));
+        assertTrue(r.converged);
+        assertEquals(10L, craftsOf(r, pM1));
+        assertEquals(10L, craftsOf(r, pM2));
+        assertEquals(10L, r.missing.get(k("K")).longValue(),
+                "the strict share discloses on the exact key");
+        assertTrue(r.missing.size() == 1, "the craftable share closed: " + r.missing);
+        assertEquals(10L, r.withdraw.get(k("V")).longValue(),
+                "only the craftable share's family draw is booked");
+        assertEquals(1, r.withdraw.size());
+    }
+
+    @Test
+    void groupOnAProcessingPatternStaysExact() {
+        // defense in depth (the compile never registers groups on processing
+        // patterns, PatternHelper :87): a fuzzy share DEMANDED BY a
+        // processing pattern must not draw the group — canCraft :445-453
+        // finds the key precisely
+        BenchPatternDetails pR = pat(new String[]{"R"}, new long[]{1}, "K", 1L);
+        List<BenchPatternDetails> pats = List.of(pR);
+        PlanClosure.Result r = PlanClosure.close(k("R"), BigInteger.TEN, pR,
+                view(pats, Map.of("V", 50L), Map.of(),
+                        Map.of("K", List.of("V")),
+                        Map.of(pR, Map.of("K", 1L))));
+        assertTrue(r.converged);
+        assertEquals(10L, r.missing.get(k("K")).longValue(),
+                "the demand stays strict despite the registered share");
+        assertTrue(r.withdraw.isEmpty(), "no group draw: " + r.withdraw);
     }
 }

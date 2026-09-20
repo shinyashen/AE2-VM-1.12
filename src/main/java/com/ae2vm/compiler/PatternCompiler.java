@@ -35,7 +35,11 @@ import net.minecraft.item.ItemStack;
  *   ordinary gross input (the worn output is a plain byproduct) — the upstream
  *   ceil(times/uses) amortization is unusable on the AE2UEL CPU (exact
  *   processing extraction)
- * - processing-recipe default fuzzy: every input of a !isCraftable() pattern
+ * - NBT-variant axes: the inputs of !isCraftable() patterns register in
+ *   PROCESSING_INPUT_KEYS — the family POOL's inventory scope only; WHO may
+ *   draw a family member is the consumer's extraction class (AE2UEL canCraft
+ *   :444-521: processing = findPrecise-exact, craftable = fuzzy), judged by
+ *   PlanClosure.View.isFuzzyConsumer / PlanInvariants
  */
 public final class PatternCompiler {
 
@@ -114,7 +118,7 @@ public final class PatternCompiler {
     /** Replacement (substitute) groups: every variant maps to the full accepted set. */
     private static final Map<IAEItemStack, Set<IAEItemStack>> FUZZY_GROUPS = new ConcurrentHashMap<>();
 
-    /** Processing-recipe input keys (default fuzzy: same-item any-NBT family). */
+    /** Processing-recipe input keys — the family POOL's inventory scope (see the class note). */
     private static final Set<IAEItemStack> PROCESSING_INPUT_KEYS = ConcurrentHashMap.newKeySet();
 
     private PatternCompiler() {
@@ -132,7 +136,7 @@ public final class PatternCompiler {
         }
     }
 
-    /** True if {@code key} is an input of a processing recipe (default fuzzy). */
+    /** True if {@code key} is an input of a processing recipe (the family pool's scope). */
     public static boolean isProcessingInput(IAEItemStack key) {
         return key != null && contains(PROCESSING_INPUT_KEYS, key);
     }

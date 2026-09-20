@@ -42,18 +42,24 @@ import java.util.Set;
  * production siphons — so it discloses as missing directly instead of
  * diverging on dead bumps.
  *
- * <p><b>Family allocation (the propagation's stock-aware semantics, kept).</b>
- * Net draw is covered from stock in the same order the legacy aggregation
- * draws: the key's own stock first; then, for a processing input, its
- * same-item damage-equal NBT variants; then, for the FUZZY share of the draw
- * (demand from replacement-enabled slots — a compile-time registered
- * substitute group), the group members. What stock covers is booked on the
- * ACTUAL key (the CPU withdraws exactly that); what a family member covers is
- * consumption of that member (its own net draw grows — a scarce substitute is
- * shared, consumed once, and its own producer bumped or its gap disclosed).
- * Only the UNCOVERED remainder drives the producer bump. With no registered
- * groups and no NBT family the allocation degenerates to the pure exact-key
- * ledger the two live-web baselines pin.
+ * <p><b>Family allocation (per-consumer extraction semantics).</b>
+ * Net draw is covered from stock per CONSUMPTION SHARE, and the shares are
+ * classed by the consuming pattern's extraction semantics — AE2UEL
+ * {@code CraftingCPUCluster.canCraft} :444-521: a processing pattern
+ * SIMULATE-extracts every condensed input from the CPU inventory via
+ * {@code MECraftingInventory.extractItems} → {@code findPrecise} — the FULL
+ * stack identity, no variant serves it — while a craftable pattern walks
+ * {@code findFuzzy(IGNORE_ALL)} / its per-slot substitute lists. So:
+ * a processing consumer's demand draws the key's own stock ONLY; a
+ * craftable consumer's demand draws own stock, then the key's same-item
+ * damage-equal NBT family, and its replacement-enabled share (the compile
+ * registered a substitute group) additionally the group members. What stock
+ * covers is booked on the ACTUAL key (the CPU withdraws exactly that); what
+ * a family member covers is consumption of that member (its own net draw
+ * grows — a scarce substitute is shared, consumed once, and its own producer
+ * bumped or its gap disclosed). Only the UNCOVERED remainder drives the
+ * producer bump. With no registered groups and no NBT family the allocation
+ * degenerates to the pure exact-key ledger the two live-web baselines pin.
  *
  * <p>All arithmetic is BigInteger; all maps keyed by type-normalized copies
  * ({@code copy/reset/size 1}) in deterministic insertion order, mirroring
@@ -106,16 +112,28 @@ public final class PlanClosure {
         }
 
         /**
-         * Same-item damage-equal NBT variants PRESENT IN STOCK usable by a
-         * processing slot (the default processing fuzzy). Default: none.
+         * True when {@code pattern}'s input demand may be covered by a
+         * family member: AE2UEL {@code canCraft} :454-516 extracts a
+         * craftable pattern's inputs through {@code findFuzzy(IGNORE_ALL)} /
+         * its per-slot substitute lists, while a processing pattern's
+         * :445-453 branch is {@code findPrecise}-exact (the FULL stack
+         * identity — no variant serves it). Default: the pattern's own
+         * {@code isCraftable()}, strict on probe failure.
+         */
+        default boolean isFuzzyConsumer(ICraftingPatternDetails pattern) {
+            try {
+                return pattern.isCraftable();
+            } catch (Throwable probeFailure) {
+                return false;
+            }
+        }
+
+        /**
+         * Same-item damage-equal NBT variants PRESENT IN STOCK usable as a
+         * family cover for a fuzzy consumer. Default: none.
          */
         default List<IAEItemStack> nbtFamilyOf(IAEItemStack key) {
             return new ArrayList<>();
-        }
-
-        /** True when {@code key} is a processing-recipe input (default fuzzy). */
-        default boolean isProcessingInput(IAEItemStack key) {
-            return false;
         }
 
         /**
@@ -180,7 +198,10 @@ public final class PlanClosure {
         }
         IAEItemStack root = norm(rootKey);
         LinkedHashMap<ICraftingPatternDetails, BigInteger> plans = new LinkedHashMap<>();
-        LinkedHashMap<IAEItemStack, BigInteger> consumedExact = new LinkedHashMap<>();
+        // consumption split by the consuming pattern's extraction class —
+        // a family member may only ever serve the craftable classes
+        LinkedHashMap<IAEItemStack, BigInteger> consumedStrict = new LinkedHashMap<>();
+        LinkedHashMap<IAEItemStack, BigInteger> consumedCraftable = new LinkedHashMap<>();
         LinkedHashMap<IAEItemStack, BigInteger> consumedFuzzy = new LinkedHashMap<>();
         LinkedHashMap<IAEItemStack, BigInteger> produced = new LinkedHashMap<>();
 
@@ -198,8 +219,9 @@ public final class PlanClosure {
         boolean converged = false;
         while (rounds < MAX_ROUNDS) {
             rounds++;
-            ledger(plans, view, consumedExact, consumedFuzzy, produced);
-            Allocation alloc = allocate(view, root, consumedExact, consumedFuzzy, produced);
+            ledger(plans, view, consumedStrict, consumedCraftable, consumedFuzzy, produced);
+            Allocation alloc = allocate(view, root, consumedStrict, consumedCraftable,
+                    consumedFuzzy, produced);
             if (alloc == null) {
                 // the family allocation failed to settle: honest fallback
                 return new Result(plans, new LinkedHashMap<>(), new LinkedHashMap<>(),
@@ -267,7 +289,8 @@ public final class PlanClosure {
         // bump happened) — derive the withdrawal (stock-covered draws on the
         // ACTUAL keys), the missing disclosure (root/leaf uncovered gaps) and
         // the emitable surplus.
-        Allocation alloc = allocate(view, root, consumedExact, consumedFuzzy, produced);
+        Allocation alloc = allocate(view, root, consumedStrict, consumedCraftable,
+                consumedFuzzy, produced);
         if (alloc == null) {
             return new Result(plans, new LinkedHashMap<>(), new LinkedHashMap<>(),
                     new LinkedHashMap<>(), new LinkedHashMap<>(), rounds, false);
@@ -279,7 +302,8 @@ public final class PlanClosure {
             BigInteger covered = alloc.coveredOnSelf.getOrDefault(k, ZERO);
             BigInteger drawn = alloc.drawn.getOrDefault(k, ZERO);
             BigInteger pending = alloc.pending.getOrDefault(k, ZERO);
-            BigInteger cons = consumedExact.getOrDefault(k, ZERO)
+            BigInteger cons = consumedStrict.getOrDefault(k, ZERO)
+                    .add(consumedCraftable.getOrDefault(k, ZERO))
                     .add(consumedFuzzy.getOrDefault(k, ZERO))
                     .add(pending);
             BigInteger refill = k.isSameType(root)
@@ -303,7 +327,8 @@ public final class PlanClosure {
         }
         LinkedHashMap<IAEItemStack, BigInteger> surplus = new LinkedHashMap<>();
         for (Map.Entry<IAEItemStack, BigInteger> e : produced.entrySet()) {
-            BigInteger cons = consumedExact.getOrDefault(e.getKey(), ZERO)
+            BigInteger cons = consumedStrict.getOrDefault(e.getKey(), ZERO)
+                    .add(consumedCraftable.getOrDefault(e.getKey(), ZERO))
                     .add(consumedFuzzy.getOrDefault(e.getKey(), ZERO))
                     .add(alloc.pending.getOrDefault(e.getKey(), ZERO));
             BigInteger net = e.getValue().subtract(cons);
@@ -340,24 +365,30 @@ public final class PlanClosure {
     }
 
     /**
-     * Covers each key's net draw from the stock pools in the legacy
-     * aggregation's order (own stock → NBT family → fuzzy-substitute group)
-     * and books what a family member covers as consumption of that member.
-     * The delivery root's production siphons (refill 0), so its draw is
-     * allocation-invariant. Processing order: insertion order of the consumed
-     * keys; a key whose pending consumption grew after it was processed is
-     * re-processed (its previous draws undone first). Returns null when the
-     * work bound is hit (failed to settle — the caller declines).
+     * Covers each key's net draw from the stock pools per consumption share
+     * (strict → craftable-exact → fuzzy; the family pools only serve the
+     * craftable shares) and books what a family member covers as consumption
+     * of that member. The delivery root's production siphons (refill 0), so
+     * its draw is allocation-invariant. Processing order: insertion order of
+     * the consumed keys; a key whose pending consumption grew after it was
+     * processed is re-processed (its previous draws undone first). Returns
+     * null when the work bound is hit (failed to settle — the caller declines).
      */
     private static Allocation allocate(View view, IAEItemStack root,
-                                       LinkedHashMap<IAEItemStack, BigInteger> consumedExact,
+                                       LinkedHashMap<IAEItemStack, BigInteger> consumedStrict,
+                                       LinkedHashMap<IAEItemStack, BigInteger> consumedCraftable,
                                        LinkedHashMap<IAEItemStack, BigInteger> consumedFuzzy,
                                        LinkedHashMap<IAEItemStack, BigInteger> produced) {
         Allocation a = new Allocation();
         a.root = root;
         Deque<IAEItemStack> queue = new ArrayDeque<>();
-        for (IAEItemStack k : consumedExact.keySet()) {
+        for (IAEItemStack k : consumedStrict.keySet()) {
             queue.add(k);
+        }
+        for (IAEItemStack k : consumedCraftable.keySet()) {
+            if (!queue.contains(k)) {
+                queue.add(k);
+            }
         }
         for (IAEItemStack k : consumedFuzzy.keySet()) {
             if (!queue.contains(k)) {
@@ -372,7 +403,8 @@ public final class PlanClosure {
             if (a.processed.getOrDefault(k, false)) {
                 undo(a, k);
             }
-            allocateOne(view, a, k, consumedExact, consumedFuzzy, produced);
+            allocateOne(view, a, k, consumedStrict, consumedCraftable,
+                    consumedFuzzy, produced);
             // a family draw on an already-processed key changed its net:
             // re-queue it (its stale draws are undone and redone then)
             for (var e : a.familyAlloc.getOrDefault(norm(k),
@@ -410,9 +442,21 @@ public final class PlanClosure {
         a.order.remove(k);
     }
 
-    /** One key's allocation against the pools (mirrors applyAggregation's split). */
+    /**
+     * One key's allocation against the pools, per consumption share. The
+     * exact-key pool serves every share (extraction prefers the exact key);
+     * the family pools serve the CRAFTABLE shares only — a processing
+     * consumer's demand is {@code findPrecise}-exact and a family unit can
+     * never push its pattern (canCraft :445-453). Share bookkeeping:
+     * circulating production (refill) credits the strict share first (the
+     * only class nothing else can serve), then craftable-exact, then fuzzy;
+     * pending units (family service OTHER consumers took from this key's
+     * pool) are already-drawn consumption — they deplete the pool but draw
+     * nothing further.
+     */
     private static void allocateOne(View view, Allocation a, IAEItemStack k,
-                                    LinkedHashMap<IAEItemStack, BigInteger> consumedExact,
+                                    LinkedHashMap<IAEItemStack, BigInteger> consumedStrict,
+                                    LinkedHashMap<IAEItemStack, BigInteger> consumedCraftable,
                                     LinkedHashMap<IAEItemStack, BigInteger> consumedFuzzy,
                                     LinkedHashMap<IAEItemStack, BigInteger> produced) {
         a.processed.put(k, true);
@@ -420,59 +464,68 @@ public final class PlanClosure {
         IAEItemStack nk = norm(k);
         boolean root = a.root != null && k.isSameType(a.root);
         BigInteger refill = root ? ZERO : produced.getOrDefault(k, ZERO);
-        // draws OTHERS already took from this key's pool are its stock-covered
-        // consumption — they must not draw from the pool a second time
-        BigInteger pendingSelf = a.pending.getOrDefault(k, ZERO);
-        BigInteger cons = consumedExact.getOrDefault(k, ZERO)
-                .add(consumedFuzzy.getOrDefault(k, ZERO))
-                .add(pendingSelf);
+        BigInteger strict = consumedStrict.getOrDefault(k, ZERO);
+        BigInteger craftable = consumedCraftable.getOrDefault(k, ZERO);
+        BigInteger fuzzy = consumedFuzzy.getOrDefault(k, ZERO);
+        BigInteger cons = strict.add(craftable).add(fuzzy)
+                .add(a.pending.getOrDefault(k, ZERO));
         BigInteger net = cons.subtract(refill);
         if (net.signum() <= 0) {
             a.uncovered.put(nk, ZERO);
             return;
         }
-        BigInteger alreadyCovered = pendingSelf.min(net);
-        net = net.subtract(alreadyCovered);
-        if (net.signum() <= 0) {
-            a.uncovered.put(nk, ZERO);
-            return;
-        }
-        BigInteger fuzzyShare = consumedFuzzy.getOrDefault(k, ZERO).min(net);
-        BigInteger exactNeed = net.subtract(fuzzyShare);
+        // refill credit: exact-key returns — strict first, then craft-exact,
+        // then fuzzy (the order only splits the shares; the totals are
+        // invariant — and it MINIMIZES the family budget, never over-draws)
+        BigInteger cred = nonNeg(refill).min(cons);
+        BigInteger credited = cred.min(strict);
+        BigInteger strictShare = strict.subtract(credited);
+        cred = cred.subtract(credited);
+        credited = cred.min(craftable);
+        BigInteger craftShare = craftable.subtract(credited);
+        cred = cred.subtract(credited);
+        BigInteger fuzzyShare = fuzzy.subtract(cred.min(fuzzy));
 
-        // exact share: own stock, then (processing inputs) the NBT family
+        // exact-key pool: strict (its ONLY source), then the craftable shares
         BigInteger own = poolOf(view, a, k);
-        BigInteger take = own.min(exactNeed);
+        BigInteger take = own.min(strictShare);
         if (take.signum() > 0) {
             a.pool.put(nk, own.subtract(take));
             a.coveredOnSelf.put(nk, a.coveredOnSelf.getOrDefault(nk, ZERO).add(take));
         }
-        BigInteger uncovered = exactNeed.subtract(take);
-        if (uncovered.signum() > 0 && view.isProcessingInput(k)) {
-            uncovered = uncovered.subtract(drawFamily(view, a, k,
-                    view.nbtFamilyOf(k), uncovered));
+        BigInteger strictGap = strictShare.subtract(take);
+        own = poolOf(view, a, k);
+        take = own.min(craftShare);
+        if (take.signum() > 0) {
+            a.pool.put(nk, own.subtract(take));
+            a.coveredOnSelf.put(nk, a.coveredOnSelf.getOrDefault(nk, ZERO).add(take));
         }
+        BigInteger craftRest = craftShare.subtract(take);
+        own = poolOf(view, a, k);
+        take = own.min(fuzzyShare);
+        if (take.signum() > 0) {
+            a.pool.put(nk, own.subtract(take));
+            a.coveredOnSelf.put(nk, a.coveredOnSelf.getOrDefault(nk, ZERO).add(take));
+        }
+        BigInteger fuzzyRest = fuzzyShare.subtract(take);
 
-        // fuzzy share: own remaining stock, NBT family, then the substitute group
-        if (fuzzyShare.signum() > 0) {
-            own = poolOf(view, a, k);
-            take = own.min(fuzzyShare);
-            if (take.signum() > 0) {
-                a.pool.put(nk, own.subtract(take));
-                a.coveredOnSelf.put(nk, a.coveredOnSelf.getOrDefault(nk, ZERO).add(take));
-            }
-            BigInteger remFuzzy = fuzzyShare.subtract(take);
-            if (remFuzzy.signum() > 0 && view.isProcessingInput(k)) {
-                remFuzzy = remFuzzy.subtract(drawFamily(view, a, k,
-                        view.nbtFamilyOf(k), remFuzzy));
-            }
-            if (remFuzzy.signum() > 0) {
-                remFuzzy = remFuzzy.subtract(drawFamily(view, a, k,
-                        view.substitutesOf(k), remFuzzy));
-            }
-            uncovered = uncovered.add(remFuzzy);
+        // NBT family: craftable class only (IGNORE_ALL matches the
+        // damage-equal variants) — the fuzzy remainder first, so the
+        // substitute-group draw below never exceeds the fuzzy share
+        if (fuzzyRest.signum() > 0) {
+            fuzzyRest = fuzzyRest.subtract(drawFamily(view, a, k,
+                    view.nbtFamilyOf(k), fuzzyRest));
         }
-        a.uncovered.put(nk, uncovered);
+        if (craftRest.signum() > 0) {
+            craftRest = craftRest.subtract(drawFamily(view, a, k,
+                    view.nbtFamilyOf(k), craftRest));
+        }
+        // substitute group: the replacement-enabled share only
+        if (fuzzyRest.signum() > 0) {
+            fuzzyRest = fuzzyRest.subtract(drawFamily(view, a, k,
+                    view.substitutesOf(k), fuzzyRest));
+        }
+        a.uncovered.put(nk, strictGap.add(craftRest).add(fuzzyRest));
     }
 
     /**
@@ -546,13 +599,21 @@ public final class PlanClosure {
         return ZERO;
     }
 
-    /** One full ledger pass over the current plans (slot-aware consumption). */
+    /**
+     * One full ledger pass over the current plans (slot- and class-aware
+     * consumption): each input line routes to its consuming pattern's
+     * extraction class, the fuzzy share additionally only for fuzzy
+     * consumers (a substitute group on a processing pattern's key is NOT
+     * executable as fuzzy — canCraft :445-453 finds the key precisely).
+     */
     private static void ledger(LinkedHashMap<ICraftingPatternDetails, BigInteger> plans,
                                View view,
-                               LinkedHashMap<IAEItemStack, BigInteger> consumedExact,
+                               LinkedHashMap<IAEItemStack, BigInteger> consumedStrict,
+                               LinkedHashMap<IAEItemStack, BigInteger> consumedCraftable,
                                LinkedHashMap<IAEItemStack, BigInteger> consumedFuzzy,
                                LinkedHashMap<IAEItemStack, BigInteger> produced) {
-        consumedExact.clear();
+        consumedStrict.clear();
+        consumedCraftable.clear();
         consumedFuzzy.clear();
         produced.clear();
         for (Map.Entry<ICraftingPatternDetails, BigInteger> e : plans.entrySet()) {
@@ -563,6 +624,7 @@ public final class PlanClosure {
             Map<IAEItemStack, BigInteger> ins = view.inputsOf(e.getKey());
             if (ins != null) {
                 Map<IAEItemStack, BigInteger> fuzzy = view.fuzzyInputsOf(e.getKey());
+                boolean fuzzyConsumer = view.isFuzzyConsumer(e.getKey());
                 for (Map.Entry<IAEItemStack, BigInteger> ie : ins.entrySet()) {
                     if (ie.getKey() == null || ie.getValue() == null
                             || ie.getValue().signum() <= 0) {
@@ -570,7 +632,7 @@ public final class PlanClosure {
                     }
                     BigInteger amount = t.multiply(ie.getValue());
                     BigInteger fuzzyPer = fuzzy.getOrDefault(ie.getKey(), ZERO).multiply(t);
-                    if (fuzzyPer.signum() > 0) {
+                    if (fuzzyPer.signum() > 0 && fuzzyConsumer) {
                         // a key may sit on both an exact and a fuzzy slot of the
                         // same pattern: only the fuzzy slots' share may draw the group
                         BigInteger f = fuzzyPer.min(amount);
@@ -585,10 +647,11 @@ public final class PlanClosure {
                             mergeInto(consumedFuzzy, ie.getKey(), f);
                         }
                         if (f.compareTo(amount) < 0) {
-                            mergeInto(consumedExact, ie.getKey(), amount.subtract(f));
+                            mergeInto(consumedCraftable, ie.getKey(), amount.subtract(f));
                         }
                     } else {
-                        mergeInto(consumedExact, ie.getKey(), amount);
+                        mergeInto(fuzzyConsumer ? consumedCraftable : consumedStrict,
+                                ie.getKey(), amount);
                     }
                 }
             }

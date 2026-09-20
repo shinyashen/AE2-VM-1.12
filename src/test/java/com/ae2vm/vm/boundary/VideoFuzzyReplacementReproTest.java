@@ -36,7 +36,9 @@ import net.minecraft.init.Bootstrap;
  * an exact-slot parent then found no primary in the plan's usedItems and could never
  * be pushed. The fix tracks which demand comes from replacement-ENABLED slots
  * (FUZZY_SLOT marker) and only lets substitute-variant stock satisfy that portion;
- * same-item NBT variants (processing default fuzzy) remain usable by any slot.
+ * since the 2026-09-20 extraction-semantics reversal (CLOSURE-DESIGN §5.9) the
+ * family pools serve CRAFTABLE consumers only — a processing consumer's demand is
+ * findPrecise-exact and no variant covers it (PlanClosure.View.isFuzzyConsumer).
  *
  * <p><b>The substitute-slot parents here are CRAFTABLE
  * fakes.</b> AE2UEL's slot substitution is a crafting-pattern feature

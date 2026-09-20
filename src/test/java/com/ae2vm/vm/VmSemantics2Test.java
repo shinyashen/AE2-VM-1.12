@@ -24,7 +24,7 @@ import net.minecraft.init.Bootstrap;
 /**
  * Ported benchmark families round 2: exponential chains (Fibonacci),
  * JIT cross-request reuse, self-growth cut, quantity-one boundary,
- * substitute slots, processing default fuzzy, durability chains.
+ * substitute slots, processing exact extraction (§5.9 reversal), durability chains.
  *
  * Keys are plain id strings here; the first output of a pattern is its
  * primary output.
@@ -168,18 +168,27 @@ class VmSemantics2Test {
         assertEquals(5L, plan.getUsedItems().get(k("SUB")));
     }
 
-    /** Processing-recipe default fuzzy: same-item NBT/damage variant stock satisfies the slot. */
+    /**
+     * The processing input's EXACT key is drawn first; sibling-variant stock
+     * sits untouched (the family pools serve only craftable consumers —
+     * CLOSURE-DESIGN §5.9).
+     */
     @Test
-    void processingDefaultFuzzyConsumesVariantStock() {
+    void processingInputDrawsExactStockAndSparesTheVariant() {
         BenchPatternDetails p = processing(new long[][]{{1, 1}}, new long[][]{{0, 1}});
         Bench.register(p);
+        BenchAEItemStack variant = new BenchAEItemStack("B", 10, 10, 1);
         BenchSimulationState sim = new BenchSimulationState()
-                .seed("B", 10)          // pattern encodes B(damage 0); stock is a damaged variant
-                .seedVariant("B", 5, 10, 10);
+                .seed("B", 10)          // pattern encodes B(damage 0); stock also holds a damaged variant
+                .seedVariant("B", 10, 10, 5);
         VMPlan plan = Bench.run(p, 10, sim);
         CpuLifecycleAssert.auto(plan);
-        assertFalse(plan.isSimulation(), "processing default fuzzy: missing=" + dump(plan));
+        assertFalse(plan.isSimulation(), "the exact stock satisfies the slot: missing=" + dump(plan));
         assertEquals(10L, plan.getPatternTimes().get(p));
+        assertEquals(10L, plan.getUsedItems().get(k("B")),
+                "the exact key is withdrawn");
+        assertEquals(0L, plan.getUsedItems().get(variant),
+                "the sibling variant is untouched — no family draw for a processing consumer");
     }
 
     // The chained durability closed-form test was removed with DURABILITY_TOOL

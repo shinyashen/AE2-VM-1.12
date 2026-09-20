@@ -233,11 +233,12 @@ class PlanInvariantsTest {
     }
 
     @Test
-    void damageVariantFamilyCoversWithoutViolations() {
-        // the live 3ZIlM7W false alarm: the plan consumes minecraft:log@3 whose
-        // exact stock is zero, but the network holds sibling damage variants —
-        // the closure legitimately withdrew a variant (processing default
-        // fuzzy) and the audit must NOT cry MISSING-COVERAGE / INPUT-REACH
+    void damageVariantFamilyDoesNotAbsolveAProcessingConsumer() {
+        // 2026-09-20 REVERSAL (CLOSURE-DESIGN §5.9): the CPU extracts a
+        // processing pattern's inputs findPrecise-exact (AE2UEL canCraft
+        // :445-453 → MECraftingInventory), so the log@3 gap is REAL no
+        // matter what log@0 stock exists — a plan booking a variant
+        // withdrawal here stalls the live CPU, and the audit must flag it
         BenchAEItemStack oak = new BenchAEItemStack("minecraft:log", 0, 0, 1);
         BenchAEItemStack jungle = new BenchAEItemStack("minecraft:log", 3, 0, 1);
         BenchPatternDetails makeStick = BenchPatternDetails.custom(
@@ -249,7 +250,29 @@ class PlanInvariantsTest {
         oak.setStackSize(1_000_000);
         FakeList stock = new FakeList().put(oak);
         final List<String> v = PlanInvariants.check(plan, makeStick.getOutputs()[0], 5L, stock);
-        assertTrue(v.isEmpty(), "the log@3 gap is family-covered by log@0 stock — got " + v);
+        assertTrue(v.contains("MISSING-COVERAGE:minecraft:log@3 net=-100"),
+                "the strict gap is real: " + v);
+        assertTrue(v.contains("INPUT-REACH:minecraft:log@3"),
+                "the processing input is unreachable: " + v);
+    }
+
+    @Test
+    void damageVariantFamilyCoversACraftableConsumer() {
+        // the craftable branch fuzzy-extracts (canCraft :454-516, findFuzzy
+        // IGNORE_ALL) — the sibling stock legitimately absolves the gap
+        BenchAEItemStack oak = new BenchAEItemStack("minecraft:log", 0, 0, 1);
+        BenchAEItemStack jungle = new BenchAEItemStack("minecraft:log", 3, 0, 1);
+        BenchPatternDetails makeStick = BenchPatternDetails.custom(
+                new IAEItemStack[]{jungle.setStackSize(2)},
+                new IAEItemStack[]{new BenchAEItemStack("stick", 0, 0, 1).setStackSize(1)})
+                .asCraftable();
+        VMPlan plan = new VMPlan(makeStick.getOutputs()[0], 5, 0, true,
+                counter(jungle, 100), missing(), emitted(),
+                single(makeStick, 50));
+        oak.setStackSize(1_000_000);
+        FakeList stock = new FakeList().put(oak);
+        final List<String> v = PlanInvariants.check(plan, makeStick.getOutputs()[0], 5L, stock);
+        assertTrue(v.isEmpty(), "the craftable gap is family-covered: " + v);
     }
 
     private static VMCounter counter(BenchAEItemStack k, long v) {

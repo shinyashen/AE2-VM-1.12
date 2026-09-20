@@ -280,8 +280,9 @@ public final class VMTreeCompatibility {
 
         /**
          * Family identity for display matching: same Item, any damage/NBT —
-         * the same semantics the closure's family allocation and the CPU's
-         * processing default fuzzy use. Fluid fakes match exactly (their NBT
+         * the same semantics the closure's family allocation uses for the
+         * craftable consumers it covers (the CPU fuzzy-extracts those,
+         * canCraft :454-516). Fluid fakes match exactly (their NBT
          * IS the fluid identity).
          */
         private static boolean family(final IAEItemStack a, final IAEItemStack b) {
