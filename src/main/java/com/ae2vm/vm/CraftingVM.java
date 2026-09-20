@@ -1175,6 +1175,25 @@ public class CraftingVM {
                 for (var e : discovery.entrySet()) orderStack.push(e);
                 for (var e : orderStack) reversed.put(e.getKey(), e.getValue());
                 List<LinkedHashMap<ICraftingPatternDetails, Long>> candidates = new ArrayList<>();
+                // THE PROBE'S OWN ROTATION first: the priming probe validated
+                // this exact firing order together with the billed floors —
+                // TaskOrdering's topo+rank reconstruction can interleave DAG
+                // units around the cycle differently and starve a zero-slack
+                // cycle the probe had proven bootable (the live draconic/
+                // glowstone rejections at 23:04-23:14).
+                LinkedHashMap<ICraftingPatternDetails, Long> probed = new LinkedHashMap<>();
+                for (ICraftingPatternDetails probedPattern : ringTaskOrder) {
+                    Long probedCount = patternTimes.get(probedPattern);
+                    if (probedCount != null) {
+                        probed.put(probedPattern, probedCount);
+                    }
+                }
+                for (Map.Entry<ICraftingPatternDetails, Long> e : patternTimes.entrySet()) {
+                    if (!probed.containsKey(e.getKey())) {
+                        probed.put(e.getKey(), e.getValue());
+                    }
+                }
+                candidates.add(probed);
                 candidates.add(constructed);
                 candidates.add(discovery);
                 candidates.add(reversed);
