@@ -56,10 +56,6 @@ public class CraftingVM {
 
     private static final BigInteger BIG_MAX_LONG = BigInteger.valueOf(Long.MAX_VALUE);
 
-    // Cap for the task-order assertion pass (see buildPlan): the faithful
-    // replica fires craft-by-craft, so beyond this budget the check costs
-    // real server-thread time and the by-construction order is trusted.
-    private static final long VERIFY_CRAFT_BUDGET = 2_000_000L;
 
     // Pre-allocated BigInteger cache for values 0–1023 (hot values in VM)
     private static final BigInteger[] BIG_CACHE = new BigInteger[1024];
@@ -1153,87 +1149,80 @@ public class CraftingVM {
         // (the probe-rank order, the discovery order, its reversal — on a
         // zero-slack cycle WHO intercepts the circulating return decides the
         // verdict) and adopt the completing one; no candidate completes →
-        // fall back to the stage pipeline, its plan, its numbers.
+        // fall back to the stage pipeline, its plan, its numbers. The gate
+        // runs on EVERY closure plan regardless of craft counts — the
+        // replica fires in closed-form per pass (cost ~ passes x tasks), so
+        // the 21.6M-craft controller order is verified in milliseconds; the
+        // old 2M-craft budget let exactly the largest orders (the zero-slack
+        // cycles most likely to be un-bootable) ship unverified.
         if (missingItems.isEmpty()) {
-            long totalCrafts = 0;
-            for (Long v : patternTimes.values()) {
-                long next = totalCrafts + v;
-                totalCrafts = next < 0 ? VERIFY_CRAFT_BUDGET + 1
-                        : Math.min(VERIFY_CRAFT_BUDGET + 1, next);
-                if (totalCrafts > VERIFY_CRAFT_BUDGET) break;
-            }
             long deliver = requestAmount.compareTo(BIG_MAX_LONG) > 0
                     ? Long.MAX_VALUE : requestAmount.longValue();
-            if (totalCrafts <= VERIFY_CRAFT_BUDGET) {
-                LinkedHashMap<ICraftingPatternDetails, Long> discovery =
-                        new LinkedHashMap<>(patternTimes);
-                LinkedHashMap<ICraftingPatternDetails, Long> constructed = TaskOrdering.construct(
-                        patternTimes, ringTaskOrder,
-                        CraftingVM::perCraftPrimings, CraftingVM::perCraftOutputs);
-                LinkedHashMap<ICraftingPatternDetails, Long> reversed = new LinkedHashMap<>();
-                Deque<Map.Entry<ICraftingPatternDetails, Long>> orderStack = new ArrayDeque<>();
-                for (var e : discovery.entrySet()) orderStack.push(e);
-                for (var e : orderStack) reversed.put(e.getKey(), e.getValue());
-                List<LinkedHashMap<ICraftingPatternDetails, Long>> candidates = new ArrayList<>();
-                // THE PROBE'S OWN ROTATION first: the priming probe validated
-                // this exact firing order together with the billed floors —
-                // TaskOrdering's topo+rank reconstruction can interleave DAG
-                // units around the cycle differently and starve a zero-slack
-                // cycle the probe had proven bootable (the live draconic/
-                // glowstone rejections at 23:04-23:14).
-                LinkedHashMap<ICraftingPatternDetails, Long> probed = new LinkedHashMap<>();
-                for (ICraftingPatternDetails probedPattern : ringTaskOrder) {
-                    Long probedCount = patternTimes.get(probedPattern);
-                    if (probedCount != null) {
-                        probed.put(probedPattern, probedCount);
-                    }
+            LinkedHashMap<ICraftingPatternDetails, Long> discovery =
+                    new LinkedHashMap<>(patternTimes);
+            LinkedHashMap<ICraftingPatternDetails, Long> constructed = TaskOrdering.construct(
+                    patternTimes, ringTaskOrder,
+                    CraftingVM::perCraftPrimings, CraftingVM::perCraftOutputs);
+            LinkedHashMap<ICraftingPatternDetails, Long> reversed = new LinkedHashMap<>();
+            Deque<Map.Entry<ICraftingPatternDetails, Long>> orderStack = new ArrayDeque<>();
+            for (var e : discovery.entrySet()) orderStack.push(e);
+            for (var e : orderStack) reversed.put(e.getKey(), e.getValue());
+            List<LinkedHashMap<ICraftingPatternDetails, Long>> candidates = new ArrayList<>();
+            // THE PROBE'S OWN ROTATION first: the priming probe validated
+            // this exact firing order together with the billed floors —
+            // TaskOrdering's topo+rank reconstruction can interleave DAG
+            // units around the cycle differently and starve a zero-slack
+            // cycle the probe had proven bootable (the live draconic/
+            // glowstone rejections at 23:04-23:14).
+            LinkedHashMap<ICraftingPatternDetails, Long> probed = new LinkedHashMap<>();
+            for (ICraftingPatternDetails probedPattern : ringTaskOrder) {
+                Long probedCount = patternTimes.get(probedPattern);
+                if (probedCount != null) {
+                    probed.put(probedPattern, probedCount);
                 }
-                for (Map.Entry<ICraftingPatternDetails, Long> e : patternTimes.entrySet()) {
-                    if (!probed.containsKey(e.getKey())) {
-                        probed.put(e.getKey(), e.getValue());
-                    }
+            }
+            for (Map.Entry<ICraftingPatternDetails, Long> e : patternTimes.entrySet()) {
+                if (!probed.containsKey(e.getKey())) {
+                    probed.put(e.getKey(), e.getValue());
                 }
-                candidates.add(probed);
-                candidates.add(constructed);
-                candidates.add(discovery);
-                candidates.add(reversed);
-                VirtualCPUCluster.Verdict closest = null;
-                boolean adopted = false;
-                for (LinkedHashMap<ICraftingPatternDetails, Long> cand : candidates) {
-                    patternTimes.clear();
-                    patternTimes.putAll(cand);
-                    VirtualCPUCluster.Verdict v = new VirtualCPUCluster(
-                            new VMPlan(outputKey, deliver, simulation.getBytes(), false,
-                                    usedItems, missingItems, emittedItems,
-                                    new LinkedHashMap<>(patternTimes)),
-                            outputKey, deliver).run(10_000, 0);
-                    if (v.status == VirtualCPUCluster.Verdict.Status.COMPLETE) {
-                        adopted = true;
-                        break;
-                    }
-                    if (closest == null || v.delivered > closest.delivered) {
-                        closest = v;
-                    }
+            }
+            candidates.add(probed);
+            candidates.add(constructed);
+            candidates.add(discovery);
+            candidates.add(reversed);
+            VirtualCPUCluster.Verdict closest = null;
+            boolean adopted = false;
+            for (LinkedHashMap<ICraftingPatternDetails, Long> cand : candidates) {
+                patternTimes.clear();
+                patternTimes.putAll(cand);
+                VirtualCPUCluster.Verdict v = new VirtualCPUCluster(
+                        new VMPlan(outputKey, deliver, simulation.getBytes(), false,
+                                usedItems, missingItems, emittedItems,
+                                new LinkedHashMap<>(patternTimes)),
+                        outputKey, deliver).run(10_000, 0);
+                if (v.status == VirtualCPUCluster.Verdict.Status.COMPLETE) {
+                    adopted = true;
+                    break;
                 }
-                if (!adopted) {
-                    // DEBUG, not WARN: the multi-pattern repair loop re-runs
-                    // this closure once per pass, and a per-pass console storm
-                    // drowns the log; the rejection still lands as evidence in
-                    // the trace's AUDIT segment and in the fallback WARN that
-                    // the pipeline path itself emits when its plan stalls.
-                    Log.LOG.debug("[AE2-VM] plan closure rejected by the faithful CPU "
-                            + "({}); falling back to the stage pipeline", closest);
-                    patternTimes.clear();
-                    patternTimes.putAll(patternTimesBefore);
-                    restoreCounter(usedItems, usedBefore);
-                    restoreCounter(missingItems, missingBefore);
-                    restoreCounter(emittedItems, emittedBefore);
-                    ringTaskOrder.clear();
-                    return false;
+                if (closest == null || v.delivered > closest.delivered) {
+                    closest = v;
                 }
-            } else {
-                Log.LOG.debug("[AE2-VM] closure plan CPU verification skipped "
-                        + "({} crafts > budget {})", totalCrafts, VERIFY_CRAFT_BUDGET);
+            }
+            if (!adopted) {
+                // DEBUG, not WARN: the multi-pattern repair loop re-runs
+                // this closure once per pass, and a per-pass console storm
+                // drowns the log; the rejection still lands as evidence in
+                // the trace's AUDIT segment and in the fallback WARN that
+                // the pipeline path itself emits when its plan stalls.
+                Log.LOG.debug("[AE2-VM] plan closure rejected by the faithful CPU "
+                        + "({}); falling back to the stage pipeline", closest);
+                patternTimes.clear();
+                patternTimes.putAll(patternTimesBefore);
+                restoreCounter(usedItems, usedBefore);
+                restoreCounter(missingItems, missingBefore);
+                restoreCounter(emittedItems, emittedBefore);
+                ringTaskOrder.clear();
+                return false;
             }
         }
         Log.LOG.debug(String.format(
@@ -2621,44 +2610,31 @@ public class CraftingVM {
             for (var e : patternTimes.entrySet()) stack.push(e);
             for (var e : stack) reversed.put(e.getKey(), e.getValue());
             candidates.add(reversed);
-            long totalCrafts = 0;
-            for (Long v : patternTimes.values()) {
-                long next = totalCrafts + v;
-                totalCrafts = next < 0 ? VERIFY_CRAFT_BUDGET + 1
-                        : Math.min(VERIFY_CRAFT_BUDGET + 1, next);
-                if (totalCrafts > VERIFY_CRAFT_BUDGET) {
-                    break;
-                }
-            }
             long bytesNow = simulation.getBytes();
             long deliverNow = requestedAmount.compareTo(BIG_MAX_LONG) > 0
                     ? Long.MAX_VALUE : requestedAmount.longValue();
             LinkedHashMap<ICraftingPatternDetails, Long> chosen = constructed;
             VirtualCPUCluster.Verdict closestStall = null;
-            if (totalCrafts <= VERIFY_CRAFT_BUDGET) {
-                for (LinkedHashMap<ICraftingPatternDetails, Long> cand : candidates) {
-                    patternTimes.clear();
-                    patternTimes.putAll(cand);
-                    VirtualCPUCluster.Verdict v = new VirtualCPUCluster(
-                            new VMPlan(outputKey, deliverNow, bytesNow, false, usedItems,
-                                    missingItems, emittedItems, new LinkedHashMap<>(patternTimes)),
-                            outputKey, deliverNow).run(10_000, 0);
-                    if (v.status == VirtualCPUCluster.Verdict.Status.COMPLETE) {
-                        chosen = cand;
-                        closestStall = null;
-                        break;
-                    }
-                    // keep the closest stall (most delivered) for the report below
-                    if (closestStall == null || v.delivered > closestStall.delivered) {
-                        closestStall = v;
-                    }
+            // The assertion runs on EVERY plan regardless of craft counts: the
+            // replica fires in closed-form per pass (cost ~ passes x tasks),
+            // so even a 21M-craft schedule replays in milliseconds. The old
+            // 2M-craft budget let exactly the largest jobs skip verification.
+            for (LinkedHashMap<ICraftingPatternDetails, Long> cand : candidates) {
+                patternTimes.clear();
+                patternTimes.putAll(cand);
+                VirtualCPUCluster.Verdict v = new VirtualCPUCluster(
+                        new VMPlan(outputKey, deliverNow, bytesNow, false, usedItems,
+                                missingItems, emittedItems, new LinkedHashMap<>(patternTimes)),
+                        outputKey, deliverNow).run(10_000, 0);
+                if (v.status == VirtualCPUCluster.Verdict.Status.COMPLETE) {
+                    chosen = cand;
+                    closestStall = null;
+                    break;
                 }
-            } else {
-                // Beyond the budget the assertion pass costs real time on the
-                // server thread; the by-construction order is trusted and the
-                // reference suite's gate adjudicates order fidelity test-side.
-                Log.LOG.debug("[AE2-VM] task-order validation skipped ({} crafts > budget {})",
-                        totalCrafts, VERIFY_CRAFT_BUDGET);
+                // keep the closest stall (most delivered) for the report below
+                if (closestStall == null || v.delivered > closestStall.delivered) {
+                    closestStall = v;
+                }
             }
             patternTimes.clear();
             patternTimes.putAll(chosen);
